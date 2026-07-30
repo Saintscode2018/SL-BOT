@@ -27,7 +27,8 @@ ALLOWED_ROLES = [
 ]
 
 
-def get_user_team(member):
+
+def get_user_club(member):
 
     for role in member.roles:
 
@@ -40,14 +41,14 @@ def get_user_team(member):
 
 
 
+
 class OfferView(discord.ui.View):
 
-    def __init__(self, player_id, guild_id, club):
+    def __init__(self, player_id, club):
 
         super().__init__(timeout=None)
 
         self.player_id = player_id
-        self.guild_id = guild_id
         self.club = club
 
 
@@ -57,98 +58,106 @@ class OfferView(discord.ui.View):
         emoji="✅",
         style=discord.ButtonStyle.success
     )
-    async def accept(self, interaction, button):
+    async def accept(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
 
         if interaction.user.id != self.player_id:
 
             await interaction.response.send_message(
-                "This offer is not yours.",
+                "❌ This offer is not for you.",
                 ephemeral=True
             )
+
             return
+
 
 
         await interaction.response.defer()
 
 
-        embed = interaction.message.embeds[0]
 
-        embed.color = discord.Color(
-            self.club[4]
-        )
-
-
-        embed.add_field(
-            name="Status",
-            value="✅ Accepted",
-            inline=False
-        )
-
+        # Remove buttons
 
         await interaction.message.edit(
-            embed=embed,
             view=None
         )
 
 
-        try:
 
-            channel = await bot.fetch_channel(
-                TRANSFER_CHANNEL_ID
-            )
+        channel = bot.get_channel(
+            TRANSFER_CHANNEL_ID
+        )
 
 
-            news = discord.Embed(
-                title="🏆 Super League S5",
+
+        if channel:
+
+
+            announcement = discord.Embed(
+
+                title="🏆 SUPER LEAGUE S5",
+
                 description=(
+
                     "## ✅ TRANSFER COMPLETED\n\n"
-                    f"👤 Player\n"
+
+                    f"👤 **Player**\n"
                     f"{interaction.user.mention}\n\n"
-                    f"🏟 New Club\n"
-                    f"**{self.club[0]}**\n\n"
-                    f"📁 Roster\n"
-                    f"{self.club[6]}/{self.club[7]}"
+
+                    f"🏟 **New Club**\n"
+                    f"**{self.club[1]}**\n\n"
+
+                    f"🌍 **Country**\n"
+                    f"{self.club[5]}\n\n"
+
+                    f"🏟 **Stadium**\n"
+                    f"{self.club[6]}\n\n"
+
+                    f"📋 **Roster**\n"
+                    f"{self.club[8]}/{self.club[9]}"
+
                 ),
-                color=discord.Color(
-                    self.club[4]
-                )
+
+                color=self.club[4]
+
             )
 
 
-            news.set_thumbnail(
+            announcement.set_thumbnail(
                 url=self.club[2]
             )
 
 
-            if self.club[3]:
-
-                news.set_image(
-                    url=self.club[3]
-                )
-
-
-            news.set_footer(
-                text="Super League Transfer System"
+            announcement.set_image(
+                url=self.club[3]
             )
+
+
+            announcement.set_footer(
+                text="Super League Transfer Market"
+            )
+
+
+            announcement.timestamp = discord.utils.utcnow()
+
 
 
             await channel.send(
-                embed=news
+                embed=announcement
             )
 
-
-        except Exception as e:
-
-            print(
-                "Transfer announcement error:",
-                e
-            )
 
 
         await interaction.followup.send(
-            "Offer accepted!",
+            "✅ Offer accepted!",
             ephemeral=True
         )
+
+
 
 
 
@@ -157,22 +166,23 @@ class OfferView(discord.ui.View):
         emoji="❌",
         style=discord.ButtonStyle.danger
     )
-    async def reject(self, interaction, button):
+    async def reject(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
 
         if interaction.user.id != self.player_id:
 
+
             await interaction.response.send_message(
-                "This offer is not yours.",
+                "❌ This offer is not for you.",
                 ephemeral=True
             )
 
             return
 
-
-        await interaction.response.send_message(
-            "Offer rejected.",
-            ephemeral=True
-        )
 
 
         await interaction.message.edit(
@@ -181,9 +191,20 @@ class OfferView(discord.ui.View):
 
 
 
+        await interaction.response.send_message(
+            "❌ Offer rejected.",
+            ephemeral=True
+        )
+
+
+
+
+
 
 intents = discord.Intents.default()
+
 intents.members = True
+
 
 
 bot = commands.Bot(
@@ -193,28 +214,31 @@ bot = commands.Bot(
 
 
 
+
 @bot.event
 async def on_ready():
 
     synced = await bot.tree.sync()
 
     print(
-        f"Online: {bot.user}"
+        f"Bot online: {bot.user}"
     )
 
     print(
-        f"Commands: {len(synced)}"
+        f"Commands synced: {len(synced)}"
     )
+
+
 
 
 
 
 @bot.tree.command(
     name="offer",
-    description="Send transfer offer"
+    description="Send a player transfer offer"
 )
 @app_commands.describe(
-    player="Player receiving offer"
+    player="Player receiving the offer"
 )
 async def offer(
     interaction: discord.Interaction,
@@ -222,13 +246,16 @@ async def offer(
 ):
 
 
+    # Permission check
+
     if not any(
         role.id in ALLOWED_ROLES
         for role in interaction.user.roles
     ):
 
+
         await interaction.response.send_message(
-            "No permission.",
+            "❌ You don't have permission.",
             ephemeral=True
         )
 
@@ -236,15 +263,18 @@ async def offer(
 
 
 
-    club = get_user_team(
+
+    club = get_user_club(
         interaction.user
     )
 
 
+
     if club is None:
 
+
         await interaction.response.send_message(
-            "No club role found.",
+            "❌ No club role detected.",
             ephemeral=True
         )
 
@@ -252,16 +282,24 @@ async def offer(
 
 
 
+
+
     embed = discord.Embed(
-        title="⚽ Player Transfer Offer",
+
+        title="⚽ PLAYER TRANSFER OFFER",
+
         description=(
-            f"## {club[0]}\n\n"
-            "You received a transfer offer."
+
+            f"## {club[1]}\n\n"
+
+            "You have received a transfer offer."
+
         ),
-        color=discord.Color(
-            club[4]
-        )
+
+        color=club[4]
+
     )
+
 
 
     embed.set_thumbnail(
@@ -269,23 +307,59 @@ async def offer(
     )
 
 
+
     embed.set_image(
         url=club[3]
     )
 
 
+
     embed.add_field(
+
         name="🏟 Club",
-        value=club[0],
-        inline=False
+
+        value=club[1],
+
+        inline=True
+
     )
+
 
 
     embed.add_field(
-        name="📁 Roster",
-        value=f"{club[6]}/{club[7]}",
-        inline=False
+
+        name="🌍 Country",
+
+        value=club[5],
+
+        inline=True
+
     )
+
+
+
+    embed.add_field(
+
+        name="🏟 Stadium",
+
+        value=club[6],
+
+        inline=False
+
+    )
+
+
+
+    embed.add_field(
+
+        name="📋 Squad",
+
+        value=f"{club[8]}/{club[9]}",
+
+        inline=True
+
+    )
+
 
 
     embed.set_footer(
@@ -293,30 +367,52 @@ async def offer(
     )
 
 
+
+    embed.timestamp = discord.utils.utcnow()
+
+
+
     try:
 
+
         await player.send(
+
             embed=embed,
+
             view=OfferView(
+
                 player.id,
-                interaction.guild.id,
+
                 club
+
             )
+
         )
+
 
 
         await interaction.response.send_message(
-            "Offer sent successfully.",
+
+            "✅ Offer sent privately.",
+
             ephemeral=True
+
         )
+
 
 
     except discord.Forbidden:
 
+
         await interaction.response.send_message(
-            "Player DMs are disabled.",
+
+            "❌ Player has DMs disabled.",
+
             ephemeral=True
+
         )
+
+
 
 
 
