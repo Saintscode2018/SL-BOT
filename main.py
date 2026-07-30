@@ -3,7 +3,10 @@ from discord import app_commands
 from discord.ext import commands
 
 
-TOKEN = "your_token_here"
+TOKEN = "YOUR_NEW_TOKEN_HERE"
+
+
+TRANSFER_CHANNEL_ID = 1519210891596398745
 
 
 # Staff roles allowed to create offers
@@ -20,24 +23,48 @@ ALLOWED_ROLES = [
 
 
 # Team role IDs
-# Replace these with your real Discord role IDs
 TEAM_ROLES = {
-    123456789012345678: "FC Barcelona",
-    987654321098765432: "Real Madrid",
+    1520903589931909141: "FC Barcelona",
+    1520903596210655252: "Real Madrid",
+    1520903250969231430: "Bayern Munich",
+    1520912782961414154: "AC Milan",
+    1520903252961526033: "Chelsea",
+    1520903594709352508: "Paris Saint-Germain",
+    1520903247945007105: "Manchester United",
+    1520903245458047007: "Manchester City",
+    1520903242815639612: "Liverpool",
+    1520904237016547438: "Juventus",
+    1520903587612459189: "Borussia Dortmund",
+    1520908994024050728: "Brazil",
+    1520908986319241457: "Santos FC",
+    1520908990068953170: "Atletico Madrid",
+    1520908992430346250: "Inter Milan",
+    1520903592331186346: "Newcastle"
 }
 
 
 def get_user_team(member: discord.Member):
+
     for role in member.roles:
+
         if role.id in TEAM_ROLES:
             return TEAM_ROLES[role.id]
 
     return None
 
 
+
 class OfferView(discord.ui.View):
-    def __init__(self):
+
+    def __init__(self, player_id, guild_id, team):
+
         super().__init__(timeout=None)
+
+        self.player_id = player_id
+        self.guild_id = guild_id
+        self.team = team
+
+
 
     @discord.ui.button(
         label="Accept",
@@ -49,6 +76,18 @@ class OfferView(discord.ui.View):
         button: discord.ui.Button
     ):
 
+
+        if interaction.user.id != self.player_id:
+
+            await interaction.response.send_message(
+                "This offer is not for you.",
+                ephemeral=True
+            )
+
+            return
+
+
+
         embed = interaction.message.embeds[0]
 
         embed.color = discord.Color.green()
@@ -59,15 +98,48 @@ class OfferView(discord.ui.View):
             inline=False
         )
 
+
         await interaction.message.edit(
             embed=embed,
             view=None
         )
 
+
+
+        guild = bot.get_guild(self.guild_id)
+
+
+        if guild:
+
+            channel = guild.get_channel(
+                TRANSFER_CHANNEL_ID
+            )
+
+
+            if channel:
+
+                news = discord.Embed(
+                    title="Super League S5",
+                    description=(
+                        f"✅ **Offer Accepted - {self.team}**\n\n"
+                        f"{interaction.user.mention} has accepted the offer from "
+                        f"**{self.team}**"
+                    ),
+                    color=discord.Color.green()
+                )
+
+
+                await channel.send(
+                    embed=news
+                )
+
+
+
         await interaction.response.send_message(
             "Offer accepted.",
             ephemeral=True
         )
+
 
 
     @discord.ui.button(
@@ -80,9 +152,22 @@ class OfferView(discord.ui.View):
         button: discord.ui.Button
     ):
 
+
+        if interaction.user.id != self.player_id:
+
+            await interaction.response.send_message(
+                "This offer is not for you.",
+                ephemeral=True
+            )
+
+            return
+
+
+
         embed = interaction.message.embeds[0]
 
         embed.color = discord.Color.red()
+
 
         embed.add_field(
             name="Status",
@@ -90,10 +175,12 @@ class OfferView(discord.ui.View):
             inline=False
         )
 
+
         await interaction.message.edit(
             embed=embed,
             view=None
         )
+
 
         await interaction.response.send_message(
             "Offer rejected.",
@@ -101,8 +188,11 @@ class OfferView(discord.ui.View):
         )
 
 
+
 intents = discord.Intents.default()
+
 intents.members = True
+
 
 
 bot = commands.Bot(
@@ -111,12 +201,14 @@ bot = commands.Bot(
 )
 
 
+
 @bot.event
 async def on_ready():
 
     await bot.tree.sync()
 
     print(f"Bot online as {bot.user}")
+
 
 
 @bot.tree.command(
@@ -137,7 +229,7 @@ async def offer(
     transfer_fee: str
 ):
 
-    # Permission check
+
     if not any(
         role.id in ALLOWED_ROLES
         for role in interaction.user.roles
@@ -151,8 +243,11 @@ async def offer(
         return
 
 
-    # Automatic team detection
-    team = get_user_team(interaction.user)
+
+    team = get_user_team(
+        interaction.user
+    )
+
 
 
     if team is None:
@@ -163,6 +258,7 @@ async def offer(
         )
 
         return
+
 
 
     embed = discord.Embed(
@@ -214,10 +310,33 @@ async def offer(
     embed.timestamp = discord.utils.utcnow()
 
 
-    await interaction.response.send_message(
-        embed=embed,
-        view=OfferView()
-    )
+
+    try:
+
+        await player.send(
+            embed=embed,
+            view=OfferView(
+                player.id,
+                interaction.guild.id,
+                team
+            )
+        )
+
+
+        await interaction.response.send_message(
+            "Offer sent successfully.",
+            ephemeral=True
+        )
+
+
+
+    except discord.Forbidden:
+
+        await interaction.response.send_message(
+            "I cannot DM this player.",
+            ephemeral=True
+        )
+
 
 
 bot.run(TOKEN)
