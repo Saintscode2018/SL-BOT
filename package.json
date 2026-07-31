@@ -21,7 +21,9 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
-    "legacy:inspect": "tsx scripts/inspect-legacy-database.ts"
+    "legacy:inspect": "tsx scripts/inspect-legacy-database.ts",
+    "commands:deploy:guild": "tsx scripts/deploy-commands.ts",
+    "offers:expire": "tsx scripts/expire-offers.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

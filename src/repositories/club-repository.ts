@@ -72,6 +72,10 @@ export class ClubRepository {
     return this.db.club.findUnique({ where: { id } });
   }
 
+  public async getByIdInGuild(id: string, guildId: string): Promise<Club | null> {
+    return this.db.club.findFirst({ where: { id, guildId } });
+  }
+
   public async getByDiscordRoleId(guildId: string, discordRoleId: string): Promise<Club | null> {
     return this.db.club.findUnique({
       where: {
@@ -88,6 +92,18 @@ export class ClubRepository {
       where: { guildId, active: true },
       orderBy: [{ name: 'asc' }],
     });
+  }
+
+  public async listActiveWithPlayerCounts(
+    guildId: string,
+  ): Promise<Array<Club & { activePlayerCount: number }>> {
+    const clubs = await this.listActive(guildId);
+    return Promise.all(
+      clubs.map(async (club) => ({
+        ...club,
+        activePlayerCount: await this.countActivePlayers(club.id),
+      })),
+    );
   }
 
   public async countActivePlayers(clubId: string): Promise<number> {

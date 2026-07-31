@@ -9,6 +9,7 @@ import type {
   CommandContext,
   CommandDefinition,
   CommandInteraction,
+  EditedInteractionResponse,
   SafeInteractionResponse,
 } from '../../src/bot/types.js';
 import { ConflictError } from '../../src/domain/errors.js';
@@ -16,6 +17,7 @@ import { MemoryLogger } from '../helpers/memory-logger.js';
 
 class FakeInteraction implements CommandInteraction {
   public readonly replies: SafeInteractionResponse[] = [];
+  public readonly edits: EditedInteractionResponse[] = [];
   public readonly followUps: SafeInteractionResponse[] = [];
 
   public constructor(
@@ -26,6 +28,17 @@ class FakeInteraction implements CommandInteraction {
 
   public reply(response: SafeInteractionResponse): Promise<void> {
     this.replies.push(response);
+    this.replied = true;
+    return Promise.resolve();
+  }
+
+  public deferReply(): Promise<void> {
+    this.deferred = true;
+    return Promise.resolve();
+  }
+
+  public editReply(response: EditedInteractionResponse): Promise<void> {
+    this.edits.push(response);
     this.replied = true;
     return Promise.resolve();
   }
@@ -46,12 +59,34 @@ function command(name: string, execute = vi.fn(() => Promise.resolve())): Comman
 function context(logger: MemoryLogger): CommandContext {
   return {
     logger,
+    databaseHealth: { check: () => Promise.resolve(true) },
     guildConfigurationService: {
       load: () => Promise.reject(new Error('not used')),
     },
     offerAcceptanceService: {
       acceptOffer: () => Promise.reject(new Error('not used')),
     },
+    guildSetupService: { setup: () => Promise.reject(new Error('not used')) },
+    clubManagementService: {
+      create: () => Promise.reject(new Error('not used')),
+      deactivate: () => Promise.reject(new Error('not used')),
+      listActive: () => Promise.reject(new Error('not used')),
+      autocomplete: () => Promise.reject(new Error('not used')),
+    },
+    staffManagementService: {
+      appoint: () => Promise.reject(new Error('not used')),
+      remove: () => Promise.reject(new Error('not used')),
+      list: () => Promise.reject(new Error('not used')),
+    },
+    rosterManagementService: {
+      add: () => Promise.reject(new Error('not used')),
+      remove: () => Promise.reject(new Error('not used')),
+      list: () => Promise.reject(new Error('not used')),
+    },
+    offerDeliveryService: {
+      createAndDeliver: () => Promise.reject(new Error('not used')),
+    },
+    offerButtonHandler: { handle: () => Promise.reject(new Error('not used')) },
   };
 }
 
@@ -149,7 +184,7 @@ describe('interaction handler', () => {
     expect(JSON.stringify(interaction.replies)).not.toContain('private database detail');
   });
 
-  it('follows up safely after the interaction was deferred', async () => {
+  it('edits safely after the interaction was deferred', async () => {
     const logger = new MemoryLogger();
     const registry = new CommandRegistry([
       command(
@@ -160,7 +195,8 @@ describe('interaction handler', () => {
     const interaction = new FakeInteraction('alpha', false, true);
     await handleInteractionCreate(interaction, registry, context(logger), logger);
     expect(interaction.replies).toEqual([]);
-    expect(interaction.followUps).toHaveLength(1);
-    expect(JSON.stringify(interaction.followUps)).not.toContain('private detail');
+    expect(interaction.edits).toHaveLength(1);
+    expect(interaction.followUps).toEqual([]);
+    expect(JSON.stringify(interaction.edits)).not.toContain('private detail');
   });
 });

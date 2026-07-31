@@ -34,3 +34,17 @@ export class SquadFullError extends DomainError {}
 export class UnauthorizedOfferAcceptanceError extends DomainError {}
 
 export class AlreadyMemberOfClubError extends DomainError {}
+
+export class AuthorizationError extends DomainError {}
+
+export class GuildNotConfiguredError extends DomainError {}
+
+export class ClubInactiveError extends DomainError {}
+
+export class DuplicateOfferError extends DomainError {}
+
+export class BotUserNotAllowedError extends DomainError {}
+
+export class OfferDeliveryError extends DomainError {}
+
+export class InvalidOfferMessageError extends DomainError {}

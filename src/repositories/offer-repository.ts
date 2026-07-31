@@ -62,6 +62,44 @@ export class OfferRepository {
     });
   }
 
+  public async getPendingForClubAndPlayer(
+    clubId: string,
+    playerUserId: string,
+  ): Promise<Offer | null> {
+    return this.db.offer.findFirst({
+      where: { clubId, playerUserId, status: 'PENDING' },
+    });
+  }
+
+  public async setMessageReference(
+    id: string,
+    discordChannelId: string,
+    discordMessageId: string,
+  ): Promise<Offer> {
+    const result = await this.db.offer.updateMany({
+      where: { id, status: 'PENDING' },
+      data: {
+        discordChannelId: discordSnowflakeSchema.parse(discordChannelId),
+        discordMessageId: discordSnowflakeSchema.parse(discordMessageId),
+      },
+    });
+    if (result.count !== 1) {
+      const existing = await this.getById(id);
+      if (existing === null) throw new EntityNotFoundError(`offer ${id} was not found`);
+      throw new InvalidStateTransitionError(`offer ${id} is not pending`);
+    }
+    const offer = await this.getById(id);
+    if (offer === null) throw new EntityNotFoundError(`offer ${id} was not found`);
+    return offer;
+  }
+
+  public async listExpiredPending(now = new Date()): Promise<Offer[]> {
+    return this.db.offer.findMany({
+      where: { status: 'PENDING', expiresAt: { lte: now } },
+      orderBy: [{ expiresAt: 'asc' }],
+    });
+  }
+
   public async transition(
     id: string,
     status: TerminalOfferStatus,

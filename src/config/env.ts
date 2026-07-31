@@ -8,14 +8,23 @@ const environmentSchema = z.object({
   DATABASE_URL: z.string().min(1).default('file:./dev.db'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   DISCORD_TOKEN: z.string().min(1).optional(),
+  DISCORD_APPLICATION_ID: z.string().regex(/^\d+$/).optional(),
+  DISCORD_DEVELOPMENT_GUILD_ID: z.string().regex(/^\d+$/).optional(),
 });
 
 const runtimeEnvironmentSchema = environmentSchema.extend({
   DISCORD_TOKEN: z.string().min(1),
 });
 
+const commandDeploymentEnvironmentSchema = environmentSchema.extend({
+  DISCORD_TOKEN: z.string().min(1),
+  DISCORD_APPLICATION_ID: z.string().regex(/^\d+$/),
+  DISCORD_DEVELOPMENT_GUILD_ID: z.string().regex(/^\d+$/),
+});
+
 export type AppEnvironment = z.infer<typeof environmentSchema>;
 export type RuntimeEnvironment = z.infer<typeof runtimeEnvironmentSchema>;
+export type CommandDeploymentEnvironment = z.infer<typeof commandDeploymentEnvironmentSchema>;
 
 function configurationError(error: z.ZodError): ConfigurationError {
   return new ConfigurationError(`invalid environment configuration: ${z.prettifyError(error)}`, {
@@ -36,6 +45,14 @@ export function parseRuntimeEnvironment(values: NodeJS.ProcessEnv): RuntimeEnvir
   if (!result.success) {
     throw configurationError(result.error);
   }
+  return result.data;
+}
+
+export function parseCommandDeploymentEnvironment(
+  values: NodeJS.ProcessEnv,
+): CommandDeploymentEnvironment {
+  const result = commandDeploymentEnvironmentSchema.safeParse(values);
+  if (!result.success) throw configurationError(result.error);
   return result.data;
 }
 

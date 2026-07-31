@@ -29,6 +29,12 @@ export class UserRepository {
     return this.db.leagueUser.findUnique({ where: { id } });
   }
 
+  public async getByDiscordUserId(discordUserId: string): Promise<LeagueUser | null> {
+    return this.db.leagueUser.findUnique({
+      where: { discordUserId: discordSnowflakeSchema.parse(discordUserId) },
+    });
+  }
+
   public async updateRobloxIdentity(id: string, input: RobloxIdentityInput): Promise<LeagueUser> {
     try {
       return await this.db.leagueUser.update({

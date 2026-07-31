@@ -6,14 +6,25 @@ import { commandDefinitions } from '../bot/commands.js';
 import { EventRegistry } from '../bot/event-registry.js';
 import { registerEvents } from '../bot/event-loader.js';
 import { createEventDefinitions } from '../bot/events.js';
+import { OfferButtonHandler } from '../bot/offer-button-handler.js';
+import { DiscordOfferMessageAdapter } from '../bot/offer-message-adapter.js';
 import type { CommandContext } from '../bot/types.js';
 import { parseRuntimeEnvironment, type RuntimeEnvironment } from '../config/env.js';
 import { createDatabaseClient } from '../database/client.js';
 import { ConsoleLogger, type Logger } from '../logging/logger.js';
 import { ClubRepository } from '../repositories/club-repository.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
+import { ClubManagementService } from '../services/club-management-service.js';
+import { DatabaseHealthService } from '../services/database-health-service.js';
 import { GuildConfigurationService } from '../services/guild-configuration-service.js';
+import { GuildSetupService } from '../services/guild-setup-service.js';
 import { OfferAcceptanceService } from '../services/offer-acceptance-service.js';
+import { OfferCreationService } from '../services/offer-creation-service.js';
+import { OfferDeclineService } from '../services/offer-decline-service.js';
+import { OfferDeliveryService } from '../services/offer-delivery-service.js';
+import { OfferResponseService } from '../services/offer-response-service.js';
+import { RosterManagementService } from '../services/roster-management-service.js';
+import { StaffManagementService } from '../services/staff-management-service.js';
 import { Application, type DatabaseLifecycle } from './application.js';
 
 export interface ApplicationBundle {
@@ -43,11 +54,32 @@ export function createApplication(
   const clubs = new ClubRepository(prisma);
   const guildConfigurationService = new GuildConfigurationService(guilds, clubs);
   const offerAcceptanceService = new OfferAcceptanceService(prisma);
+  const offerDeclineService = new OfferDeclineService(prisma);
+  const offerMessages = new DiscordOfferMessageAdapter(discord);
+  const offerDeliveryService = new OfferDeliveryService(
+    prisma,
+    offerMessages,
+    logger,
+    new OfferCreationService(prisma),
+  );
+  const offerButtonHandler = new OfferButtonHandler(
+    new OfferResponseService(prisma, offerAcceptanceService, offerDeclineService),
+    offerDeliveryService,
+    offerMessages,
+    logger,
+  );
   const commands = loadCommands(commandDefinitions);
   const context: CommandContext = {
     logger,
+    databaseHealth: new DatabaseHealthService(prisma),
     guildConfigurationService,
     offerAcceptanceService,
+    guildSetupService: new GuildSetupService(prisma),
+    clubManagementService: new ClubManagementService(prisma),
+    staffManagementService: new StaffManagementService(prisma),
+    rosterManagementService: new RosterManagementService(prisma),
+    offerDeliveryService,
+    offerButtonHandler,
   };
   const events = new EventRegistry(createEventDefinitions(commands, context, logger));
   const database: DatabaseLifecycle = {

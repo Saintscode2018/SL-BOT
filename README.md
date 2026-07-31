@@ -1,77 +1,135 @@
 # SL Bot
 
-SL Bot is being rebuilt as a Discord bot for the SL League. The current branch contains a TypeScript Discord application foundation and transactional league services alongside the original Python implementation. It is not yet a complete league bot.
+SL Bot is a TypeScript Discord administration bot for the SL League. The current stage provides the first visible development-guild MVP while retaining the legacy Python implementation and tracked `superleague.db` as untouched references.
 
-## Current status
+The database is authoritative. Discord roles are linked presentation and authorization objects; this stage never assigns or removes them automatically.
 
-This stage provides validated Discord startup, explicit command and event registration, database-backed guild configuration, and an atomic offer-acceptance service above the existing data foundation. The `/offer` command, views, embeds, buttons, announcements, and Discord role changes are intentionally not implemented.
+## Visible commands
 
-The root-level Python files and `superleague.db` are legacy references. The TypeScript application does not import them, and the legacy database is never migrated or used by tests.
+- `/health` reports bot and database availability ephemerally.
+- `/setup guild` creates or updates guild settings for the server owner or a Discord Administrator.
+- `/team create`, `/team list`, and `/team deactivate` manage database teams linked to existing Discord roles.
+- `/staff appoint`, `/staff remove`, and `/staff list` manage historical staff appointments.
+- `/roster add`, `/roster remove`, and `/roster list` manage active players and signing/release history.
+- `/offer create` posts a persistent offer with Accept and Decline buttons in the configured transfer channel.
 
-## Technology
-
-- Node.js 22.5 or newer within the Node.js 22 LTS line and modern ECMAScript modules
-- TypeScript with strict compiler checks
-- Prisma ORM with SQLite
-- Zod and dotenv for validated configuration
-- Vitest, ESLint, and Prettier
-- discord.js with the non-privileged `Guilds` intent
+Team inputs use database-backed autocomplete. Inactive teams are excluded and every selected internal club ID is revalidated during execution.
 
 ## Architecture
 
-The dependency direction is `bot -> services -> repositories -> Prisma`. Application construction creates one Prisma client, one Discord client, repositories, services, static registries, and typed command context. Repository constructors accept either a `PrismaClient` or a caller-provided Prisma transaction client. Neither domain, service, nor repository modules import discord.js.
+The dependency direction is `bot -> services -> repositories -> Prisma`. Application construction creates one Prisma client, one Discord client, explicit services, static command/event registries, and typed interaction context. Command handlers contain no raw Prisma queries. Services and repositories do not import discord.js.
 
-See [docs/architecture.md](docs/architecture.md) for entity relationships, transaction strategy, referential actions, and migration policy.
+Every multi-write guild, team, staff, roster, offer, decline, and recovery workflow uses a Prisma transaction with an audit record. Squad capacity is derived from active `PLAYER` memberships. Existing migration-level partial indexes, checks, and cross-guild foreign keys remain authoritative.
 
-## Project structure
+Offer buttons use deterministic IDs such as `offer:accept:<offer uuid>`. They contain no user, guild, or secret data and are dispatched globally through `interactionCreate`, so they continue working after a bot restart without in-memory collectors.
 
-```text
-src/app/             dependency construction and lifecycle
-src/bot/             discord client registries and interaction handling
-src/config/          environment validation
-src/database/        prisma client construction
-src/domain/          shared values errors and types
-src/logging/         typed level aware logging
-src/repositories/    injected database access
-src/services/        guild configuration and league workflows
-prisma/migrations/   reviewed versioned SQL
-scripts/             read only legacy inspection
-tests/               unit and integration tests
-```
-
-The Python files at the repository root are the unmodified legacy bot.
+See [docs/architecture.md](docs/architecture.md) for transaction and failure semantics.
 
 ## Environment
 
-Copy `.env.example` to `.env` and adjust local values. `DISCORD_TOKEN` is required when starting the application but remains optional for database tooling and tests.
+Use Node.js 22.5 or newer within the Node.js 22 line. Copy `.env.example` to `.env`:
 
 ```dotenv
 NODE_ENV=development
 DATABASE_URL=file:./dev.db
 LOG_LEVEL=info
-DISCORD_TOKEN=replace_with_a_real_token
+DISCORD_TOKEN=
+DISCORD_APPLICATION_ID=
+DISCORD_DEVELOPMENT_GUILD_ID=
 ```
 
-Discord snowflakes and Roblox user IDs are stored as strings because their integer range can exceed JavaScript's safe integer range. Runtime snowflake input accepts decimal digits only.
+`DISCORD_TOKEN` is required only for bot startup, command deployment, or other Discord network work. Database tests and maintenance do not require a token. Application and development guild IDs are required only for guild command deployment. No league roles, channels, teams, or legacy snowflakes belong in the environment; `/setup guild` stores them in SQLite.
 
-## Setup and commands
+## First development startup
 
-Use Node.js 22.5 or newer within the Node.js 22 LTS line. The minimum is required because the read-only legacy inspector uses `node:sqlite`, which was introduced in Node.js 22.5.
+1. Install dependencies and generate Prisma:
+
+   ```sh
+   npm install
+   npm run prisma:generate
+   ```
+
+2. Apply committed migrations to the development database:
+
+   ```sh
+   npm run prisma:migrate:deploy
+   ```
+
+3. Deploy the exact static registry to the development guild:
+
+   ```sh
+   npm run commands:deploy:guild
+   ```
+
+4. Start the bot:
+
+   ```sh
+   npm run dev
+   ```
+
+Command deployment is explicit and guild-scoped. Normal startup never deploys commands and the deployment script never starts the gateway client.
+
+## Discord Developer Portal setup
+
+Create or select an application, add its bot user, and reset/copy the bot token into `.env`. Copy the Application ID from General Information and the target server ID from Discord developer mode.
+
+The bot requires only the non-privileged `Guilds` gateway intent. Leave Server Members Intent and Message Content Intent disabled.
+
+In OAuth2 URL Generator select:
+
+- scopes: `bot` and `applications.commands`
+- bot permissions: View Channels, Send Messages, Embed Links, and Read Message History
+
+Invite the bot to the development guild. Manage Roles is not needed because this stage does not synchronize Discord roles.
+
+## Manual Discord walkthrough
+
+Run these commands in order after deployment and startup:
+
+1. `/health` — expect an ephemeral `SL Bot is online` response and `Database: connected`.
+2. `/setup guild` — select existing transfer/audit channels and league/staff roles. Re-running updates the same settings row.
+3. `/team create` — provide a name, short name, existing team role, and squad limit. The role is linked but not created or assigned.
+4. `/staff appoint` — select the team, a non-bot Discord user, and a staff type.
+5. `/roster add` — manually register an existing player, optionally with Roblox identity fields.
+6. `/team list`, `/staff list`, or `/roster list` — verify derived active state.
+7. `/offer create` — select a destination team and player. A neutral embed with Accept and Decline buttons appears in the configured transfer channel.
+8. Click Accept as the offered player — expect disabled/removed controls, an accepted status, a new active membership, a `SIGNING` or `TRANSFER`, and an audit event.
+9. Create another offer and click Decline — expect a declined status with no membership or league transaction.
+
+Another user clicking the buttons receives a safe rejection. Expired offers become `EXPIRED`. Pending offers can also be expired without starting Discord:
 
 ```sh
-npm install
-npm run prisma:generate
-npm run prisma:migrate:dev
-npm run dev
+npm run offers:expire
 ```
 
-The application entrypoint validates runtime configuration, connects Prisma, registers static events and command definitions, logs in one Discord client, and handles `SIGINT` and `SIGTERM`. Shutdown destroys Discord and disconnects Prisma exactly once. Startup failure cleans up partially opened resources without logging the token.
+The script reports the count and any message references that may need UI cleanup. It does not run a scheduler.
 
-There are currently no public command definitions. Command metadata is not deployed automatically. The registry and interaction handler are ready for the next UI stage.
+## Inspecting development data
 
-Quality commands:
+Stop the bot before copying or externally inspecting the SQLite file. Prisma Studio can inspect the configured development database:
 
 ```sh
+npx prisma studio
+```
+
+Do not edit production-like history manually. Verify `ClubMembership`, `LeagueTransaction`, `Offer`, and `AuditEvent` rows after the walkthrough. Tests always use fresh temporary file-backed databases with committed migrations.
+
+The tracked legacy database is read only to this rebuild. Inspect it without mutation using:
+
+```sh
+npm run legacy:inspect -- superleague.db
+```
+
+## Discord side-effect recovery
+
+Offer creation and its initial audit commit before Discord delivery. If message sending fails, the offer is transitioned to `VOIDED` and a delivery-failure audit is recorded. If a message is sent but its IDs cannot be saved, the adapter attempts to delete or disable the orphan and makes the offer unusable.
+
+Acceptance or decline commits in SQLite before the terminal Discord edit. If the edit fails, durable league state is retained and `offer.discord_message_update_failed` is recorded for repair. The bot never attempts a fake database rollback after a successful league transaction.
+
+## Quality commands
+
+```sh
+npm run format
 npm run format:check
 npm run lint
 npm run typecheck
@@ -79,46 +137,8 @@ npm run build
 npm test
 ```
 
-Production-style migration and startup:
+Prisma migrations are the schema authority; do not substitute `prisma db push`.
 
-```sh
-npm run prisma:migrate:deploy
-npm run build
-npm start
-```
+## Current limitations
 
-Prisma migrations are the schema authority. Tests apply real migrations to temporary file-backed databases; do not substitute `prisma db push`.
-
-## Data model
-
-- `Guild` has one optional `GuildSettings` record and owns clubs, memberships, offers, transactions, and audit events.
-- `Club` is deactivated rather than deleted. Its name, short name, and Discord role are unique per guild.
-- `LeagueUser` uses a Discord user ID as its durable external identity and can optionally store Roblox identity fields.
-- `ClubMembership` preserves player and staff appointment history.
-- `Offer` records a bounded pending offer and immutable terminal outcome.
-- `LeagueTransaction` preserves league transaction history and optional reversal metadata.
-- `AuditEvent` is append-only at repository level and stores JSON snapshots.
-
-Squad size is not stored. It is always counted from active `PLAYER` memberships, preventing mutable counters from drifting away from roster truth.
-
-SQLite partial unique indexes enforce one active player membership per guild, one holder of each restricted staff role per club, and one pending offer per club/player pair. Composite foreign keys require every membership, offer, and transaction club to belong to the row's guild. Check constraints enforce positive limits, valid offer expiry, and membership and offer status/timestamp consistency. These rules are kept in migration SQL because Prisma's schema language cannot express every conditional SQLite constraint.
-
-## Services
-
-`GuildConfigurationService` loads a configured guild, its settings, and active clubs by Discord guild snowflake. It never creates missing configuration or imports legacy IDs.
-
-`OfferAcceptanceService` validates the accepting Discord identity, pending and expiry state, active destination club, derived squad capacity, and current player membership. Within one Prisma transaction it conditionally accepts the offer, ends a previous membership for transfers, creates the destination membership, records a signing or transfer, and appends an `offer.accepted` audit event. Expired offers are atomically marked `EXPIRED`. Concurrent acceptance allows only one completion.
-
-## Legacy data
-
-`superleague.db` is a tracked legacy database and must remain untouched. Inspect a legacy database read-only with:
-
-```sh
-npm run legacy:inspect -- superleague.db
-```
-
-The script lists tables, columns, and row counts without changing the file. The old database stores snowflakes as SQLite integers, stores a mutable roster count, and has a schema that differs from the new model. Importing it requires a separate reviewed migration task. No secrets or legacy identifiers are copied into `.env`.
-
-## Next stage
-
-The expected next stage is the `/offer` command and its Discord UI, followed by carefully coordinated role changes and announcements. Slash-command deployment, buttons, embeds, scheduling, applications, results, pickups, and production deployment remain future work.
+This is an administration MVP, not the complete league bot. It does not mutate Discord roles, announce transfers publicly, synchronize rosters from roles, import CSV files, schedule recurring expiration, manage fixtures/results/pickups/applications/lineups, provide monetization, or expose a web dashboard. Global command deployment is intentionally not included.

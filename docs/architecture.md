@@ -1,64 +1,92 @@
 # Architecture
 
-## Boundaries
+## Boundaries and construction
 
-Discord adapters translate interactions into plain service inputs. Services own workflows and transactions. Repositories own persistence operations. The domain, service, and repository layers use internal UUIDs, string snowflakes, domain values, dates, and plain typed objects; they do not import discord.js.
+Discord adapters translate interactions into plain service inputs. Services own authorization, workflows, and transaction boundaries. Repositories own scoped persistence operations. Prisma is constructed once and injected; there is no global service container, reflection, decorator loading, or runtime filesystem scan.
 
 ```text
-discord adapters -> services -> repositories -> prisma -> sqlite
-                         domain types and errors
+discord commands events and adapters
+                |
+                v
+authorization and workflow services
+                |
+                v
+        injected repositories
+                |
+                v
+         prisma and sqlite
 ```
 
-## Application lifecycle
+Repositories and services store only strings, UUIDs, dates, domain values, and plain objects. They do not import discord.js. Discord snowflakes remain strings throughout the system.
 
-`createApplication` validates startup configuration and explicitly constructs the logger, Prisma client, repositories, services, Discord client, command registry, event registry, and command context. Construction does not connect to Discord. `Application.start` connects Prisma, registers definitions, and then logs in. A failed startup destroys Discord and disconnects Prisma while preserving the startup error as the cause of a typed error.
+## Lifecycle and registration
 
-`Application.stop` is idempotent, waits for an in-progress startup attempt, destroys Discord, and disconnects Prisma. The entrypoint owns signal registration and shares one shutdown promise for `SIGINT`, `SIGTERM`, and startup failure. The lifecycle object never terminates the process itself.
+`createApplication` validates runtime configuration and constructs one logger, Prisma client, Discord client, message adapter, services, static command registry, and static event registry. `Application.start` connects Prisma, registers the interaction event, and logs in. Partial startup failure destroys Discord and disconnects Prisma. `Application.stop` is idempotent and process signal handling shares one shutdown promise.
 
-## Discord registration
+The client requests only `GatewayIntentBits.Guilds`. `interactionCreate` dispatches chat-input commands, autocomplete, and offer buttons separately. Known errors pass through one safe error mapper; unexpected errors are logged internally and become a generic ephemeral response.
 
-The client requests only the `Guilds` intent. Commands are explicit typed definitions in a static registry; duplicate names fail during construction and command JSON is available for future deployment. Events are also explicit typed definitions. No runtime filesystem scan, decorator, global dependency container, or automatic Discord command deployment is used.
+Command deployment is an explicit REST operation through `scripts/deploy-commands.ts`. It sends the registry JSON to `Routes.applicationGuildCommands` with validated application and development-guild IDs. It neither starts the gateway client nor runs during application startup.
 
-The interaction event ignores non-chat-input interactions, resolves commands by name, logs unknown commands and internal failures, and returns only a generic ephemeral response using `reply` or `followUp` according to interaction state. No league command is registered in this stage.
+## Authorization
 
-## Relationships and history
+Commands extract a plain authorization input containing guild ID, user ID, owner ID, member role IDs, Administrator permission, and optional club context. `AuthorizationService` applies the policy centrally:
 
-A guild owns settings, clubs, memberships, offers, transactions, and audit events. Guild settings use a unique foreign key for a true one-to-one relationship. Memberships connect a user to a club and guild while retaining creation and ending actors. Transactions retain their subject, performer, clubs, offer reference, and reversal metadata. Club deactivation only changes `active`; it never deletes historical rows.
+- setup requires the guild owner or Discord Administrator
+- league administration accepts owner, Administrator, or the configured league-admin role
+- team-scoped roster and offer actions additionally accept an active `TEAM_MANAGER`, `ASSISTANT_MANAGER`, or `PLAYER_MANAGER` membership for that club
 
-Historical foreign keys generally use restrictive deletion. Actor-like optional references use `SET NULL`, preserving the historical event when an optional actor is removed. Guild settings cascade with their guild because they are configuration rather than league history. Repository APIs intentionally expose no deletion operations in this stage.
+Role IDs come from `GuildSettings`; staff authority comes from active database memberships. Discord default command permissions are not the sole authorization mechanism. Every club and authorization value is revalidated during execution.
 
-## Domain values and SQLite
+## Administration transactions
 
-SQLite has no native enum type through the selected Prisma connector. Canonical values are declared once in `src/domain/enums.ts`, used to derive TypeScript unions and Zod schemas, and mirrored by migration-level `CHECK` constraints. This gives runtime, compile-time, and database validation without scattering manually maintained copies through repositories.
+`GuildSetupService` upserts one guild/settings pair and appends `guild.configured`. `ClubManagementService` creates or deactivates clubs without deleting history. `StaffManagementService` creates and ends staff memberships while database partial indexes enforce one active holder per staff type. Bot users are rejected.
 
-Discord snowflakes and Roblox user IDs are strings from input through storage. No layer converts them to JavaScript numbers.
+`RosterManagementService` performs player registration and removal atomically. Registration checks the guild-wide active player membership and derived destination capacity, then creates the membership, `SIGNING`, and audit. Removal ends the exact team membership and creates a `RELEASE` plus audit. Audit failure rolls back the other writes.
 
-## Conditional constraints
+Squad counts always query active `PLAYER` memberships. No mutable roster counter exists. Cross-guild composite foreign keys and existing partial unique indexes remain the final concurrency guard.
 
-SQLite partial unique indexes enforce membership cardinality and pending-offer uniqueness. Prisma models cannot fully describe conditional indexes, so the reviewed migration SQL is authoritative. Tests apply the migration and query `sqlite_master` to verify those indexes exist.
+## Teams and autocomplete
 
-Clubs expose a composite unique key over their internal ID and guild ID. Membership, offer, source-club, and destination-club relations reference that pair, preventing a valid club from another guild from being attached to the row. Migration-level checks also keep membership and offer timestamps consistent with their status.
+Teams link to existing Discord role IDs, but roles do not define roster truth. Team name, normalized uppercase short name, and role ID are unique per guild. Deactivation changes only `active`.
 
-Squad size is computed by counting active `PLAYER` memberships. The schema contains no mutable squad-size column.
+Autocomplete loads active clubs for the interaction guild, filters case-insensitively by name or short name, caps results at Discord's 25-choice limit, and returns internal club UUIDs. Execution performs a new guild-scoped active-club lookup and never trusts an autocomplete value by itself.
 
-## Repository injection and transactions
+## Offers and persistent buttons
 
-Each repository accepts a `PrismaClient` or `Prisma.TransactionClient`. The offer-acceptance service creates repositories over the transaction client passed to `$transaction`; offer transition, membership changes, league transaction, and audit event therefore share one rollback boundary. Repositories do not hide a global client.
+`OfferCreationService` authorizes the issuer, validates settings and destination state, creates or retrieves both users, checks current membership, derived capacity, and pending-offer uniqueness, then creates the offer and `offer.created` audit in one transaction. The configured timeout supplies expiration unless an internal override is provided.
 
-State transitions use conditional writes. Offers transition only when the current status is `PENDING`; reversals update only unreversed transactions. A zero-row update is resolved into a typed not-found or invalid-state error. This prevents two concurrent callers from both claiming success.
+`OfferDeliveryService` calls the pure creation workflow before using an injected message adapter. The Discord adapter posts a neutral embed to the configured transfer channel and returns channel/message IDs for persistence. Services never receive a Discord client or interaction.
 
-## Guild configuration and offer acceptance
+Button IDs are deterministic and validated:
 
-Guild configuration is loaded by Discord guild snowflake from `Guild`, `GuildSettings`, and active `Club` records. Missing records produce typed errors and are never synthesized from legacy constants.
+```text
+offer:accept:<offer uuid>
+offer:decline:<offer uuid>
+```
 
-Offer acceptance verifies the offered player identity, expiry, club activity, derived active-player count, and existing membership. A free agent creates a `SIGNING`; a player from another club ends the previous membership and creates a `TRANSFER`. The service rejects full squads, inactive clubs, terminal offers, wrong users, and players already active at the destination. It records an immutable `offer.accepted` audit event with player, source, destination, transaction, and membership state. Expiration is committed as `EXPIRED` without creating membership or transaction records.
+They fit Discord's custom-ID limit and contain no player, guild, token, or serialized state. Global dispatch reconstructs all behavior from the offer ID and database, so buttons survive restarts.
 
-## Migration policy
+Acceptance uses the existing atomic service: it conditionally changes `PENDING` to `ACCEPTED`, ends a source membership for transfers, creates the destination membership, creates a signing/transfer, and appends audit state. The accepting player is the audit actor; the offer creator is the roster transaction initiator and performer.
 
-Every schema change receives a versioned Prisma migration. Custom checks and partial indexes belong in migration SQL. Tests and deployments use `prisma migrate deploy`; `prisma db push` is not part of the workflow.
+`OfferDeclineService` conditionally changes `PENDING` to `DECLINED` and audits it without a membership or transaction. Accept and decline validate that the clicking Discord identity matches the offered player. Expired clicks atomically mark `EXPIRED`. Concurrent terminal responses permit only one success.
 
-The tracked `superleague.db` and root Python files are legacy-only. The inspection script opens a supplied database in read-only mode. Legacy import will be a separate reviewed project because identity mapping and incompatible roster/transaction semantics require explicit decisions.
+## Discord failure semantics
 
-## Future command flow
+Discord messaging cannot participate in a SQLite transaction, so side effects have explicit recovery behavior:
 
-The next stage can add `/offer` metadata and interaction adapters above the existing services. Raw Prisma calls must remain outside command handlers. Discord roles and announcements should happen only after durable state transitions and require a documented recovery strategy for external side effects.
+- send failure transitions the new offer to `VOIDED` and records `offer.delivery_failed`
+- message-reference persistence failure attempts orphan cleanup and voids the offer
+- acceptance or decline commits before terminal message editing
+- terminal edit failure retains durable league state and records `offer.discord_message_update_failed`
+
+The bot does not pretend to roll back committed league history because a Discord edit failed. A later repair tool can consume the recovery audits. The current `offers:expire` maintenance script handles database expiration and reports stored message references; no background scheduler exists yet.
+
+## Database guarantees and migration policy
+
+SQLite migration SQL owns conditional checks Prisma cannot express. Partial unique indexes enforce one active player per guild, one active holder of each staff type per club, and one pending offer per club/player. Composite foreign keys prevent memberships, offers, and transactions from referencing a club in another guild. Status/timestamp checks preserve membership and offer state consistency.
+
+All tests use committed migrations against fresh file-backed SQLite databases. Schema evolution requires versioned migrations; `prisma db push` is not part of the workflow. The tracked `superleague.db` and root Python files remain legacy-only and are not imported or modified.
+
+## Deliberate stage boundaries
+
+The current bot does not assign or remove Discord roles, publish transfer announcements, synchronize role membership, bulk import, manage competitions, or deploy commands globally. Those external side effects require their own reviewed stage and recovery model.

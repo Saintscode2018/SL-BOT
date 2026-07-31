@@ -1,4 +1,4 @@
-import type { SlashCommandBuilder } from 'discord.js';
+import type { RESTPostAPIChatInputApplicationCommandsJSONBody } from 'discord.js';
 
 import { ConflictError } from '../domain/errors.js';
 import type { CommandDefinition } from './types.js';
@@ -24,7 +24,7 @@ export class CommandRegistry {
     return this.commands.get(name) ?? null;
   }
 
-  public toJSON(): Array<ReturnType<SlashCommandBuilder['toJSON']>> {
+  public toJSON(): RESTPostAPIChatInputApplicationCommandsJSONBody[] {
     return [...this.commands.values()].map(({ data }) => data.toJSON());
   }
 

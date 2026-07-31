@@ -1,4 +1,4 @@
-import type { ClubMembership } from '@prisma/client';
+import type { ClubMembership, LeagueUser } from '@prisma/client';
 
 import { EntityNotFoundError, InvalidStateTransitionError } from '../domain/errors.js';
 import type { MembershipType } from '../domain/enums.js';
@@ -55,9 +55,56 @@ export class MembershipRepository {
     });
   }
 
+  public async getActiveStaffAppointment(
+    clubId: string,
+    membershipType: Exclude<MembershipType, 'PLAYER'>,
+  ): Promise<ClubMembership | null> {
+    return this.db.clubMembership.findFirst({
+      where: { clubId, membershipType, status: 'ACTIVE' },
+    });
+  }
+
+  public async getActiveStaffMembershipForUser(
+    clubId: string,
+    userId: string,
+  ): Promise<ClubMembership | null> {
+    return this.db.clubMembership.findFirst({
+      where: {
+        clubId,
+        userId,
+        status: 'ACTIVE',
+        membershipType: { in: ['TEAM_MANAGER', 'ASSISTANT_MANAGER', 'PLAYER_MANAGER'] },
+      },
+    });
+  }
+
+  public async listActiveStaffWithUsers(
+    clubId: string,
+  ): Promise<Array<ClubMembership & { user: LeagueUser }>> {
+    return this.db.clubMembership.findMany({
+      where: {
+        clubId,
+        status: 'ACTIVE',
+        membershipType: { in: ['TEAM_MANAGER', 'ASSISTANT_MANAGER', 'PLAYER_MANAGER'] },
+      },
+      include: { user: true },
+      orderBy: [{ membershipType: 'asc' }],
+    });
+  }
+
   public async listActivePlayers(clubId: string): Promise<ClubMembership[]> {
     return this.db.clubMembership.findMany({
       where: { clubId, membershipType: 'PLAYER', status: 'ACTIVE' },
+      orderBy: [{ joinedAt: 'asc' }],
+    });
+  }
+
+  public async listActivePlayersWithUsers(
+    clubId: string,
+  ): Promise<Array<ClubMembership & { user: LeagueUser }>> {
+    return this.db.clubMembership.findMany({
+      where: { clubId, membershipType: 'PLAYER', status: 'ACTIVE' },
+      include: { user: true },
       orderBy: [{ joinedAt: 'asc' }],
     });
   }

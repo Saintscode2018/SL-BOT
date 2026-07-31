@@ -60,6 +60,21 @@ export class GuildRepository {
     }
   }
 
+  public async upsertByDiscordGuildId(input: CreateGuildInput): Promise<Guild> {
+    try {
+      return await this.db.guild.upsert({
+        where: { discordGuildId: discordSnowflakeSchema.parse(input.discordGuildId) },
+        create: {
+          discordGuildId: input.discordGuildId,
+          name: input.name,
+        },
+        update: { name: input.name },
+      });
+    } catch (error: unknown) {
+      return translateDatabaseError(error, 'save guild');
+    }
+  }
+
   public async getById(id: string): Promise<Guild | null> {
     return this.db.guild.findUnique({ where: { id } });
   }
