@@ -3,8 +3,13 @@ Super League S5 Bot Configuration
 """
 
 
-# Discord Bot Token
+# Bot Token
 TOKEN = os.getenv("DISCORD_TOKEN")
+
+
+
+# Server
+SERVER_ID = 1519038150612226148
 
 
 
@@ -14,21 +19,24 @@ DATABASE_NAME = "league.db"
 
 
 # League Branding
+
 LEAGUE_NAME = "Super League S5"
 
-LEAGUE_LOGO = "YOUR_SUPER_LEAGUE_LOGO_URL_HERE"
-
-BOT_NAME = "🏆 Super League S5 Transfer Market"
+LEAGUE_LOGO = "YOUR_LEAGUE_LOGO_URL_HERE" # Replace with your league's logo URL
 
 FOOTER_TEXT = "Super League S5 • Official Transfer System"
 
-BRAND_TAGLINE = "Official Super League S5 Transfer System"
+BOT_NAME = "Super League S5 Transfer Bot"
+
+
 
 
 
 # Channels
 
 TRANSFER_CHANNEL_ID = 1519210891596398745
+
+
 
 
 
@@ -41,7 +49,6 @@ ASSISTANT_TEAM_MANAGER_ROLE = 1520899851393437797
 PLAYER_MANAGER_ROLE = 1521309945851547780
 
 
-
 ALLOWED_ROLES = [
 
     TEAM_MANAGER_ROLE,
@@ -52,8 +59,10 @@ ALLOWED_ROLES = [
 
 ]
 
-
 MANAGER_ROLES = ALLOWED_ROLES
+
+
+
 
 
 
@@ -69,11 +78,15 @@ COLOR_WARNING = 0xF1C40F
 
 
 
+
+
 # Transfer System
 
 CONTRACT_TYPE = "Professional First Team"
 
 OFFER_TIMEOUT = 86400
+
+
 
 
 

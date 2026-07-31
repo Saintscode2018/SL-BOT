@@ -11,6 +11,7 @@ import embeds
 
 intents = discord.Intents.default()
 intents.members = True
+intents.message_content = True
 
 
 bot = commands.Bot(
@@ -20,15 +21,10 @@ bot = commands.Bot(
 
 
 
-
-
 def disable_view(view):
 
     for item in view.children:
-
-        if isinstance(item, discord.ui.Button):
-
-            item.disabled = True
+        item.disabled = True
 
 
 
@@ -47,11 +43,6 @@ def has_manager_role(member):
 
 def get_club(member):
 
-    """
-    Detect club using manager Discord role.
-    Club role ID = database role_id.
-    """
-
     for role in member.roles:
 
         club = database.get_club_by_role(
@@ -59,11 +50,58 @@ def get_club(member):
         )
 
         if club:
-
             return club
 
-
     return None
+
+
+
+
+
+async def give_club_role(player_id, role_id):
+
+    guild = bot.get_guild(
+        config.SERVER_ID
+    )
+
+
+    if guild is None:
+        print("Server not found")
+        return False
+
+
+
+    member = guild.get_member(
+        player_id
+    )
+
+
+    role = guild.get_role(
+        role_id
+    )
+
+
+    if member is None:
+
+        print("Player not found")
+        return False
+
+
+
+    if role is None:
+
+        print("Club role not found")
+        return False
+
+
+
+    await member.add_roles(
+        role,
+        reason="Signed transfer"
+    )
+
+
+    return True
 
 
 
@@ -73,24 +111,20 @@ def get_club(member):
 
 class OfferView(discord.ui.View):
 
-
     def __init__(
         self,
-        player,
-        manager,
-        club
+        player_id,
+        manager_id,
+        club_id
     ):
 
         super().__init__(
-            timeout=config.OFFER_TIMEOUT
+            timeout=None
         )
 
-        self.player = player
-        self.manager = manager
-        self.club = club
-
-
-
+        self.player_id = player_id
+        self.manager_id = manager_id
+        self.club_id = club_id
 
 
 
@@ -100,10 +134,10 @@ class OfferView(discord.ui.View):
         interaction
     ):
 
-        if interaction.user.id != self.player.id:
+        if interaction.user.id != self.player_id:
 
             await interaction.response.send_message(
-                "This contract is not for you.",
+                "This offer is not for you.",
                 ephemeral=True
             )
 
@@ -117,10 +151,9 @@ class OfferView(discord.ui.View):
 
 
 
-
     @discord.ui.button(
-        label="Sign Contract",
-        emoji="✍️",
+        label="Accept Contract",
+        emoji="✅",
         style=discord.ButtonStyle.success
     )
     async def accept(
@@ -129,24 +162,65 @@ class OfferView(discord.ui.View):
         button
     ):
 
+        print("ACCEPT CLICKED")
 
-        await interaction.response.defer()
+
+        await interaction.response.defer(
+            ephemeral=True
+        )
+
+
+
+        player = interaction.user
+
+
+
+        club = database.get_club_by_role(
+            self.club_id
+        )
+
+
+        if club is None:
+
+            await interaction.followup.send(
+                "Club not found in database.",
+                ephemeral=True
+            )
+
+            return
+
+
+
+
+
+        manager = bot.get_user(
+            self.manager_id
+        )
+
+
+        if manager is None:
+
+            manager = await bot.fetch_user(
+                self.manager_id
+            )
+
+
 
 
 
         database.add_transfer(
 
-            player_id=self.player.id,
+            player_id=player.id,
 
-            player_name=str(self.player),
+            player_name=str(player),
 
             old_club="Free Agent",
 
-            manager=str(self.manager),
+            manager=str(manager),
 
-            new_club=self.club[1],
+            new_club=club[1],
 
-            club_id=self.club[0],
+            club_id=club[0],
 
             status="SIGNED"
 
@@ -154,47 +228,37 @@ class OfferView(discord.ui.View):
 
 
 
+
+
         if config.ENABLE_ROSTER_TRACKING:
 
             database.increase_roster(
-                self.club[0]
+                club[0]
             )
 
 
 
-        updated_club = (
-            database.get_club_by_role(
-                self.club[0]
+
+
+        role_added = await give_club_role(
+
+            player.id,
+
+            club[0]
+
+        )
+
+
+
+        if not role_added:
+
+            print(
+                "Role could not be added"
             )
-            or self.club
-        )
 
 
 
-        print(
-            "TRANSFER CLUB:",
-            updated_club
-        )
 
-
-        print(
-            "CLUB LOGO:",
-            updated_club[2]
-        )
-
-
-
-        announcement = embeds.transfer_announcement_embed(
-
-            player=self.player,
-
-            manager=self.manager,
-
-            club=updated_club,
-
-            squad_size=updated_club[4]
-
-        )
 
 
 
@@ -203,30 +267,29 @@ class OfferView(discord.ui.View):
         )
 
 
+        if channel:
 
-        if channel and isinstance(
-            channel,
-            discord.TextChannel
-        ):
+
+            embed = embeds.transfer_announcement_embed(
+
+                player=player,
+
+                manager=manager,
+
+                club=club,
+
+                squad_size=club[4]
+
+            )
+
 
             await channel.send(
-                embed=announcement
+                embed=embed
             )
 
 
 
-        try:
 
-            await self.player.send(
-                embed=embeds.contract_signed_dm_embed(
-                    updated_club
-                )
-            )
-
-
-        except discord.Forbidden:
-
-            pass
 
 
 
@@ -235,19 +298,20 @@ class OfferView(discord.ui.View):
 
 
         await interaction.message.edit(
-            embed=embeds.transfer_completed_dm_embed(
-                player=self.player,
-                club=updated_club
-            ),
             view=self
         )
 
 
 
+
         await interaction.followup.send(
-            "Contract signed successfully.",
+
+            "You signed the contract!",
+
             ephemeral=True
+
         )
+
 
 
 
@@ -257,25 +321,29 @@ class OfferView(discord.ui.View):
 
 
     @discord.ui.button(
-        label="Decline Offer",
+        label="Decline Contract",
         emoji="❌",
         style=discord.ButtonStyle.danger
     )
-    async def reject(
+    async def decline(
         self,
         interaction,
         button
     ):
 
 
-        disable_view(self)
+        club = database.get_club_by_role(
+            self.club_id
+        )
 
+
+        disable_view(self)
 
 
         await interaction.response.edit_message(
 
             embed=embeds.offer_declined_dm_embed(
-                self.club
+                club
             ),
 
             view=self
@@ -303,14 +371,12 @@ async def on_ready():
     synced = await bot.tree.sync()
 
 
-
     print(
-        f"{bot.user} connected"
+        f"Logged in as {bot.user}"
     )
 
-
     print(
-        f"{len(synced)} commands synced"
+        f"Synced {len(synced)} commands"
     )
 
 
@@ -323,16 +389,18 @@ async def on_ready():
 
 @bot.tree.command(
     name="offer",
-    description="Send an official transfer offer"
+    description="Send a transfer offer"
 )
 @app_commands.describe(
-    player="Player receiving the offer"
+    player="Player to offer"
 )
 async def offer(
-    interaction: discord.Interaction,
-    player: discord.Member
-):
 
+    interaction: discord.Interaction,
+
+    player: discord.Member
+
+):
 
 
     if not has_manager_role(
@@ -344,9 +412,9 @@ async def offer(
 
             embed=embeds.error_embed(
 
-                "Permission Denied",
+                "No Permission",
 
-                "You do not have permission."
+                "You are not a manager."
 
             ),
 
@@ -355,6 +423,7 @@ async def offer(
         )
 
         return
+
 
 
 
@@ -373,9 +442,9 @@ async def offer(
 
             embed=embeds.error_embed(
 
-                "Club Not Found",
+                "Club Not Connected",
 
-                "Your role is not linked to a club."
+                "Your manager role is not linked to a club."
 
             ),
 
@@ -390,11 +459,18 @@ async def offer(
 
 
 
-    expires_at = (
+
+    expires = (
+
         int(time.time())
+
         +
+
         config.OFFER_TIMEOUT
+
     )
+
+
 
 
 
@@ -406,9 +482,24 @@ async def offer(
 
         manager=interaction.user,
 
-        expires_at=expires_at
+        expires_at=expires
 
     )
+
+
+
+
+    view = OfferView(
+
+        player.id,
+
+        interaction.user.id,
+
+        club[0]
+
+    )
+
+
 
 
 
@@ -419,15 +510,7 @@ async def offer(
 
             embed=offer_embed,
 
-            view=OfferView(
-
-                player,
-
-                interaction.user,
-
-                club
-
-            )
+            view=view
 
         )
 
@@ -438,15 +521,15 @@ async def offer(
 
         await interaction.response.send_message(
 
-            embed=embeds.offer_failed_embed(
-                player
-            ),
+            "I cannot DM this player.",
 
             ephemeral=True
 
         )
 
         return
+
+
 
 
 
@@ -460,15 +543,13 @@ async def offer(
 
             player=player,
 
-            expires_at=expires_at
+            expires_at=expires
 
         ),
 
         ephemeral=True
 
     )
-
-
 
 
 
