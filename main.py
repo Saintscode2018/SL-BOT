@@ -1,208 +1,20 @@
+
+
 import discord
 from discord import app_commands
 from discord.ext import commands
 
+import os
 import database
+import config
 
 
 database.setup()
 database.load_default_clubs()
 
 
-TOKEN = "YOUR_NEW_TOKEN"
-
-
-TRANSFER_CHANNEL_ID = 1519210891596398745
-
-
-TEAM_MANAGER_ROLE = 1520900719799042088
-ASSISTANT_TEAM_MANAGER_ROLE = 1520899851393437797
-PLAYER_MANAGER_ROLE = 1521309945851547780
-
-
-ALLOWED_ROLES = [
-    TEAM_MANAGER_ROLE,
-    ASSISTANT_TEAM_MANAGER_ROLE,
-    PLAYER_MANAGER_ROLE
-]
-
-
-
-def get_user_club(member):
-
-    for role in member.roles:
-
-        club = database.get_club_by_role(role.id)
-
-        if club:
-            return club
-
-    return None
-
-
-
-
-class OfferView(discord.ui.View):
-
-    def __init__(self, player_id, club):
-
-        super().__init__(timeout=None)
-
-        self.player_id = player_id
-        self.club = club
-
-
-
-    @discord.ui.button(
-        label="Accept",
-        emoji="✅",
-        style=discord.ButtonStyle.success
-    )
-    async def accept(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-
-
-        if interaction.user.id != self.player_id:
-
-            await interaction.response.send_message(
-                "❌ This offer is not for you.",
-                ephemeral=True
-            )
-
-            return
-
-
-
-        await interaction.response.defer()
-
-
-
-        # Remove buttons
-
-        await interaction.message.edit(
-            view=None
-        )
-
-
-
-        channel = bot.get_channel(
-            TRANSFER_CHANNEL_ID
-        )
-
-
-
-        if channel:
-
-
-            announcement = discord.Embed(
-
-                title="🏆 SUPER LEAGUE S5",
-
-                description=(
-
-                    "## ✅ TRANSFER COMPLETED\n\n"
-
-                    f"👤 **Player**\n"
-                    f"{interaction.user.mention}\n\n"
-
-                    f"🏟 **New Club**\n"
-                    f"**{self.club[1]}**\n\n"
-
-                    f"🌍 **Country**\n"
-                    f"{self.club[5]}\n\n"
-
-                    f"🏟 **Stadium**\n"
-                    f"{self.club[6]}\n\n"
-
-                    f"📋 **Roster**\n"
-                    f"{self.club[8]}/{self.club[9]}"
-
-                ),
-
-                color=self.club[4]
-
-            )
-
-
-            announcement.set_thumbnail(
-                url=self.club[2]
-            )
-
-
-            announcement.set_image(
-                url=self.club[3]
-            )
-
-
-            announcement.set_footer(
-                text="Super League Transfer Market"
-            )
-
-
-            announcement.timestamp = discord.utils.utcnow()
-
-
-
-            await channel.send(
-                embed=announcement
-            )
-
-
-
-        await interaction.followup.send(
-            "✅ Offer accepted!",
-            ephemeral=True
-        )
-
-
-
-
-
-    @discord.ui.button(
-        label="Reject",
-        emoji="❌",
-        style=discord.ButtonStyle.danger
-    )
-    async def reject(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-
-
-        if interaction.user.id != self.player_id:
-
-
-            await interaction.response.send_message(
-                "❌ This offer is not for you.",
-                ephemeral=True
-            )
-
-            return
-
-
-
-        await interaction.message.edit(
-            view=None
-        )
-
-
-
-        await interaction.response.send_message(
-            "❌ Offer rejected.",
-            ephemeral=True
-        )
-
-
-
-
-
 
 intents = discord.Intents.default()
-
 intents.members = True
 
 
@@ -215,18 +27,385 @@ bot = commands.Bot(
 
 
 
+
+def get_club(member):
+
+    for role in member.roles:
+
+        club = database.get_club_by_role(
+            role.id
+        )
+
+        if club:
+            return club
+
+    return None
+
+
+
+
+
+def roster_bar(current, maximum):
+
+    filled = int(
+        (current / maximum) * 10
+    )
+
+    return (
+        "🟩" * filled +
+        "⬜" * (10-filled)
+        +
+        f" `{current}/{maximum}`"
+    )
+
+
+
+
+
+def create_logo(path):
+
+    if os.path.exists(path):
+
+        return discord.File(
+            path,
+            filename="logo.png"
+        )
+
+    return None
+
+
+
+
+
+def create_transfer_embed(
+    club,
+    player,
+    title="⚽ Transfer Offer"
+):
+
+    embed = discord.Embed(
+
+        title=title,
+
+        description=(
+
+            f"## {club[1]}\n\n"
+
+            f"👤 Player\n"
+            f"{player.mention}\n\n"
+
+            f"🌍 Country\n"
+            f"{club[4]}\n\n"
+
+            f"🏟 Stadium\n"
+            f"{club[5]}\n\n"
+
+            f"📊 Squad\n"
+            f"{roster_bar(club[7], club[8])}"
+
+        ),
+
+        color=club[3]
+
+    )
+
+
+    embed.set_footer(
+        text=config.FOOTER_TEXT
+    )
+
+
+    embed.timestamp = (
+        discord.utils.utcnow()
+    )
+
+
+    return embed
+
+
+
+
+
+
+
+class OfferView(discord.ui.View):
+
+
+    def __init__(
+        self,
+        player_id,
+        guild_id,
+        club,
+        manager_id
+    ):
+
+        super().__init__(
+            timeout=86400
+        )
+
+
+        self.player_id = player_id
+        self.guild_id = guild_id
+        self.club = club
+        self.manager_id = manager_id
+
+
+
+
+
+    async def send_transfer_news(
+        self,
+        player
+    ):
+
+
+        channel = await bot.fetch_channel(
+            config.TRANSFER_CHANNEL_ID
+        )
+
+
+        database.increase_roster(
+            self.club[0]
+        )
+
+
+        database.add_transfer(
+
+            player.id,
+
+            str(player),
+
+            "Free Agent",
+
+            self.club[1],
+
+            self.manager_id
+
+        )
+
+
+
+        updated = database.get_club_by_role(
+            self.club[0]
+        )
+
+
+
+        news = discord.Embed(
+
+            title="🚨 BREAKING TRANSFER NEWS",
+
+            description=(
+
+                "## 🏆 Super League S5\n\n"
+
+                f"👤 **Player**\n"
+                f"{player.mention}\n\n"
+
+                f"➡️ **Joined**\n"
+                f"{self.club[1]}\n\n"
+
+                f"📊 **New Squad Size**\n"
+                f"{roster_bar(updated[7], updated[8])}"
+
+            ),
+
+            color=self.club[3]
+
+        )
+
+
+
+        news.set_footer(
+            text="Official Transfer Market"
+        )
+
+
+
+        logo = create_logo(
+            self.club[2]
+        )
+
+
+
+        if logo:
+
+            news.set_thumbnail(
+                url="attachment://logo.png"
+            )
+
+
+            await channel.send(
+                embed=news,
+                file=logo
+            )
+
+
+        else:
+
+            await channel.send(
+                embed=news
+            )
+
+
+
+
+
+
+    @discord.ui.button(
+        label="Accept",
+        emoji="✅",
+        style=discord.ButtonStyle.success
+    )
+
+    async def accept(
+
+        self,
+
+        interaction: discord.Interaction,
+
+        button: discord.ui.Button
+
+    ):
+
+
+
+        if interaction.user.id != self.player_id:
+
+
+            await interaction.response.send_message(
+
+                "❌ This offer is not for you.",
+
+                ephemeral=True
+
+            )
+
+            return
+
+
+
+
+        await interaction.response.defer()
+
+
+
+        await self.send_transfer_news(
+            interaction.user
+        )
+
+
+
+        embed = interaction.message.embeds[0]
+
+
+        embed.color = discord.Color.green()
+
+
+        embed.add_field(
+
+            name="Status",
+
+            value="✅ Accepted",
+
+            inline=False
+
+        )
+
+
+
+        await interaction.message.edit(
+
+            embed=embed,
+
+            view=None
+
+        )
+
+
+
+        await interaction.followup.send(
+
+            "✅ Transfer accepted.",
+
+            ephemeral=True
+
+        )
+
+    @discord.ui.button(
+        label="Reject",
+        emoji="❌",
+        style=discord.ButtonStyle.danger
+    )
+
+    async def reject(
+
+        self,
+
+        interaction: discord.Interaction,
+
+        button: discord.ui.Button
+
+    ):
+
+
+        if interaction.user.id != self.player_id:
+
+
+            await interaction.response.send_message(
+
+                "❌ This offer is not for you.",
+
+                ephemeral=True
+
+            )
+
+            return
+
+
+
+        await interaction.response.send_message(
+
+            "❌ Offer rejected.",
+
+            ephemeral=True
+
+        )
+
+
+
+        await interaction.message.edit(
+
+            view=None
+
+        )
+
+
+
+
+
+
+
+
 @bot.event
 async def on_ready():
 
+
     synced = await bot.tree.sync()
 
-    print(
-        f"Bot online: {bot.user}"
-    )
+
 
     print(
-        f"Commands synced: {len(synced)}"
+        f"✅ Online as {bot.user}"
     )
+
+
+    print(
+        f"✅ Loaded {len(synced)} commands"
+    )
+
+
+
 
 
 
@@ -235,28 +414,40 @@ async def on_ready():
 
 @bot.tree.command(
     name="offer",
-    description="Send a player transfer offer"
+    description="Send a transfer offer"
 )
+
 @app_commands.describe(
     player="Player receiving the offer"
 )
+
 async def offer(
+
     interaction: discord.Interaction,
+
     player: discord.Member
+
 ):
 
 
     # Permission check
 
+
     if not any(
-        role.id in ALLOWED_ROLES
+
+        role.id in config.ALLOWED_ROLES
+
         for role in interaction.user.roles
+
     ):
 
 
         await interaction.response.send_message(
-            "❌ You don't have permission.",
+
+            "❌ You cannot create offers.",
+
             ephemeral=True
+
         )
 
         return
@@ -264,8 +455,60 @@ async def offer(
 
 
 
-    club = get_user_club(
+
+
+    # Cannot offer yourself
+
+
+    if player.id == interaction.user.id:
+
+
+        await interaction.response.send_message(
+
+            "❌ You cannot offer yourself.",
+
+            ephemeral=True
+
+        )
+
+        return
+
+
+
+
+
+
+    # Managers cannot receive offers
+
+
+    if any(
+
+        role.id in config.MANAGER_ROLES
+
+        for role in player.roles
+
+    ):
+
+
+        await interaction.response.send_message(
+
+            "❌ This user is a manager and cannot receive player offers.",
+
+            ephemeral=True
+
+        )
+
+        return
+
+
+
+
+
+
+    club = get_club(
+
         interaction.user
+
     )
 
 
@@ -274,8 +517,11 @@ async def offer(
 
 
         await interaction.response.send_message(
-            "❌ No club role detected.",
+
+            "❌ Your club role was not found.",
+
             ephemeral=True
+
         )
 
         return
@@ -284,116 +530,83 @@ async def offer(
 
 
 
-    embed = discord.Embed(
 
-        title="⚽ PLAYER TRANSFER OFFER",
 
-        description=(
+    embed = create_transfer_embed(
 
-            f"## {club[1]}\n\n"
+        club,
 
-            "You have received a transfer offer."
-
-        ),
-
-        color=club[4]
+        player
 
     )
 
 
 
-    embed.set_thumbnail(
-        url=club[2]
-    )
+    logo = create_logo(
 
-
-
-    embed.set_image(
-        url=club[3]
-    )
-
-
-
-    embed.add_field(
-
-        name="🏟 Club",
-
-        value=club[1],
-
-        inline=True
+        club[2]
 
     )
 
 
 
-    embed.add_field(
+    view = OfferView(
 
-        name="🌍 Country",
+        player.id,
 
-        value=club[5],
+        interaction.guild.id,
 
-        inline=True
+        club,
 
-    )
-
-
-
-    embed.add_field(
-
-        name="🏟 Stadium",
-
-        value=club[6],
-
-        inline=False
+        interaction.user.id
 
     )
 
 
-
-    embed.add_field(
-
-        name="📋 Squad",
-
-        value=f"{club[8]}/{club[9]}",
-
-        inline=True
-
-    )
-
-
-
-    embed.set_footer(
-        text="Super League S5 Transfer System"
-    )
-
-
-
-    embed.timestamp = discord.utils.utcnow()
 
 
 
     try:
 
 
-        await player.send(
 
-            embed=embed,
+        if logo:
 
-            view=OfferView(
 
-                player.id,
+            embed.set_thumbnail(
 
-                club
+                url="attachment://logo.png"
 
             )
 
-        )
+
+            await player.send(
+
+                embed=embed,
+
+                file=logo,
+
+                view=view
+
+            )
+
+
+        else:
+
+
+            await player.send(
+
+                embed=embed,
+
+                view=view
+
+            )
 
 
 
         await interaction.response.send_message(
 
-            "✅ Offer sent privately.",
+            "✅ Transfer offer sent.",
 
             ephemeral=True
 
@@ -401,7 +614,10 @@ async def offer(
 
 
 
+
+
     except discord.Forbidden:
+
 
 
         await interaction.response.send_message(
@@ -416,4 +632,200 @@ async def offer(
 
 
 
-bot.run(TOKEN)
+
+
+
+
+@bot.tree.command(
+
+    name="club",
+
+    description="View your club information"
+
+)
+
+async def club(
+
+    interaction: discord.Interaction
+
+):
+
+
+    club = get_club(
+
+        interaction.user
+
+    )
+
+
+
+    if club is None:
+
+
+        await interaction.response.send_message(
+
+            "❌ You have no club.",
+
+            ephemeral=True
+
+        )
+
+        return
+
+
+
+
+
+
+    embed = discord.Embed(
+
+        title=f"🏟 {club[1]}",
+
+        description=(
+
+            f"🌍 Country\n"
+            f"{club[4]}\n\n"
+
+            f"🏟 Stadium\n"
+            f"{club[5]}\n\n"
+
+            f"👔 Coach\n"
+            f"{club[6]}\n\n"
+
+            f"📊 Squad\n"
+            f"{roster_bar(club[7],club[8])}"
+
+        ),
+
+        color=club[3]
+
+    )
+
+
+
+    logo = create_logo(
+
+        club[2]
+
+    )
+
+
+
+    if logo:
+
+
+        embed.set_thumbnail(
+
+            url="attachment://logo.png"
+
+        )
+
+
+        await interaction.response.send_message(
+
+            embed=embed,
+
+            file=logo
+
+        )
+
+
+    else:
+
+
+        await interaction.response.send_message(
+
+            embed=embed
+
+        )
+
+
+
+
+
+
+
+
+
+@bot.tree.command(
+
+    name="transfers",
+
+    description="Show latest transfers"
+
+)
+
+async def transfers(
+
+    interaction: discord.Interaction
+
+):
+
+
+    history = database.get_transfer_history()
+
+
+
+    embed = discord.Embed(
+
+        title="📜 Transfer History",
+
+        color=0x3498db
+
+    )
+
+
+
+    if not history:
+
+
+        embed.description = (
+            "No transfers yet."
+        )
+
+
+
+    else:
+
+
+        for transfer in history:
+
+
+            embed.add_field(
+
+                name=f"#{transfer[0]} {transfer[2]}",
+
+                value=(
+
+                    f"➡️ {transfer[4]}\n"
+
+                    f"🕒 {transfer[6]}"
+
+                ),
+
+                inline=False
+
+            )
+
+
+
+
+
+    await interaction.response.send_message(
+
+        embed=embed,
+
+        ephemeral=True
+
+    )
+
+
+
+
+
+
+
+
+bot.run(
+    config.TOKEN
+)
