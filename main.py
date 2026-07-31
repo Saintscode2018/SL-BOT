@@ -1,4 +1,7 @@
 
+import discord
+from discord.ext import commands
+
 class OfferView(discord.ui.View):
     """Interactive contract offer sent to a player via DM."""
 
