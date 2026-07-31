@@ -23,10 +23,11 @@ MANAGER_ROLES = [
 ]
 
 
-DATABASE_NAME = "superleague.db"
+DATABASE_NAME = "league.db"
 
 
 LEAGUE_LOGO = "YOUR_LOGO_URL_HERE"
+
 
 BOT_NAME = "🏆 Super League S5 Transfer Market"
 

@@ -88,94 +88,94 @@ class OfferView(discord.ui.View):
         # TRANSFER ANNOUNCEMENT EMBED
         # ===============================
 
-        announcement = discord.Embed(
-            title="✅ TRANSFER COMPLETED",
-            description=(
-                "━━━━━━━━━━━━━━━━━━━━\n"
-                f"🔴 **{self.club[1]}** have completed the signing of\n\n"
-                f"⭐ {self.player.mention}\n\n"
-                "The player has accepted the official contract "
-                "and is now registered for **Super League S5**.\n"
-                "━━━━━━━━━━━━━━━━━━━━"
-            ),
-            color=self.club[3],
-            timestamp=datetime.now(timezone.utc),
-        )
+       accepted = discord.Embed(
+    title="🏆 TRANSFER COMPLETED",
+    description=(
+        "━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🎉 {self.player.mention} has accepted a contract offer from\n\n"
+        f"🔴 **{self.club[1]}**\n\n"
+        "The player has completed registration and is now "
+        "officially part of **Super League S5**.\n"
+        "━━━━━━━━━━━━━━━━━━━━━━"
+    ),
+    color=self.club[3],
+    timestamp=datetime.now(timezone.utc)
+)
 
 
-        # Club logo
-        announcement.set_author(
-            name="Super League S5 • Transfer Centre",
-            icon_url=config.LEAGUE_LOGO,
-        )
+accepted.set_author(
+    name="Super League S5 • Transfer Centre",
+    icon_url=config.LEAGUE_LOGO
+)
 
 
-        if self.club[2]:
-            announcement.set_thumbnail(
-                url=self.club[2]
-            )
+accepted.set_thumbnail(
+    url=self.club[2]
+)
 
 
-        # Transfer information
-
-        announcement.add_field(
-            name="🏟️ New Club",
-            value=f"**{self.club[1]}**",
-            inline=True,
-        )
-
-        announcement.add_field(
-            name="👔 Manager",
-            value=self.manager.mention,
-            inline=True,
-        )
-
-        announcement.add_field(
-            name="🧑‍🏫 Coach",
-            value=self.club[5],
-            inline=True,
-        )
+accepted.add_field(
+    name="👤 Player",
+    value=self.player.mention,
+    inline=True
+)
 
 
-        announcement.add_field(
-            name="📋 Squad Registration",
-            value=(
-                f"**{self.club[6] + 1}"
-                f"/{self.club[7]}**"
-            ),
-            inline=True,
-        )
+accepted.add_field(
+    name="🏟️ New Club",
+    value=f"**{self.club[1]}**",
+    inline=True
+)
 
 
-        announcement.add_field(
-            name="📄 Contract",
-            value="Professional First Team",
-            inline=True,
-        )
+accepted.add_field(
+    name="👔 Manager",
+    value=self.manager.mention,
+    inline=True
+)
 
 
-        announcement.add_field(
-            name="🟢 League Status",
-            value="REGISTERED",
-            inline=True,
-        )
+accepted.add_field(
+    name="🧑‍🏫 Coach",
+    value=self.club[5],
+    inline=True
+)
 
 
-        announcement.add_field(
-            name="📌 Transfer Status",
-            value="✅ COMPLETED",
-            inline=True,
-        )
+accepted.add_field(
+    name="📋 Squad Registration",
+    value=f"**{self.club[6] + 1}/{self.club[7]}**",
+    inline=True
+)
 
 
-        announcement.set_footer(
-            text=(
-                f"Player: {self.player.display_name}"
-                " • Super League S5"
-            )
-        )
+accepted.add_field(
+    name="📄 Contract",
+    value="Professional First Team",
+    inline=True
+)
 
 
+accepted.add_field(
+    name="🟢 League Status",
+    value="REGISTERED",
+    inline=True
+)
+
+
+accepted.add_field(
+    name="🏆 Competition",
+    value="Super League S5",
+    inline=True
+)
+
+
+accepted.set_footer(
+    text=(
+        f"Player: {self.player.display_name} • "
+        "Official Transfer System"
+    )
+)
         # Send announcement
 
         channel = bot.get_channel(
@@ -188,9 +188,7 @@ class OfferView(discord.ui.View):
             )
 
 
-        # ===============================
-        # PLAYER DM CONFIRMATION
-        # ===============================
+    
 
         dm = discord.Embed(
             title="🎉 CONTRACT SIGNED",
