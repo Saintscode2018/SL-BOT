@@ -3,39 +3,12 @@ import datetime
 import discord
 
 import config
-from database import ClubRow
 
 
-
-def _utc_now():
-
+def now():
     return datetime.datetime.now(
         datetime.timezone.utc
     )
-
-
-
-
-
-def _brand(embed):
-
-    if config.LEAGUE_LOGO.startswith("http"):
-
-        embed.set_author(
-
-            name=config.LEAGUE_NAME,
-
-            icon_url=config.LEAGUE_LOGO
-
-        )
-
-    else:
-
-        embed.set_author(
-            name=config.LEAGUE_NAME
-        )
-
-
 
 
 
@@ -47,26 +20,19 @@ def base_embed(
 ):
 
     embed = discord.Embed(
-
         title=title,
-
         description=description,
-
         color=color,
-
-        timestamp=_utc_now()
-
+        timestamp=now()
     )
 
 
-    _brand(embed)
+    # League logo on the left
+    if config.LEAGUE_LOGO.startswith("http"):
 
-
-
-    if thumbnail and thumbnail.startswith("http"):
-
-        embed.set_thumbnail(
-            url=thumbnail
+        embed.set_author(
+            name=config.LEAGUE_NAME,
+            icon_url=config.LEAGUE_LOGO
         )
 
 
@@ -81,26 +47,16 @@ def base_embed(
 
 
 
-
-
 def error_embed(
     title,
     description
 ):
 
     return base_embed(
-
         title,
-
         description,
-
         config.COLOR_ERROR
-
     )
-
-
-
-
 
 
 
@@ -108,80 +64,64 @@ def error_embed(
 
 def offer_embed(
     *,
-    club: ClubRow,
-    player: discord.Member,
-    manager: discord.Member,
-    expires_at: int
+    club,
+    player,
+    manager,
+    expires_at
 ):
-
 
     embed = base_embed(
 
-        title=f"Contract Offer — {club[1]}",
+        f"Contract Offer — {club[1]}",
 
-        description=(
-
+        (
             f"**{club[1]}** has sent an official "
             f"contract offer to {player.mention}.\n\n"
-
-            f"Review the offer and choose below."
-
+            "Choose an option below."
         ),
 
-        color=club[3],
-
-        thumbnail=club[2]
+        club[3]
 
     )
 
 
-    embed.add_field(
+    # Club logo right side
+    if club[2]:
 
+        embed.set_thumbnail(
+            url=club[2]
+        )
+
+
+    embed.add_field(
         name="Manager",
-
         value=manager.mention,
-
         inline=True
-
     )
 
 
     embed.add_field(
-
         name="Squad",
-
         value=f"{club[4]}/{club[5]}",
-
         inline=True
-
     )
 
 
     embed.add_field(
-
         name="Contract",
-
         value=config.CONTRACT_TYPE,
-
         inline=True
-
     )
 
 
     embed.add_field(
-
         name="Expires",
-
         value=f"<t:{expires_at}:R>",
-
         inline=True
-
     )
 
 
     return embed
-
-
 
 
 
@@ -194,35 +134,35 @@ def offer_sent_embed(
     expires_at
 ):
 
+    embed = base_embed(
 
-    return base_embed(
+        "Transfer Offer Sent",
 
-        title="Transfer Offer Sent",
-
-        description=(
-
+        (
             f"Offer sent to {player.mention}\n\n"
-
             f"Club: **{club[1]}**\n"
-
             f"Expires: <t:{expires_at}:R>"
-
         ),
 
-        color=config.COLOR_SUCCESS,
-
-        thumbnail=club[2]
+        config.COLOR_SUCCESS
 
     )
 
 
+    if club[2]:
+
+        embed.set_thumbnail(
+            url=club[2]
+        )
+
+
+    return embed
 
 
 
 
 
 def offer_failed_embed(player):
-
 
     return error_embed(
 
@@ -236,57 +176,30 @@ def offer_failed_embed(player):
 
 
 
-
-
-
-
 def contract_signed_dm_embed(club):
-
 
     embed = base_embed(
 
-        title="Contract Signed",
+        "Contract Signed",
 
-        description=(
-
+        (
             f"Welcome to **{club[1]}**!\n\n"
-
-            "Your registration has been completed."
-
+            "You are now registered."
         ),
 
-        color=config.COLOR_SUCCESS,
-
-        thumbnail=club[2]
+        config.COLOR_SUCCESS
 
     )
 
 
-    embed.add_field(
+    if club[2]:
 
-        name="Club",
-
-        value=club[1],
-
-        inline=True
-
-    )
-
-
-    embed.add_field(
-
-        name="Status",
-
-        value="Registered",
-
-        inline=True
-
-    )
+        embed.set_thumbnail(
+            url=club[2]
+        )
 
 
     return embed
-
-
 
 
 
@@ -298,26 +211,28 @@ def transfer_completed_dm_embed(
     club
 ):
 
+    embed = base_embed(
 
-    return base_embed(
+        "Transfer Completed",
 
-        title="Transfer Completed",
-
-        description=(
-
-            f"{player.mention} joined **{club[1]}**."
-
+        (
+            f"{player.mention} joined "
+            f"**{club[1]}**."
         ),
 
-        color=config.COLOR_SUCCESS,
-
-        thumbnail=club[2]
+        config.COLOR_SUCCESS
 
     )
 
 
+    if club[2]:
+
+        embed.set_thumbnail(
+            url=club[2]
+        )
 
 
+    return embed
 
 
 
@@ -325,26 +240,28 @@ def transfer_completed_dm_embed(
 
 def offer_declined_dm_embed(club):
 
+    embed = base_embed(
 
-    return base_embed(
+        "Offer Declined",
 
-        title="Offer Declined",
-
-        description=(
-
-            f"You declined the offer from **{club[1]}**."
-
+        (
+            f"You declined the offer from "
+            f"**{club[1]}**."
         ),
 
-        color=config.COLOR_ERROR,
-
-        thumbnail=club[2]
+        config.COLOR_ERROR
 
     )
 
 
+    if club[2]:
+
+        embed.set_thumbnail(
+            url=club[2]
+        )
 
 
+    return embed
 
 
 
@@ -370,34 +287,30 @@ def transfer_announcement_embed(
             f"{player.mention} has officially signed "
             f"for **{club[1]}**.\n\n"
 
-            f"━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━\n\n"
 
-            f"👤 Player\n"
-
+            f"👤 **Player**\n"
             f"{player.mention}\n\n"
 
-            f"👔 Manager\n"
-
+            f"👔 **Manager**\n"
             f"{manager.mention}\n\n"
 
-            f"📋 Squad\n"
-
+            f"📋 **Squad**\n"
             f"{squad_size}/{club[5]}\n\n"
 
-            f"📄 Contract\n"
-
+            f"📄 **Contract**\n"
             f"{config.CONTRACT_TYPE}"
 
         ),
 
         color=club[3],
 
-        timestamp=_utc_now()
+        timestamp=now()
 
     )
 
 
-    # League logo on left
+    # LEFT = Super League logo
 
     if config.LEAGUE_LOGO.startswith("http"):
 
@@ -411,21 +324,20 @@ def transfer_announcement_embed(
 
 
 
-    # Club logo on right
+    # BIG CLUB LOGO
 
-    if club[2].startswith("http"):
+    if club[2] and club[2].startswith("http"):
 
-        embed.set_thumbnail(
+        embed.set_image(
 
             url=club[2]
 
         )
 
 
+
     embed.set_footer(
-
         text=config.FOOTER_TEXT
-
     )
 
 

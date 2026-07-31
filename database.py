@@ -1,6 +1,5 @@
 """
-Super League S5 database system
-Role ID = Club ID
+Super League S5 Database
 """
 
 from __future__ import annotations
@@ -43,16 +42,13 @@ def setup():
 
             color INTEGER,
 
-            squad_size INTEGER DEFAULT 15,
+            squad_size INTEGER DEFAULT 0,
 
-            squad_limit INTEGER DEFAULT 17,
-
-            manager_id INTEGER
+            squad_limit INTEGER DEFAULT 17
 
         )
         """
     )
-
 
 
     cur.execute(
@@ -71,7 +67,7 @@ def setup():
 
             new_club TEXT,
 
-            club_id INTEGER,
+            club_role INTEGER,
 
             status TEXT,
 
@@ -168,7 +164,7 @@ def load_default_clubs():
         ),
 
         (
-            1520903240000000001,
+            1520903249000000001,
             "Arsenal",
             "https://upload.wikimedia.org/wikipedia/en/5/53/Arsenal_FC.svg",
             0xEF0107,
@@ -177,7 +173,7 @@ def load_default_clubs():
         ),
 
         (
-            1520903240000000002,
+            1520903249000000002,
             "Liverpool",
             "https://upload.wikimedia.org/wikipedia/en/0/0c/Liverpool_FC.svg",
             0xC8102E,
@@ -186,25 +182,25 @@ def load_default_clubs():
         ),
 
         (
-            1520903240000000003,
+            1520903249000000003,
             "Inter Milan",
             "https://upload.wikimedia.org/wikipedia/commons/0/05/FC_Internazionale_Milano_2021.svg",
-            0x0068A8,
+            0x00529F,
             15,
             17
         ),
 
         (
-            1520903240000000004,
+            1520903249000000004,
             "Juventus",
-            "https://upload.wikimedia.org/wikipedia/commons/d/d2/Juventus_FC_2017_logo.svg",
+            "https://upload.wikimedia.org/wikipedia/commons/1/15/Juventus_FC_2017_logo.svg",
             0x000000,
             15,
             17
         ),
 
         (
-            1520903240000000005,
+            1520903249000000005,
             "Borussia Dortmund",
             "https://upload.wikimedia.org/wikipedia/commons/6/67/Borussia_Dortmund_logo.svg",
             0xFDE100,
@@ -213,7 +209,7 @@ def load_default_clubs():
         ),
 
         (
-            1520903240000000006,
+            1520903249000000006,
             "Atletico Madrid",
             "https://upload.wikimedia.org/wikipedia/en/f/f4/Atletico_Madrid_2017_logo.svg",
             0xCB3524,
@@ -222,7 +218,7 @@ def load_default_clubs():
         ),
 
         (
-            1520903240000000007,
+            1520903249000000007,
             "Tottenham Hotspur",
             "https://upload.wikimedia.org/wikipedia/en/b/b4/Tottenham_Hotspur.svg",
             0x132257,
@@ -231,21 +227,19 @@ def load_default_clubs():
         ),
 
         (
-            1520903240000000008,
+            1520903249000000008,
             "Napoli",
-            "https://upload.wikimedia.org/wikipedia/commons/2/2d/SSC_Napoli.svg",
-            0x12A0D7,
+            "https://upload.wikimedia.org/wikipedia/commons/2/2d/S.S.C._Napoli_logo.svg",
+            0x008CD2,
             15,
             17
-        )
+        ),
 
     ]
 
 
-
     conn = connect()
     cur = conn.cursor()
-
 
 
     for club in clubs:
@@ -269,7 +263,6 @@ def load_default_clubs():
         )
 
 
-
     conn.commit()
     conn.close()
 
@@ -279,12 +272,31 @@ def load_default_clubs():
 
 
 
-def get_club_by_role(role_id: int):
+def get_all_clubs():
 
-    """
-    Detection system:
-    Discord role ID -> Club
-    """
+    conn = connect()
+    cur = conn.cursor()
+
+
+    cur.execute(
+        "SELECT * FROM clubs"
+    )
+
+
+    clubs = cur.fetchall()
+
+    conn.close()
+
+
+    return clubs
+
+
+
+
+
+
+
+def get_club_by_role(role_id):
 
     conn = connect()
     cur = conn.cursor()
@@ -314,35 +326,7 @@ def get_club_by_role(role_id: int):
 
 
 
-def get_all_clubs():
-
-    conn = connect()
-    cur = conn.cursor()
-
-
-    cur.execute(
-        """
-        SELECT *
-        FROM clubs
-        ORDER BY name
-        """
-    )
-
-
-    clubs = cur.fetchall()
-
-
-    conn.close()
-
-
-    return clubs
-
-
-
-
-
-
-def increase_roster(role_id: int):
+def increase_roster(role_id):
 
     conn = connect()
     cur = conn.cursor()
@@ -351,11 +335,8 @@ def increase_roster(role_id: int):
     cur.execute(
         """
         UPDATE clubs
-
         SET squad_size = squad_size + 1
-
         WHERE role_id = ?
-
         """,
         (role_id,)
     )
@@ -363,6 +344,8 @@ def increase_roster(role_id: int):
 
     conn.commit()
     conn.close()
+
+
 
 
 
@@ -392,13 +375,14 @@ def add_transfer(
             old_club,
             manager,
             new_club,
-            club_id,
+            club_role,
             status
         )
 
         VALUES (?, ?, ?, ?, ?, ?, ?)
 
         """,
+
         (
             player_id,
             player_name,

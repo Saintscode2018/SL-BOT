@@ -1,64 +1,77 @@
-"""Super League S5 bot configuration."""
+"""
+Super League S5 Bot Configuration
+"""
 
 TOKEN = os.getenv("DISCORD_TOKEN")
+
+
+DATABASE_NAME = "league.db"
+
+
+LEAGUE_NAME = "Super League S5"
+LEAGUE_LOGO = "YOUR_LEAGUE_LOGO_URL_HERE"
+
 
 TRANSFER_CHANNEL_ID = 1519210891596398745
 
 
-# Roles
 TEAM_MANAGER_ROLE = 1520900719799042088
 ASSISTANT_TEAM_MANAGER_ROLE = 1520899851393437797
 PLAYER_MANAGER_ROLE = 1521309945851547780
 
+
 ALLOWED_ROLES = [
     TEAM_MANAGER_ROLE,
     ASSISTANT_TEAM_MANAGER_ROLE,
-    PLAYER_MANAGER_ROLE,
+    PLAYER_MANAGER_ROLE
 ]
+
 
 MANAGER_ROLES = ALLOWED_ROLES
 
 
-# Database
-DATABASE_NAME = "league.db"
 
-
-# League
-LEAGUE_NAME = "Super League S5"
 BOT_NAME = "🏆 Super League S5 Transfer Market"
 
-LEAGUE_LOGO = (
-    "https://cdn.discordapp.com/attachments/"
-    "1519038152260718789/1532728687768895619/"
-    "936F14A5-4D24-43F6-A0B9-4733DDA53779.png"
+
+FOOTER_TEXT = (
+    "Super League S5 • Official Transfer System"
 )
 
 
-FOOTER_TEXT = "Super League S5 • Official Transfer System"
-BRAND_TAGLINE = "Official Super League S5 Transfer System"
+BRAND_TAGLINE = (
+    "Official Super League S5 Transfer System"
+)
 
 
-# Colors
+
 COLOR_DEFAULT = 0x3498DB
 COLOR_SUCCESS = 0x2ECC71
 COLOR_ERROR = 0xE74C3C
 COLOR_WARNING = 0xF1C40F
 
 
-# Contracts
-CONTRACT_TYPE = "Professional First Team"
+
+CONTRACT_TYPE = (
+    "Professional First Team"
+)
+
+
 OFFER_TIMEOUT = 86400
 
 
-# Features
-ENABLE_LOGGING = True
+
 ENABLE_TRANSFER_HISTORY = True
 ENABLE_ROSTER_TRACKING = True
-SHOW_ROBLOX_NAMES = True
 
 
-# Logo grid
+
+# Logo Grid
+
 LOGO_GRID_COLUMNS = 4
-LOGO_GRID_CELL_SIZE = 128
+
+LOGO_GRID_CELL_SIZE = 160
+
 LOGO_GRID_HIGHLIGHT_WIDTH = 6
-LOGO_GRID_FILENAME = "club_logo_grid.png"
+
+LOGO_GRID_FILENAME = "club_grid.png"

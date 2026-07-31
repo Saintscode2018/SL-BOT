@@ -1,22 +1,14 @@
 """
-Super League S5 Logo Grid
+Super League S5 Club Logo Grid
 """
 
 import io
-import logging
-
 import aiohttp
+
 from PIL import Image, ImageDraw, ImageFont
 
 import config
 import database
-
-
-logger = logging.getLogger(__name__)
-
-USER_AGENT = "SuperLeagueS5Bot/1.0"
-
-
 
 
 
@@ -32,23 +24,24 @@ def rgb(color):
 
 
 
-def create_placeholder(club, size):
+def placeholder(club, size):
 
-    image = Image.new(
+    img = Image.new(
         "RGBA",
         (size, size),
-        (20, 20, 25, 255)
+        (15,15,20,255)
     )
 
-    draw = ImageDraw.Draw(image)
+
+    draw = ImageDraw.Draw(img)
 
 
     draw.rounded_rectangle(
         (
-            8,
-            8,
-            size - 8,
-            size - 8
+            10,
+            10,
+            size-10,
+            size-10
         ),
         radius=20,
         fill=rgb(club[3])
@@ -79,13 +72,15 @@ def create_placeholder(club, size):
     )
 
 
-    return image
+    return img
 
 
 
 
 
-async def fetch_logo(
+
+
+async def download_logo(
     session,
     club,
     size
@@ -97,7 +92,7 @@ async def fetch_logo(
 
     if not url:
 
-        return create_placeholder(
+        return placeholder(
             club,
             size
         )
@@ -106,20 +101,16 @@ async def fetch_logo(
 
     try:
 
+
         async with session.get(
             url,
-            headers={
-                "User-Agent": USER_AGENT
-            },
-            timeout=aiohttp.ClientTimeout(
-                total=15
-            )
+            timeout=15
         ) as response:
 
 
             if response.status != 200:
 
-                return create_placeholder(
+                return placeholder(
                     club,
                     size
                 )
@@ -129,9 +120,12 @@ async def fetch_logo(
 
 
 
+        # SVG support
+
         if b"<svg" in data[:500].lower():
 
             import cairosvg
+
 
             data = cairosvg.svg2png(
                 bytestring=data,
@@ -151,10 +145,9 @@ async def fetch_logo(
 
         logo.thumbnail(
             (
-                size-25,
-                size-25
-            ),
-            Image.Resampling.LANCZOS
+                size-30,
+                size-30
+            )
         )
 
 
@@ -188,17 +181,9 @@ async def fetch_logo(
 
 
 
-    except Exception as e:
+    except Exception:
 
-
-        logger.error(
-            "Logo error %s: %s",
-            club[1],
-            e
-        )
-
-
-        return create_placeholder(
+        return placeholder(
             club,
             size
         )
@@ -228,8 +213,10 @@ async def build_club_logo_grid(
 
     rows = (
         len(clubs)
-        + columns
-        - 1
+        +
+        columns
+        -
+        1
     ) // columns
 
 
@@ -237,8 +224,8 @@ async def build_club_logo_grid(
     grid = Image.new(
         "RGBA",
         (
-            columns * size,
-            rows * size
+            columns*size,
+            rows*size
         ),
         (
             10,
@@ -249,6 +236,7 @@ async def build_club_logo_grid(
     )
 
 
+
     draw = ImageDraw.Draw(grid)
 
 
@@ -256,21 +244,21 @@ async def build_club_logo_grid(
     async with aiohttp.ClientSession() as session:
 
 
-        for index, club in enumerate(clubs):
+        for i, club in enumerate(clubs):
 
 
             x = (
-                index % columns
+                i % columns
             ) * size
 
 
             y = (
-                index // columns
+                i // columns
             ) * size
 
 
 
-            logo = await fetch_logo(
+            logo = await download_logo(
                 session,
                 club,
                 size
@@ -287,6 +275,8 @@ async def build_club_logo_grid(
             )
 
 
+
+            # Highlight detected club
 
             if highlight_role_id == club[0]:
 
@@ -314,7 +304,7 @@ async def build_club_logo_grid(
 
     grid.save(
         output,
-        format="PNG"
+        "PNG"
     )
 
 
