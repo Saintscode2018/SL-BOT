@@ -1672,15 +1672,22 @@ async def schedule(
         config.STAFF_CHANNEL_ID
     )
 
+    if staff_channel is None:
+        try:
+            staff_channel = await bot.fetch_channel(
+                config.STAFF_CHANNEL_ID
+            )
+        except Exception:
+            staff_channel = None
 
     if staff_channel:
-
         await staff_channel.send(
             f"<@&{config.REF_ROLE_ID}> "
             f"<@&{config.BROADCASTER_ROLE_ID}> "
             f"<@&{config.COMMENTATOR_ROLE_ID}>\n\n"
             f"⚽ Game needs staff:\n"
-            f"{home.mention} vs {away.mention}"
+            f"{home.mention} vs {away.mention}",
+            allowed_mentions=discord.AllowedMentions(roles=True)
         )
 
 
