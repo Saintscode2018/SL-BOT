@@ -1,4 +1,4 @@
-import { ChannelType, SlashCommandBuilder } from 'discord.js';
+import { ChannelType, MessageFlags, SlashCommandBuilder } from 'discord.js';
 
 import { ConfigurationError } from '../domain/errors.js';
 import type { AuthorizationInput } from '../services/authorization-service.js';
@@ -99,7 +99,7 @@ const healthCommand: CommandDefinition = {
     const connected = await context.databaseHealth.check().catch(() => false);
     await interaction.reply({
       content: `SL Bot is online.\nDatabase: ${connected ? 'connected' : 'unavailable'}`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   },
 };
@@ -158,7 +158,7 @@ const setupCommand: CommandDefinition = {
   async execute(interaction, context) {
     const execution = requireExecution(interaction);
     const timeoutMinutes = execution.options.getInteger('offer_timeout_minutes');
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const result = await context.guildSetupService.setup({
       authorization: execution.authorization,
       guildName: execution.guildName,
@@ -171,7 +171,7 @@ const setupCommand: CommandDefinition = {
       ...(timeoutMinutes === null ? {} : { offerTimeoutSeconds: timeoutMinutes * 60 }),
     });
     await interaction.editReply({
-      content: `${result.created ? 'Configured' : 'Updated'} ${result.guild.name}. Offers will use <#${result.settings.transferChannelId}>.`,
+      content: `${result.created ? 'Configured' : 'Updated'} ${result.guild.name}. Completed transaction announcements will use <#${result.settings.transferChannelId}>.`,
     });
   },
 };
@@ -223,7 +223,7 @@ const teamCommand: CommandDefinition = {
     const execution = requireExecution(interaction);
     const subcommand = execution.options.getSubcommand();
     if (subcommand === 'create') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const club = await context.clubManagementService.create({
         authorization: execution.authorization,
         name: requiredString(execution.options, 'name'),
@@ -239,7 +239,7 @@ const teamCommand: CommandDefinition = {
       return;
     }
     if (subcommand === 'deactivate') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const club = await context.clubManagementService.deactivate(
         execution.authorization,
         requiredString(execution.options, 'team'),
@@ -258,7 +258,7 @@ const teamCommand: CommandDefinition = {
             )
             .join('\n')
             .slice(0, 1900);
-    await interaction.reply({ content, ephemeral: true });
+    await interaction.reply({ content, flags: MessageFlags.Ephemeral });
   },
   autocomplete: autocompleteTeam,
 };
@@ -322,7 +322,7 @@ const staffCommand: CommandDefinition = {
     const subcommand = execution.options.getSubcommand();
     if (subcommand === 'appoint') {
       const user = requiredUser(execution.options, 'user');
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.staffManagementService.appoint({
         authorization: execution.authorization,
         clubId: teamId,
@@ -336,7 +336,7 @@ const staffCommand: CommandDefinition = {
       return;
     }
     if (subcommand === 'remove') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const membership = await context.staffManagementService.remove(
         execution.authorization,
         teamId,
@@ -355,7 +355,7 @@ const staffCommand: CommandDefinition = {
           `${type.replaceAll('_', ' ')}: ${byType.has(type) ? `<@${byType.get(type)?.discordUserId}>` : 'Vacant'}`,
       )
       .join('\n');
-    await interaction.reply({ content, ephemeral: true });
+    await interaction.reply({ content, flags: MessageFlags.Ephemeral });
   },
   autocomplete: autocompleteTeam,
 };
@@ -409,7 +409,7 @@ const rosterCommand: CommandDefinition = {
     const subcommand = execution.options.getSubcommand();
     if (subcommand === 'add') {
       const player = requiredUser(execution.options, 'player');
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.rosterManagementService.add({
         authorization: execution.authorization,
         clubId: teamId,
@@ -425,7 +425,7 @@ const rosterCommand: CommandDefinition = {
     }
     if (subcommand === 'remove') {
       const player = requiredUser(execution.options, 'player');
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.rosterManagementService.remove(
         execution.authorization,
         teamId,
@@ -444,7 +444,7 @@ const rosterCommand: CommandDefinition = {
         : `**${result.club.name} — ${result.players.length}/${result.club.squadLimit}**\n${result.players
             .map(({ user }) => `<@${user.discordUserId}>`)
             .join('\n')}`.slice(0, 1900);
-    await interaction.reply({ content, ephemeral: true });
+    await interaction.reply({ content, flags: MessageFlags.Ephemeral });
   },
   autocomplete: autocompleteTeam,
 };
@@ -456,7 +456,7 @@ const offerCommand: CommandDefinition = {
     .addSubcommand((subcommand) =>
       subcommand
         .setName('create')
-        .setDescription('Send an offer in the configured transfer channel')
+        .setDescription('Send a private contract offer to a player')
         .addStringOption((option) =>
           option
             .setName('team')
@@ -471,7 +471,7 @@ const offerCommand: CommandDefinition = {
   async execute(interaction, context) {
     const execution = requireExecution(interaction);
     const player = requiredUser(execution.options, 'player');
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const result = await context.offerDeliveryService.createAndDeliver({
       authorization: execution.authorization,
       destinationClubId: requiredString(execution.options, 'team'),
@@ -479,7 +479,7 @@ const offerCommand: CommandDefinition = {
       playerIsBot: player.bot,
     });
     await interaction.editReply({
-      content: `Offer sent to <@${result.player.discordUserId}> in <#${result.offer.discordChannelId}>.`,
+      content: `Offer sent privately to <@${result.player.discordUserId}>.`,
     });
   },
   autocomplete: autocompleteTeam,

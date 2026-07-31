@@ -20,7 +20,7 @@ export interface OfferMessageAdapter {
   sendOffer(result: OfferCreationResult): Promise<OfferMessageReference>;
   setTerminalState(
     reference: OfferMessageReference,
-    state: 'ACCEPTED' | 'DECLINED' | 'EXPIRED',
+    state: 'ACCEPTED' | 'DECLINED' | 'EXPIRED' | 'VOIDED' | 'CANCELLED',
     detail?: string,
   ): Promise<void>;
   cleanupOrphan(reference: OfferMessageReference): Promise<void>;

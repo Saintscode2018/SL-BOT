@@ -11,7 +11,7 @@ The database is authoritative. Discord roles are linked presentation and authori
 - `/team create`, `/team list`, and `/team deactivate` manage database teams linked to existing Discord roles.
 - `/staff appoint`, `/staff remove`, and `/staff list` manage historical staff appointments.
 - `/roster add`, `/roster remove`, and `/roster list` manage active players and signing/release history.
-- `/offer create` posts a persistent offer with Accept and Decline buttons in the configured transfer channel.
+- `/offer create` sends the offered player a private contract card with persistent Sign Contract and Decline Offer buttons.
 
 Team inputs use database-backed autocomplete. Inactive teams are excluded and every selected internal club ID is revalidated during execution.
 
@@ -39,6 +39,8 @@ DISCORD_DEVELOPMENT_GUILD_ID=
 ```
 
 `DISCORD_TOKEN` is required only for bot startup, command deployment, or other Discord network work. Database tests and maintenance do not require a token. Application and development guild IDs are required only for guild command deployment. No league roles, channels, teams, or legacy snowflakes belong in the environment; `/setup guild` stores them in SQLite.
+
+Normal application startup loads `.env` before validating runtime configuration. Values already supplied by the process environment take precedence. Tokens and complete environment objects are never written to application logs.
 
 ## First development startup
 
@@ -92,8 +94,8 @@ Run these commands in order after deployment and startup:
 4. `/staff appoint` — select the team, a non-bot Discord user, and a staff type.
 5. `/roster add` — manually register an existing player, optionally with Roblox identity fields.
 6. `/team list`, `/staff list`, or `/roster list` — verify derived active state.
-7. `/offer create` — select a destination team and player. A neutral embed with Accept and Decline buttons appears in the configured transfer channel.
-8. Click Accept as the offered player — expect disabled/removed controls, an accepted status, a new active membership, a `SIGNING` or `TRANSFER`, and an audit event.
+7. `/offer create` — select a destination team and player. The player receives a private contract card with Sign Contract and Decline Offer buttons.
+8. Click Sign Contract in that DM as the offered player — expect disabled controls, an accepted status, a new active membership, a `SIGNING` or `TRANSFER`, and an audit event.
 9. Create another offer and click Decline — expect a declined status with no membership or league transaction.
 
 Another user clicking the buttons receives a safe rejection. Expired offers become `EXPIRED`. Pending offers can also be expired without starting Discord:
@@ -122,9 +124,17 @@ npm run legacy:inspect -- superleague.db
 
 ## Discord side-effect recovery
 
-Offer creation and its initial audit commit before Discord delivery. If message sending fails, the offer is transitioned to `VOIDED` and a delivery-failure audit is recorded. If a message is sent but its IDs cannot be saved, the adapter attempts to delete or disable the orphan and makes the offer unusable.
+Offer creation and its initial audit commit before Discord delivery. The adapter opens the offered player's DM, sends the private contract card, and saves that DM channel ID and message ID. Persistent button responses are accepted only from that exact saved DM message.
+
+If the player has DMs disabled or delivery otherwise fails, the offer is transactionally transitioned to `VOIDED` with exactly one `offer.delivery_failed` audit. The issuing manager receives a safe ephemeral error while the underlying Discord error is logged internally. If a DM is sent but its IDs cannot be saved, the adapter attempts to delete or disable the orphan and makes the offer unusable; recovery failures are preserved rather than silently ignored.
 
 Acceptance or decline commits in SQLite before the terminal Discord edit. If the edit fails, durable league state is retained and `offer.discord_message_update_failed` is recorded for repair. The bot never attempts a fake database rollback after a successful league transaction.
+
+## Channel meanings
+
+- `transferChannelId` is the future public destination for completed signings, transfers, releases, demand releases, and other completed roster announcements. Pending offers are never posted there.
+- `auditChannelId` is the future staff-facing destination for internal administrative logs. Database `AuditEvent` rows remain authoritative.
+- A separate staff channel is intentionally not stored yet because this stage does not send staff notices. A future schema change should add `staffChannelId` for staffing pings and private operational announcements instead of overloading either existing channel.
 
 ## Quality commands
 

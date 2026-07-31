@@ -1,4 +1,5 @@
 import {
+  MessageFlags,
   PermissionsBitField,
   type AutocompleteInteraction,
   type ButtonInteraction,
@@ -134,7 +135,7 @@ export async function handleInteractionCreate(
     logger.error('command execution failed', error, { commandName: interaction.commandName });
     const response = {
       content: mapDiscordError(error),
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     } as const;
     try {
       if (interaction.deferred && !interaction.replied) {
@@ -257,7 +258,10 @@ export function createInteractionCreateHandler(
         await context.offerButtonHandler.handle(adapted);
       } catch (error: unknown) {
         logger.error('button interaction failed', error, { customId: adapted.customId });
-        const response = { content: mapDiscordError(error), ephemeral: true } as const;
+        const response = {
+          content: mapDiscordError(error),
+          flags: MessageFlags.Ephemeral,
+        } as const;
         if (adapted.deferred && !adapted.replied) {
           await adapted.editReply({ content: response.content });
         } else if (adapted.replied) {

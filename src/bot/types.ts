@@ -1,4 +1,4 @@
-import type { RESTPostAPIChatInputApplicationCommandsJSONBody } from 'discord.js';
+import type { MessageFlags, RESTPostAPIChatInputApplicationCommandsJSONBody } from 'discord.js';
 
 import type { Logger } from '../logging/logger.js';
 import type { ClubManagementService } from '../services/club-management-service.js';
@@ -12,11 +12,11 @@ import type { OfferButtonHandler } from './offer-button-handler.js';
 
 export interface SafeInteractionResponse {
   content: string;
-  ephemeral: true;
+  flags: MessageFlags.Ephemeral;
 }
 
 export interface DeferredInteractionResponse {
-  ephemeral: true;
+  flags: MessageFlags.Ephemeral;
 }
 
 export interface EditedInteractionResponse {

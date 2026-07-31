@@ -6,7 +6,6 @@ import {
   ClubInactiveError,
   DuplicateOfferError,
   EntityNotFoundError,
-  GuildNotConfiguredError,
   SquadFullError,
 } from '../domain/errors.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
@@ -33,7 +32,8 @@ export interface OfferCreationResult {
   sourceClub: Club | null;
   player: LeagueUser;
   offeredBy: LeagueUser;
-  transferChannelId: string;
+  leagueName: string;
+  activePlayerCount: number;
 }
 
 export class OfferCreationService {
@@ -45,10 +45,6 @@ export class OfferCreationService {
       input.authorization,
       input.destinationClubId,
     );
-    const transferChannelId = authorization.settings.transferChannelId;
-    if (transferChannelId === null) {
-      throw new GuildNotConfiguredError('a transfer channel has not been configured');
-    }
     return this.database.$transaction(async (transaction) => {
       const clubs = new ClubRepository(transaction);
       const destinationClub = await clubs.getByIdInGuild(
@@ -109,7 +105,8 @@ export class OfferCreationService {
         sourceClub,
         player,
         offeredBy,
-        transferChannelId,
+        leagueName: authorization.guild.name,
+        activePlayerCount: playerCount,
       };
     });
   }

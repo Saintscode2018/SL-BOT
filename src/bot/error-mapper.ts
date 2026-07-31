@@ -37,8 +37,11 @@ export function mapDiscordError(error: unknown): string {
   }
   if (error instanceof InvalidOfferMessageError) return 'This offer interaction is not valid.';
   if (error instanceof BotUserNotAllowedError) return 'Bot accounts cannot be selected.';
-  if (error instanceof OfferDeliveryError)
-    return 'The offer could not be delivered and was made unusable.';
+  if (error instanceof OfferDeliveryError) {
+    return error.message === 'offer message could not be delivered'
+      ? 'The player could not be contacted privately, so the offer was cancelled.'
+      : 'The private offer could not be completed safely. Please contact a league administrator.';
+  }
   if (error instanceof EntityNotFoundError) return 'The requested record could not be found.';
   if (error instanceof InvalidStateTransitionError || error instanceof ConflictError) {
     return 'That action has already been handled or conflicted with another update.';

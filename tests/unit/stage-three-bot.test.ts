@@ -1,4 +1,11 @@
-import { SlashCommandBuilder } from 'discord.js';
+import {
+  Client,
+  GatewayIntentBits,
+  MessageFlags,
+  SlashCommandBuilder,
+  type DMChannel,
+  type User,
+} from 'discord.js';
 import { describe, expect, it, vi } from 'vitest';
 
 import { loadCommands } from '../../src/bot/command-loader.js';
@@ -14,7 +21,10 @@ import {
   type OfferButtonInteraction,
 } from '../../src/bot/offer-button-handler.js';
 import { createOfferCustomId, parseOfferCustomId } from '../../src/bot/offer-custom-id.js';
-import { createOfferMessagePayload } from '../../src/bot/offer-message-adapter.js';
+import {
+  createOfferMessagePayload,
+  DiscordOfferMessageAdapter,
+} from '../../src/bot/offer-message-adapter.js';
 import type {
   CommandContext,
   CommandInteraction,
@@ -27,6 +37,7 @@ import {
   AuthorizationError,
   ConfigurationError,
   InvalidOfferMessageError,
+  OfferDeliveryError,
 } from '../../src/domain/errors.js';
 import type { OfferAcceptanceResult } from '../../src/services/offer-acceptance-service.js';
 import type { OfferCreationResult } from '../../src/services/offer-creation-service.js';
@@ -83,7 +94,8 @@ function offerCreationResult(): OfferCreationResult {
       createdAt: now,
       updatedAt: now,
     },
-    transferChannelId: '100000000000000005',
+    leagueName: 'Test League',
+    activePlayerCount: 4,
   };
 }
 
@@ -250,7 +262,7 @@ describe('stage three command registry and deployment', () => {
       commandContext(new MemoryLogger(), () => Promise.reject(new Error('database secret'))),
     );
     expect(interaction.replies).toEqual([
-      { content: 'SL Bot is online.\nDatabase: unavailable', ephemeral: true },
+      { content: 'SL Bot is online.\nDatabase: unavailable', flags: MessageFlags.Ephemeral },
     ]);
     expect(JSON.stringify(interaction.replies)).not.toContain('database secret');
   });
@@ -269,7 +281,7 @@ describe('stage three command registry and deployment', () => {
     expect(interaction.followUps).toEqual([]);
     expect(interaction.edits).toEqual([
       {
-        content: 'Offer sent to <@100000000000000003> in <#100000000000000005>.',
+        content: 'Offer sent privately to <@100000000000000003>.',
       },
     ]);
   });
@@ -291,16 +303,119 @@ describe('stage three command registry and deployment', () => {
     expect(JSON.stringify(interaction.edits)).not.toContain('private delivery detail');
   });
 
-  it('restricts outgoing offer mentions to exactly the offered player', () => {
+  it('builds a private contract card without broad mentions', () => {
     const payload = createOfferMessagePayload(offerCreationResult());
-    expect(payload).toMatchObject({
-      content: '<@100000000000000003>',
+    expect(payload.content).toBeUndefined();
+    const serialized = JSON.parse(JSON.stringify(payload)) as {
       allowedMentions: {
-        users: ['100000000000000003'],
-        roles: [],
-        repliedUser: false,
-      },
+        parse: string[];
+        users: string[];
+        roles: string[];
+        repliedUser: boolean;
+      };
+      embeds: Array<{
+        title: string;
+        description: string;
+        fields: Array<{ name: string; value: string }>;
+        thumbnail?: { url: string };
+      }>;
+      components: Array<{
+        components: Array<{ custom_id: string; label: string; disabled: boolean }>;
+      }>;
+    };
+    expect(serialized.allowedMentions).toEqual({
+      parse: [],
+      users: [],
+      roles: [],
+      repliedUser: false,
     });
+    expect(serialized.embeds[0]).toMatchObject({
+      title: 'Test League Contract Offer',
+      description: 'Professional First Team',
+    });
+    expect(serialized.embeds[0]?.thumbnail).toBeUndefined();
+    expect(
+      Object.fromEntries(
+        serialized.embeds[0]?.fields.map(({ name, value }) => [name, value]) ?? [],
+      ),
+    ).toMatchObject({
+      'Destination Club': 'Team',
+      'Offered Player': '<@100000000000000003>',
+      'Offering Manager': '<@100000000000000004>',
+      Squad: '4/10',
+      'Remaining Spots': '6',
+      'Current Club': 'Free agent',
+    });
+    expect(serialized.embeds[0]?.fields.find(({ name }) => name === 'Expires')?.value).toMatch(
+      /^<t:\d+:F>\n<t:\d+:R>$/,
+    );
+    expect(serialized.components[0]?.components).toEqual([
+      {
+        type: 2,
+        custom_id: `offer:accept:${offerId}`,
+        label: 'Sign Contract',
+        style: 3,
+        disabled: false,
+      },
+      {
+        type: 2,
+        custom_id: `offer:decline:${offerId}`,
+        label: 'Decline Offer',
+        style: 4,
+        disabled: false,
+      },
+    ]);
+  });
+
+  it('includes the destination club logo only when configured', () => {
+    const withLogo = offerCreationResult();
+    withLogo.destinationClub.logoUrl = 'https://example.com/team-logo.png';
+    const payloadWithLogo = JSON.parse(JSON.stringify(createOfferMessagePayload(withLogo))) as {
+      embeds: Array<{ thumbnail?: { url: string } }>;
+    };
+    const payloadWithoutLogo = JSON.parse(
+      JSON.stringify(createOfferMessagePayload(offerCreationResult())),
+    ) as { embeds: Array<{ thumbnail?: { url: string } }> };
+    expect(payloadWithLogo.embeds[0]?.thumbnail?.url).toBe('https://example.com/team-logo.png');
+    expect(payloadWithoutLogo.embeds[0]?.thumbnail).toBeUndefined();
+  });
+
+  it('opens the offered player DM and never fetches a guild transfer channel', async () => {
+    const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+    const send = vi.fn(() =>
+      Promise.resolve({
+        channelId: '100000000000000005',
+        id: '100000000000000006',
+      }),
+    );
+    const createDM = vi.fn(() => Promise.resolve({ send } as unknown as DMChannel));
+    const userFetch = vi
+      .spyOn(client.users, 'fetch')
+      .mockResolvedValue({ createDM } as unknown as User);
+    const channelFetch = vi.spyOn(client.channels, 'fetch');
+    try {
+      await expect(
+        new DiscordOfferMessageAdapter(client).sendOffer(offerCreationResult()),
+      ).resolves.toEqual({
+        channelId: '100000000000000005',
+        messageId: '100000000000000006',
+      });
+      expect(userFetch).toHaveBeenCalledWith('100000000000000003');
+      expect(createDM).toHaveBeenCalledOnce();
+      expect(send).toHaveBeenCalledOnce();
+      expect(channelFetch).not.toHaveBeenCalled();
+    } finally {
+      await client.destroy();
+    }
+  });
+
+  it('maps a DM send failure to a safe manager response', () => {
+    expect(mapDiscordError(new OfferDeliveryError('offer message could not be delivered'))).toBe(
+      'The player could not be contacted privately, so the offer was cancelled.',
+    );
+    expect(mapDiscordError(new OfferDeliveryError('discord raw detail'))).not.toContain(
+      'discord raw detail',
+    );
   });
 });
 
@@ -426,7 +541,7 @@ describe('persistent offer buttons', () => {
       },
       editReply: (response) => {
         order.push('edit');
-        replies.push({ ...response, ephemeral: true });
+        replies.push({ ...response, flags: MessageFlags.Ephemeral });
         interaction.replied = true;
         return Promise.resolve();
       },
@@ -444,7 +559,9 @@ describe('persistent offer buttons', () => {
       result.player.discordUserId,
       'ACCEPTED',
     );
-    expect(replies).toEqual([{ content: 'Offer accepted successfully.', ephemeral: true }]);
+    expect(replies).toEqual([
+      { content: 'Offer accepted successfully.', flags: MessageFlags.Ephemeral },
+    ]);
   });
 
   it('defers decline before database work and edits the deferred response', async () => {
@@ -485,7 +602,7 @@ describe('persistent offer buttons', () => {
       },
       editReply: (response) => {
         order.push('edit');
-        replies.push({ ...response, ephemeral: true });
+        replies.push({ ...response, flags: MessageFlags.Ephemeral });
         interaction.replied = true;
         return Promise.resolve();
       },
@@ -498,7 +615,7 @@ describe('persistent offer buttons', () => {
     await expect(handler.handle(interaction)).resolves.toBe(true);
     expect(order).toEqual(['defer', 'database', 'edit']);
     expect(responses.declineOffer).toHaveBeenCalledOnce();
-    expect(replies).toEqual([{ content: 'Offer declined.', ephemeral: true }]);
+    expect(replies).toEqual([{ content: 'Offer declined.', flags: MessageFlags.Ephemeral }]);
   });
 });
 

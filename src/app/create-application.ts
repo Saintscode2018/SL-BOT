@@ -9,7 +9,11 @@ import { createEventDefinitions } from '../bot/events.js';
 import { OfferButtonHandler } from '../bot/offer-button-handler.js';
 import { DiscordOfferMessageAdapter } from '../bot/offer-message-adapter.js';
 import type { CommandContext } from '../bot/types.js';
-import { parseRuntimeEnvironment, type RuntimeEnvironment } from '../config/env.js';
+import {
+  loadRuntimeEnvironment,
+  parseRuntimeEnvironment,
+  type RuntimeEnvironment,
+} from '../config/env.js';
 import { createDatabaseClient } from '../database/client.js';
 import { ConsoleLogger, type Logger } from '../logging/logger.js';
 import { ClubRepository } from '../repositories/club-repository.js';
@@ -43,10 +47,11 @@ const defaultFactories: ApplicationFactories = {
 };
 
 export function createApplication(
-  values: NodeJS.ProcessEnv = process.env,
+  values?: NodeJS.ProcessEnv,
   factories: ApplicationFactories = defaultFactories,
 ): ApplicationBundle {
-  const environment = parseRuntimeEnvironment(values);
+  const environment =
+    values === undefined ? loadRuntimeEnvironment() : parseRuntimeEnvironment(values);
   const logger = factories.createLogger(environment);
   const prisma = createDatabaseClient(environment.DATABASE_URL);
   const discord = factories.createDiscordClient();

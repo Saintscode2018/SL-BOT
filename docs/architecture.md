@@ -21,7 +21,7 @@ Repositories and services store only strings, UUIDs, dates, domain values, and p
 
 ## Lifecycle and registration
 
-`createApplication` validates runtime configuration and constructs one logger, Prisma client, Discord client, message adapter, services, static command registry, and static event registry. `Application.start` connects Prisma, registers the interaction event, and logs in. Partial startup failure destroys Discord and disconnects Prisma. `Application.stop` is idempotent and process signal handling shares one shutdown promise.
+`createApplication` loads `.env`, preserves values already injected into the process environment, validates runtime configuration, and constructs one logger, Prisma client, Discord client, message adapter, services, static command registry, and static event registry. `Application.start` connects Prisma, registers the interaction event, and logs in. Partial startup failure destroys Discord and disconnects Prisma. `Application.stop` is idempotent and process signal handling shares one shutdown promise.
 
 The client requests only `GatewayIntentBits.Guilds`. `interactionCreate` dispatches chat-input commands, autocomplete, and offer buttons separately. Known errors pass through one safe error mapper; unexpected errors are logged internally and become a generic ephemeral response.
 
@@ -55,7 +55,9 @@ Autocomplete loads active clubs for the interaction guild, filters case-insensit
 
 `OfferCreationService` authorizes the issuer, validates settings and destination state, creates or retrieves both users, checks current membership, derived capacity, and pending-offer uniqueness, then creates the offer and `offer.created` audit in one transaction. The configured timeout supplies expiration unless an internal override is provided.
 
-`OfferDeliveryService` calls the pure creation workflow before using an injected message adapter. The Discord adapter posts a neutral embed to the configured transfer channel and returns channel/message IDs for persistence. Services never receive a Discord client or interaction.
+`OfferDeliveryService` calls the pure creation workflow before using an injected message adapter. The Discord adapter opens the offered player's DM, sends a professional contract card, and returns the DM channel/message IDs for persistence. It does not fetch or post to the configured transfer channel. Services never receive a Discord client or interaction.
+
+The contract card describes the league, destination club, optional club logo, player, offering manager, current squad count, squad limit, remaining places, current club, contract label, and Discord-formatted expiry. It uses no broad mentions. The persistent buttons are labeled Sign Contract and Decline Offer.
 
 Button IDs are deterministic and validated:
 
@@ -66,6 +68,8 @@ offer:decline:<offer uuid>
 
 They fit Discord's custom-ID limit and contain no player, guild, token, or serialized state. Global dispatch reconstructs all behavior from the offer ID and database, so buttons survive restarts.
 
+Before acceptance or decline, `OfferResponseService` verifies that the interaction channel and message match the saved DM channel and message IDs. A copied custom ID, a different DM, or an offer without a stored reference cannot change league state.
+
 Acceptance uses the existing atomic service: it conditionally changes `PENDING` to `ACCEPTED`, ends a source membership for transfers, creates the destination membership, creates a signing/transfer, and appends audit state. The accepting player is the audit actor; the offer creator is the roster transaction initiator and performer.
 
 `OfferDeclineService` conditionally changes `PENDING` to `DECLINED` and audits it without a membership or transaction. Accept and decline validate that the clicking Discord identity matches the offered player. Expired clicks atomically mark `EXPIRED`. Concurrent terminal responses permit only one success.
@@ -74,12 +78,14 @@ Acceptance uses the existing atomic service: it conditionally changes `PENDING` 
 
 Discord messaging cannot participate in a SQLite transaction, so side effects have explicit recovery behavior:
 
-- send failure transitions the new offer to `VOIDED` and records `offer.delivery_failed`
+- DM send failure transactionally changes the new offer to `VOIDED` and records exactly one `offer.delivery_failed`
 - message-reference persistence failure attempts orphan cleanup and voids the offer
 - acceptance or decline commits before terminal message editing
 - terminal edit failure retains durable league state and records `offer.discord_message_update_failed`
 
-The bot does not pretend to roll back committed league history because a Discord edit failed. A later repair tool can consume the recovery audits. The current `offers:expire` maintenance script handles database expiration and reports stored message references; no background scheduler exists yet.
+The void transition and delivery-failure audit use repositories bound to the same Prisma transaction, so audit failure rolls the state change back. Cleanup and recovery failures are logged separately and preserved in a focused delivery error. The bot does not pretend to roll back committed league history because a Discord edit failed. A later repair tool can consume the recovery audits. The current `offers:expire` maintenance script handles database expiration and reports stored message references; no background scheduler exists yet.
+
+`transferChannelId` remains the future public destination for completed signings, transfers, releases, demand releases, and other completed roster announcements. Pending offers never use it. `auditChannelId` is the future staff-facing log destination, while database `AuditEvent` records remain authoritative. A future migration should add a distinct `staffChannelId` for schedule staffing pings and private operational notices when that feature is implemented; neither existing channel should be overloaded.
 
 ## Database guarantees and migration policy
 

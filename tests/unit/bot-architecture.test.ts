@@ -1,4 +1,4 @@
-import { Events, GatewayIntentBits, SlashCommandBuilder } from 'discord.js';
+import { Events, GatewayIntentBits, MessageFlags, SlashCommandBuilder } from 'discord.js';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createDiscordClient } from '../../src/bot/client.js';
@@ -178,7 +178,7 @@ describe('interaction handler', () => {
     expect(interaction.replies).toEqual([
       {
         content: 'The command could not be completed. Please try again later.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       },
     ]);
     expect(JSON.stringify(interaction.replies)).not.toContain('private database detail');

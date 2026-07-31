@@ -3,12 +3,12 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
+  ComponentType,
   EmbedBuilder,
   type Client,
+  type DMChannel,
   type Message,
   type MessageCreateOptions,
-  type NewsChannel,
-  type TextChannel,
 } from 'discord.js';
 
 import { OfferDeliveryError } from '../domain/errors.js';
@@ -26,12 +26,12 @@ function offerComponents(offerId: string, disabled = false): ActionRowBuilder<Bu
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setCustomId(createOfferCustomId('accept', offerId))
-        .setLabel('Accept')
+        .setLabel('Sign Contract')
         .setStyle(ButtonStyle.Success)
         .setDisabled(disabled),
       new ButtonBuilder()
         .setCustomId(createOfferCustomId('decline', offerId))
-        .setLabel('Decline')
+        .setLabel('Decline Offer')
         .setStyle(ButtonStyle.Danger)
         .setDisabled(disabled),
     ),
@@ -39,48 +39,65 @@ function offerComponents(offerId: string, disabled = false): ActionRowBuilder<Bu
 }
 
 function offerEmbed(result: OfferCreationResult): EmbedBuilder {
-  return new EmbedBuilder()
+  const expiresAt = Math.floor(result.offer.expiresAt.getTime() / 1000);
+  const remainingSpots = Math.max(0, result.destinationClub.squadLimit - result.activePlayerCount);
+  const embed = new EmbedBuilder()
     .setColor(neutralColor)
-    .setTitle(`Offer from ${result.destinationClub.name}`)
-    .setDescription(`<@${result.player.discordUserId}>, you have received a league offer.`)
+    .setTitle(`${result.leagueName || 'SL League'} Contract Offer`)
+    .setDescription('Professional First Team')
     .addFields(
-      { name: 'Team', value: result.destinationClub.name, inline: true },
+      { name: 'Destination Club', value: result.destinationClub.name, inline: true },
+      { name: 'Offered Player', value: `<@${result.player.discordUserId}>`, inline: true },
+      { name: 'Offering Manager', value: `<@${result.offeredBy.discordUserId}>`, inline: true },
       {
-        name: 'Current team',
-        value: result.sourceClub?.name ?? 'Free agent',
+        name: 'Squad',
+        value: `${result.activePlayerCount}/${result.destinationClub.squadLimit}`,
         inline: true,
       },
-      { name: 'Offered by', value: `<@${result.offeredBy.discordUserId}>`, inline: true },
-      {
-        name: 'Expires',
-        value: `<t:${Math.floor(result.offer.expiresAt.getTime() / 1000)}:R>`,
-        inline: true,
-      },
+      { name: 'Remaining Spots', value: String(remainingSpots), inline: true },
+      { name: 'Current Club', value: result.sourceClub?.name ?? 'Free agent', inline: true },
+      { name: 'Expires', value: `<t:${expiresAt}:F>\n<t:${expiresAt}:R>` },
     );
+  if (result.destinationClub.logoUrl !== null) {
+    embed.setThumbnail(result.destinationClub.logoUrl);
+  }
+  return embed;
 }
 
-function isTextChannel(channel: unknown): channel is TextChannel | NewsChannel {
+function isDmChannel(channel: unknown): channel is DMChannel {
   return (
     typeof channel === 'object' &&
     channel !== null &&
     'type' in channel &&
-    (channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildAnnouncement)
+    channel.type === ChannelType.DM
   );
+}
+
+function disabledComponents(message: Message): ActionRowBuilder<ButtonBuilder>[] {
+  return message.components
+    .filter((row) => row.type === ComponentType.ActionRow)
+    .map((row) =>
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        row.components
+          .filter((component) => component.type === ComponentType.Button)
+          .map((component) => ButtonBuilder.from(component).setDisabled(true)),
+      ),
+    );
 }
 
 export class DiscordOfferMessageAdapter implements OfferMessageAdapter {
   public constructor(private readonly client: Client) {}
 
   public async sendOffer(result: OfferCreationResult): Promise<OfferMessageReference> {
-    const channel = await this.client.channels.fetch(result.transferChannelId);
-    if (!isTextChannel(channel)) throw new OfferDeliveryError('transfer channel is not sendable');
+    const user = await this.client.users.fetch(result.player.discordUserId);
+    const channel = await user.createDM();
     const message = await channel.send(createOfferMessagePayload(result));
     return { channelId: message.channelId, messageId: message.id };
   }
 
   public async setTerminalState(
     reference: OfferMessageReference,
-    state: 'ACCEPTED' | 'DECLINED' | 'EXPIRED',
+    state: 'ACCEPTED' | 'DECLINED' | 'EXPIRED' | 'VOIDED' | 'CANCELLED',
     detail?: string,
   ): Promise<void> {
     const message = await this.fetchMessage(reference);
@@ -88,20 +105,22 @@ export class DiscordOfferMessageAdapter implements OfferMessageAdapter {
       .setColor(state === 'ACCEPTED' ? 0x57f287 : state === 'DECLINED' ? 0xed4245 : 0x747f8d)
       .setTitle(`Offer ${state.toLowerCase()}`)
       .setDescription(detail ?? `This offer is now ${state.toLowerCase()}.`);
-    await message.edit({ embeds: [embed], components: [] });
+    await message.edit({ embeds: [embed], components: disabledComponents(message) });
   }
 
   public async cleanupOrphan(reference: OfferMessageReference): Promise<void> {
     const message = await this.fetchMessage(reference);
     await message
       .delete()
-      .catch(async () => message.edit({ components: [] }).then(() => undefined));
+      .catch(async () =>
+        message.edit({ components: disabledComponents(message) }).then(() => undefined),
+      );
   }
 
   private async fetchMessage(reference: OfferMessageReference): Promise<Message> {
     const channel = await this.client.channels.fetch(reference.channelId);
-    if (!isTextChannel(channel) || !('messages' in channel)) {
-      throw new OfferDeliveryError('offer channel cannot fetch messages');
+    if (!isDmChannel(channel)) {
+      throw new OfferDeliveryError('offer DM channel cannot fetch messages');
     }
     return channel.messages.fetch(reference.messageId);
   }
@@ -109,9 +128,9 @@ export class DiscordOfferMessageAdapter implements OfferMessageAdapter {
 
 export function createOfferMessagePayload(result: OfferCreationResult): MessageCreateOptions {
   return {
-    content: `<@${result.player.discordUserId}>`,
     allowedMentions: {
-      users: [result.player.discordUserId],
+      parse: [],
+      users: [],
       roles: [],
       repliedUser: false,
     },

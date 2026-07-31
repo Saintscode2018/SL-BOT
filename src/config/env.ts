@@ -56,12 +56,32 @@ export function parseCommandDeploymentEnvironment(
   return result.data;
 }
 
-export function loadEnvironment(): AppEnvironment {
-  loadDotenv();
-  return parseEnvironment(process.env);
+function loadDotenvInto(values: NodeJS.ProcessEnv, path?: string): void {
+  const populatedValues: Record<string, string> = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (value !== undefined) populatedValues[key] = value;
+  }
+  loadDotenv({
+    processEnv: populatedValues,
+    override: false,
+    quiet: true,
+    ...(path === undefined ? {} : { path }),
+  });
+  Object.assign(values, populatedValues);
 }
 
-export function loadRuntimeEnvironment(): RuntimeEnvironment {
-  loadDotenv();
-  return parseRuntimeEnvironment(process.env);
+export function loadEnvironment(
+  values: NodeJS.ProcessEnv = process.env,
+  path?: string,
+): AppEnvironment {
+  loadDotenvInto(values, path);
+  return parseEnvironment(values);
+}
+
+export function loadRuntimeEnvironment(
+  values: NodeJS.ProcessEnv = process.env,
+  path?: string,
+): RuntimeEnvironment {
+  loadDotenvInto(values, path);
+  return parseRuntimeEnvironment(values);
 }

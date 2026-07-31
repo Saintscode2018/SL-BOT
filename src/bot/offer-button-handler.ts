@@ -1,4 +1,5 @@
 import type { Offer } from '@prisma/client';
+import { MessageFlags } from 'discord.js';
 
 import { OfferExpiredError } from '../domain/errors.js';
 import type { Logger } from '../logging/logger.js';
@@ -8,7 +9,11 @@ import type {
   OfferMessageReference,
 } from '../services/offer-delivery-service.js';
 import type { OfferResponseService } from '../services/offer-response-service.js';
-import type { DeferredInteractionResponse, EditedInteractionResponse } from './types.js';
+import type {
+  DeferredInteractionResponse,
+  EditedInteractionResponse,
+  SafeInteractionResponse,
+} from './types.js';
 import { parseOfferCustomId } from './offer-custom-id.js';
 
 export interface OfferButtonInteraction {
@@ -18,10 +23,10 @@ export interface OfferButtonInteraction {
   messageId: string;
   replied: boolean;
   deferred: boolean;
-  reply(response: { content: string; ephemeral: true }): Promise<void>;
+  reply(response: SafeInteractionResponse): Promise<void>;
   deferReply(response: DeferredInteractionResponse): Promise<void>;
   editReply(response: EditedInteractionResponse): Promise<void>;
-  followUp(response: { content: string; ephemeral: true }): Promise<void>;
+  followUp(response: SafeInteractionResponse): Promise<void>;
 }
 
 export class OfferButtonHandler {
@@ -39,7 +44,7 @@ export class OfferButtonHandler {
       channelId: interaction.channelId,
       messageId: interaction.messageId,
     };
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
       if (parsed.action === 'accept') {
         const result = await this.responses.acceptOffer({
@@ -98,7 +103,7 @@ export class OfferButtonHandler {
   }
 
   private async respond(interaction: OfferButtonInteraction, content: string): Promise<void> {
-    const response = { content, ephemeral: true } as const;
+    const response = { content, flags: MessageFlags.Ephemeral } as const;
     if (interaction.deferred && !interaction.replied) {
       await interaction.editReply({ content });
     } else if (interaction.replied) {

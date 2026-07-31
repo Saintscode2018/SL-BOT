@@ -429,7 +429,10 @@ describe('administration services', () => {
     });
     expect(result.sourceClub?.id).toBe(source.id);
     expect(result.offer.expiresAt.getTime()).toBeGreaterThanOrEqual(before + 3_599_000);
-    expect(result.transferChannelId).toBe(settings.transferChannelId);
+    expect(result).toMatchObject({
+      leagueName: 'Development League',
+      activePlayerCount: 0,
+    });
     await expect(
       database.client.auditEvent.count({ where: { eventType: offerCreatedAuditEventType } }),
     ).resolves.toBe(1);
@@ -640,10 +643,11 @@ describe('administration services', () => {
     ).resolves.toMatchObject({ status: 'PENDING' });
   });
 
-  it('voids offers when message sending fails', async () => {
+  it('voids and audits exactly once when the player cannot be DMed', async () => {
     const destination = await createClub();
+    const sendOffer = vi.fn(() => Promise.reject(new Error('cannot message this user')));
     const adapter: OfferMessageAdapter = {
-      sendOffer: vi.fn(() => Promise.reject(new Error('discord unavailable'))),
+      sendOffer,
       setTerminalState: vi.fn(() => Promise.resolve()),
       cleanupOrphan: vi.fn(() => Promise.resolve()),
     };
@@ -655,6 +659,7 @@ describe('administration services', () => {
         playerIsBot: false,
       }),
     ).rejects.toBeInstanceOf(OfferDeliveryError);
+    expect(sendOffer).toHaveBeenCalledOnce();
     await expect(database.client.offer.findFirstOrThrow()).resolves.toMatchObject({
       status: 'VOIDED',
     });
