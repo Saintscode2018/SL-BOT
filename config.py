@@ -1,4 +1,4 @@
-TOKEN = "YOUR_NEW_TOKEN_HERE"
+TOKEN = "PUT_NEW_TOKEN_HERE"
 
 
 TRANSFER_CHANNEL_ID = 1519210891596398745
@@ -23,10 +23,11 @@ MANAGER_ROLES = [
 ]
 
 
-DATABASE_NAME = "superleague.db"
+DATABASE_NAME = "league.db"
 
 
 LEAGUE_LOGO = "YOUR_LOGO_URL_HERE"
+
 
 BOT_NAME = "🏆 Super League S5 Transfer Market"
 
