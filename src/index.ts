@@ -1,31 +1,40 @@
-import { loadEnvironment } from './config/env.js';
-import { prisma, shutdownDatabase } from './database/client.js';
-
-const environment = loadEnvironment();
-let shuttingDown = false;
-
-async function shutdown(signal: NodeJS.Signals): Promise<void> {
-  if (shuttingDown) {
-    return;
-  }
-  shuttingDown = true;
-  console.info(`received ${signal.toLowerCase()} and closing the database connection`);
-  await shutdownDatabase();
-}
+import { createApplication } from './app/create-application.js';
+import { ConsoleLogger, type Logger } from './logging/logger.js';
 
 async function main(): Promise<void> {
-  await prisma.$connect();
-  console.info(`sl bot data foundation started in ${environment.NODE_ENV} mode`);
-
-  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-    process.once(signal, () => {
-      void shutdown(signal).then(() => process.exit(0));
-    });
+  const bootstrapLogger = new ConsoleLogger('info');
+  let logger: Logger = bootstrapLogger;
+  try {
+    const bundle = createApplication();
+    logger = bundle.logger;
+    let shutdownPromise: Promise<void> | null = null;
+    const stopOnce = (signal?: NodeJS.Signals): Promise<void> => {
+      if (shutdownPromise === null) {
+        if (signal !== undefined) logger.info('shutdown requested', { signal });
+        shutdownPromise = bundle.application.stop().catch((error: unknown) => {
+          logger.error('application shutdown failed', error);
+          process.exitCode = 1;
+          throw error;
+        });
+      }
+      return shutdownPromise;
+    };
+    for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+      process.once(signal, () => {
+        void stopOnce(signal).catch(() => undefined);
+      });
+    }
+    try {
+      await bundle.application.start();
+    } catch (error: unknown) {
+      logger.error('application startup failed', error);
+      process.exitCode = 1;
+      await stopOnce().catch(() => undefined);
+    }
+  } catch (error: unknown) {
+    logger.error('application construction failed', error);
+    process.exitCode = 1;
   }
 }
 
-main().catch(async (error: unknown) => {
-  console.error('sl bot failed to start', error);
-  await shutdownDatabase();
-  process.exitCode = 1;
-});
+void main();

@@ -1,10 +1,10 @@
 # SL Bot
 
-SL Bot is being rebuilt as a Discord bot for the SL League. The current branch contains the new TypeScript data foundation alongside the original Python implementation. It is not yet a functional Discord bot.
+SL Bot is being rebuilt as a Discord bot for the SL League. The current branch contains a TypeScript Discord application foundation and transactional league services alongside the original Python implementation. It is not yet a complete league bot.
 
 ## Current status
 
-This stage provides runtime configuration validation, a versioned SQLite schema, typed repositories, database tests, and development tooling. Discord login, commands, views, role changes, and offer-acceptance workflows are intentionally not implemented.
+This stage provides validated Discord startup, explicit command and event registration, database-backed guild configuration, and an atomic offer-acceptance service above the existing data foundation. The `/offer` command, views, embeds, buttons, announcements, and Discord role changes are intentionally not implemented.
 
 The root-level Python files and `superleague.db` are legacy references. The TypeScript application does not import them, and the legacy database is never migrated or used by tests.
 
@@ -15,21 +15,25 @@ The root-level Python files and `superleague.db` are legacy references. The Type
 - Prisma ORM with SQLite
 - Zod and dotenv for validated configuration
 - Vitest, ESLint, and Prettier
-- discord.js installed for the next stage but not connected yet
+- discord.js with the non-privileged `Guilds` intent
 
 ## Architecture
 
-The dependency direction is `bot -> services -> repositories -> Prisma`. Only the database foundation exists today. Repository constructors accept either a `PrismaClient` or a caller-provided Prisma transaction client, so future services can compose atomic operations. Neither domain nor repository modules import discord.js.
+The dependency direction is `bot -> services -> repositories -> Prisma`. Application construction creates one Prisma client, one Discord client, repositories, services, static registries, and typed command context. Repository constructors accept either a `PrismaClient` or a caller-provided Prisma transaction client. Neither domain, service, nor repository modules import discord.js.
 
 See [docs/architecture.md](docs/architecture.md) for entity relationships, transaction strategy, referential actions, and migration policy.
 
 ## Project structure
 
 ```text
+src/app/             dependency construction and lifecycle
+src/bot/             discord client registries and interaction handling
 src/config/          environment validation
-src/database/        application Prisma client
+src/database/        prisma client construction
 src/domain/          shared values errors and types
+src/logging/         typed level aware logging
 src/repositories/    injected database access
+src/services/        guild configuration and league workflows
 prisma/migrations/   reviewed versioned SQL
 scripts/             read only legacy inspection
 tests/               unit and integration tests
@@ -39,13 +43,13 @@ The Python files at the repository root are the unmodified legacy bot.
 
 ## Environment
 
-Copy `.env.example` to `.env` and adjust local values. `DISCORD_TOKEN` is optional during this database-only stage. It will become required when Discord startup is implemented.
+Copy `.env.example` to `.env` and adjust local values. `DISCORD_TOKEN` is required when starting the application but remains optional for database tooling and tests.
 
 ```dotenv
 NODE_ENV=development
 DATABASE_URL=file:./dev.db
 LOG_LEVEL=info
-DISCORD_TOKEN=replace_with_a_real_token_later
+DISCORD_TOKEN=replace_with_a_real_token
 ```
 
 Discord snowflakes and Roblox user IDs are stored as strings because their integer range can exceed JavaScript's safe integer range. Runtime snowflake input accepts decimal digits only.
@@ -61,7 +65,9 @@ npm run prisma:migrate:dev
 npm run dev
 ```
 
-The application entrypoint validates configuration, connects to SQLite, prints a startup message, and handles clean shutdown. It does not create a Discord client.
+The application entrypoint validates runtime configuration, connects Prisma, registers static events and command definitions, logs in one Discord client, and handles `SIGINT` and `SIGTERM`. Shutdown destroys Discord and disconnects Prisma exactly once. Startup failure cleans up partially opened resources without logging the token.
+
+There are currently no public command definitions. Command metadata is not deployed automatically. The registry and interaction handler are ready for the next UI stage.
 
 Quality commands:
 
@@ -97,6 +103,12 @@ Squad size is not stored. It is always counted from active `PLAYER` memberships,
 
 SQLite partial unique indexes enforce one active player membership per guild, one holder of each restricted staff role per club, and one pending offer per club/player pair. Composite foreign keys require every membership, offer, and transaction club to belong to the row's guild. Check constraints enforce positive limits, valid offer expiry, and membership and offer status/timestamp consistency. These rules are kept in migration SQL because Prisma's schema language cannot express every conditional SQLite constraint.
 
+## Services
+
+`GuildConfigurationService` loads a configured guild, its settings, and active clubs by Discord guild snowflake. It never creates missing configuration or imports legacy IDs.
+
+`OfferAcceptanceService` validates the accepting Discord identity, pending and expiry state, active destination club, derived squad capacity, and current player membership. Within one Prisma transaction it conditionally accepts the offer, ends a previous membership for transfers, creates the destination membership, records a signing or transfer, and appends an `offer.accepted` audit event. Expired offers are atomically marked `EXPIRED`. Concurrent acceptance allows only one completion.
+
 ## Legacy data
 
 `superleague.db` is a tracked legacy database and must remain untouched. Inspect a legacy database read-only with:
@@ -109,4 +121,4 @@ The script lists tables, columns, and row counts without changing the file. The 
 
 ## Next stage
 
-The expected next stage is bot startup, Discord command architecture, and an offer-acceptance service built above these repositories. Slash commands, buttons, embeds, scheduling, applications, results, pickups, and deployment remain future work.
+The expected next stage is the `/offer` command and its Discord UI, followed by carefully coordinated role changes and announcements. Slash-command deployment, buttons, embeds, scheduling, applications, results, pickups, and production deployment remain future work.
