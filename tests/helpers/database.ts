@@ -1,0 +1,61 @@
+import { rmSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+
+import { PrismaClient } from '@prisma/client';
+
+export interface TestDatabase {
+  client: PrismaClient;
+  databasePath: string;
+  databaseUrl: string;
+}
+
+export function applyMigrations(databaseUrl: string): void {
+  const prismaCli = join(process.cwd(), 'node_modules', 'prisma', 'build', 'index.js');
+  const result = spawnSync(process.execPath, [prismaCli, 'migrate', 'deploy'], {
+    cwd: process.cwd(),
+    env: { ...process.env, DATABASE_URL: databaseUrl },
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) {
+    throw new Error(`migration failed\n${result.stdout}\n${result.stderr}`);
+  }
+}
+
+export function createTestDatabase(): TestDatabase {
+  const databaseFileName = `.test-${randomUUID()}.db`;
+  const databasePath = join(process.cwd(), 'prisma', databaseFileName);
+  const databaseUrl = `file:./${databaseFileName}`;
+  // create the empty file before prisma migrate deploy on windows with prisma 6 19
+  writeFileSync(databasePath, '', { flag: 'wx' });
+  try {
+    applyMigrations(databaseUrl);
+  } catch (error: unknown) {
+    rmSync(databasePath, { force: true });
+    throw error;
+  }
+  process.env['DATABASE_URL'] = databaseUrl;
+  return {
+    client: new PrismaClient(),
+    databasePath,
+    databaseUrl,
+  };
+}
+
+export async function clearDatabase(client: PrismaClient): Promise<void> {
+  await client.auditEvent.deleteMany();
+  await client.leagueTransaction.deleteMany();
+  await client.offer.deleteMany();
+  await client.clubMembership.deleteMany();
+  await client.guildSettings.deleteMany();
+  await client.club.deleteMany();
+  await client.leagueUser.deleteMany();
+  await client.guild.deleteMany();
+}
+
+export async function destroyTestDatabase(database: TestDatabase): Promise<void> {
+  await database.client.$disconnect();
+  rmSync(database.databasePath, { force: true });
+  rmSync(`${database.databasePath}-journal`, { force: true });
+}
