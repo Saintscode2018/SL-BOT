@@ -3,10 +3,17 @@ Super League S5 Bot Configuration
 """
 
 
-# Bot Token
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
+if TOKEN is None:
+    raise RuntimeError(
+        "DISCORD_TOKEN is not set. Create a .env file in the project root with DISCORD_TOKEN=your_bot_token."
+    )
 
 
 # Server

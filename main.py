@@ -1661,13 +1661,6 @@ async def schedule(
         away
     )
 
-
-    await interaction.response.send_message(
-        embed=embed,
-        view=view
-    )
-
-
     staff_channel = bot.get_channel(
         config.STAFF_CHANNEL_ID
     )
@@ -1688,6 +1681,21 @@ async def schedule(
             f"⚽ Game needs staff:\n"
             f"{home.mention} vs {away.mention}",
             allowed_mentions=discord.AllowedMentions(roles=True)
+        )
+
+        await staff_channel.send(
+            embed=embed,
+            view=view
+        )
+
+        await interaction.response.send_message(
+            "Match posted in the staff channel.",
+            ephemeral=True
+        )
+    else:
+        await interaction.response.send_message(
+            "Could not find the staff channel. Please check STAFF_CHANNEL_ID.",
+            ephemeral=True
         )
 
 
