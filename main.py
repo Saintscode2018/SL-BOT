@@ -1,4 +1,5 @@
 import time
+import traceback
 
 import discord
 from discord import app_commands
@@ -190,6 +191,16 @@ class OfferView(discord.ui.View):
             return
 
 
+        if config.ENABLE_ROSTER_TRACKING and club[4] >= club[5]:
+            disable_view(self)
+            await interaction.message.edit(view=self)
+            await interaction.followup.send(
+                "This team is full and cannot sign more players.",
+                ephemeral=True
+            )
+            return
+
+
 
 
 
@@ -361,22 +372,38 @@ class OfferView(discord.ui.View):
 @bot.event
 async def on_ready():
 
-
     database.setup()
-
     database.load_default_clubs()
 
+    print(f"Ready in guilds: {[guild.id for guild in bot.guilds]}")
+    print(f"Application ID: {bot.application_id}")
+    print("Command tree contains:", [cmd.name for cmd in bot.tree.walk_commands()])
 
+    try:
+        guild = bot.get_guild(config.SERVER_ID)
 
-    synced = await bot.tree.sync()
+        if guild is None:
+            guild = discord.utils.get(bot.guilds, id=config.SERVER_ID)
 
+        if guild is None:
+            print(f"Guild {config.SERVER_ID} not found in cache; using partial object for sync.")
+            guild = discord.Object(id=config.SERVER_ID)
+        else:
+            print(f"Found guild in cache: {guild.name} ({guild.id})")
+
+        bot.tree.copy_global_to(guild=guild)
+        synced = await bot.tree.sync(guild=guild)
+        print(f"Synced {len(synced)} commands to guild {config.SERVER_ID}")
+        print("Synced command names:", [cmd.name for cmd in synced])
+    except Exception as e:
+        print(f"Command sync failed: {e}")
+        traceback.print_exc()
+        synced = await bot.tree.sync()
+        print(f"Synced {len(synced)} global commands")
+        print("Synced command names:", [cmd.name for cmd in synced])
 
     print(
         f"Logged in as {bot.user}"
-    )
-
-    print(
-        f"Synced {len(synced)} commands"
     )
 
 
@@ -553,16 +580,6 @@ async def offer(
 
 
 
-
-
-
-
-if __name__ == "__main__":
-
-    bot.run(
-        config.TOKEN
-    )
-
   # Roster command
 @bot.tree.command(
     name="roster",
@@ -641,6 +658,107 @@ async def roster(
 
     await interaction.response.send_message(
         embed=embed
+    )
+
+
+# Demand release command
+@bot.tree.command(
+    name="demand",
+    description="Demand release from your current team"
+)
+async def demand(
+    interaction: discord.Interaction
+):
+    club = get_club(interaction.user)
+
+    if club is None:
+        await interaction.response.send_message(
+            embed=embeds.error_embed(
+                "Not in a team",
+                "You are not connected to a team."
+            ),
+            ephemeral=True
+        )
+        return
+
+    team_role = interaction.guild.get_role(club[0])
+
+    if team_role is None or team_role not in interaction.user.roles:
+        await interaction.response.send_message(
+            "You are not a member of that team.",
+            ephemeral=True
+        )
+        return
+
+    try:
+        await interaction.user.remove_roles(
+            team_role,
+            reason="Player demanded release"
+        )
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            "I cannot remove that role.",
+            ephemeral=True
+        )
+        return
+
+    if config.ENABLE_ROSTER_TRACKING:
+        database.decrease_roster(club[0])
+
+    database.add_transfer(
+        player_id=interaction.user.id,
+        player_name=str(interaction.user),
+        old_club=club[1],
+        manager=str(interaction.user),
+        new_club="Free Agent",
+        club_id=club[0],
+        status="DEMANDED"
+    )
+
+    await interaction.response.send_message(
+        embed=embeds.error_embed(
+            "Release Requested",
+            f"You have been released from {club[1]} and are now a Free Agent."
+        )
+    )
+
+
+# Sync command
+@bot.tree.command(
+    name="sync",
+    description="Sync application commands manually"
+)
+async def sync(
+    interaction: discord.Interaction
+):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(
+            "Administrator only.",
+            ephemeral=True
+        )
+        return
+
+    guild = bot.get_guild(config.SERVER_ID) or discord.Object(id=config.SERVER_ID)
+    synced = await bot.tree.sync(guild=guild)
+
+    await interaction.response.send_message(
+        f"Synced {len(synced)} commands to guild {config.SERVER_ID}",
+        ephemeral=True
+    )
+
+
+# Commands list helper
+@bot.tree.command(
+    name="commands",
+    description="Show loaded slash commands"
+)
+async def commands(
+    interaction: discord.Interaction
+):
+    command_names = sorted({cmd.name for cmd in bot.tree.walk_commands()})
+    await interaction.response.send_message(
+        "Loaded commands: " + ", ".join(command_names),
+        ephemeral=True
     )
 
 
@@ -1232,158 +1350,6 @@ async def demote(
         embed=embed
     )
 
-    # Schedule button view
-
-class ScheduleView(discord.ui.View):
-
-    def __init__(self, home, away):
-        super().__init__(
-            timeout=None
-        )
-
-        self.home = home
-        self.away = away
-
-        self.referee = None
-        self.broadcaster = None
-        self.commentator = None
-
-
-    async def update_message(self, interaction):
-
-        embed = discord.Embed(
-            title="Super League Fixture",
-            color=discord.Color.blue()
-        )
-
-        embed.add_field(
-            name="Match",
-            value=f"{self.home.mention} vs {self.away.mention}",
-            inline=False
-        )
-
-        embed.add_field(
-            name="Referee",
-            value=self.referee.mention if self.referee else "Not Assigned",
-            inline=True
-        )
-
-        embed.add_field(
-            name="Broadcaster",
-            value=self.broadcaster.mention if self.broadcaster else "Not Assigned",
-            inline=True
-        )
-
-        embed.add_field(
-            name="Commentator",
-            value=self.commentator.mention if self.commentator else "Not Assigned",
-            inline=True
-        )
-
-
-        await interaction.message.edit(
-            embed=embed,
-            view=self
-        )
-
-
-    @discord.ui.button(
-        label="Claim Referee",
-        emoji="🟦",
-        style=discord.ButtonStyle.primary
-    )
-    async def referee_button(
-        self,
-        interaction,
-        button
-    ):
-
-        role = interaction.guild.get_role(
-            config.REF_ROLE_ID
-        )
-
-        if role not in interaction.user.roles:
-            await interaction.response.send_message(
-                "You are not a referee.",
-                ephemeral=True
-            )
-            return
-
-
-        self.referee = interaction.user
-
-        await interaction.response.defer()
-
-        await self.update_message(
-            interaction
-        )
-
-
-    @discord.ui.button(
-        label="Claim Broadcaster",
-        emoji="🟪",
-        style=discord.ButtonStyle.secondary
-    )
-    async def broadcaster_button(
-        self,
-        interaction,
-        button
-    ):
-
-        role = interaction.guild.get_role(
-            config.BROADCASTER_ROLE_ID
-        )
-
-        if role not in interaction.user.roles:
-            await interaction.response.send_message(
-                "You are not a broadcaster.",
-                ephemeral=True
-            )
-            return
-
-
-        self.broadcaster = interaction.user
-
-        await interaction.response.defer()
-
-        await self.update_message(
-            interaction
-        )
-
-
-    @discord.ui.button(
-        label="Claim Commentator",
-        emoji="🟨",
-        style=discord.ButtonStyle.success
-    )
-    async def commentator_button(
-        self,
-        interaction,
-        button
-    ):
-
-        role = interaction.guild.get_role(
-            config.COMMENTATOR_ROLE_ID
-        )
-
-        if role not in interaction.user.roles:
-            await interaction.response.send_message(
-                "You are not a commentator.",
-                ephemeral=True
-            )
-            return
-
-
-        self.commentator = interaction.user
-
-        await interaction.response.defer()
-
-        await self.update_message(
-            interaction
-        )
-
-
-
 # Schedule button view
 
 class ScheduleView(discord.ui.View):
@@ -1716,3 +1682,12 @@ async def schedule(
             f"⚽ Game needs staff:\n"
             f"{home.mention} vs {away.mention}"
         )
+
+
+
+
+if __name__ == "__main__":
+
+    bot.run(
+        config.TOKEN
+    )
