@@ -1,0 +1,46 @@
+# config.py
+
+TOKEN = os.getenv("DISCORD_TOKEN")
+
+
+# Transfer announcement channel
+TRANSFER_CHANNEL_ID = 1519210891596398745
+
+
+# Staff roles
+TEAM_MANAGER_ROLE = 1520900719799042088
+ASSISTANT_TEAM_MANAGER_ROLE = 1520899851393437797
+PLAYER_MANAGER_ROLE = 1521309945851547780
+
+
+MANAGER_ROLES = [
+    TEAM_MANAGER_ROLE,
+    ASSISTANT_TEAM_MANAGER_ROLE,
+    PLAYER_MANAGER_ROLE
+]
+
+
+# Offer permissions
+ALLOWED_ROLES = [
+    TEAM_MANAGER_ROLE,
+    ASSISTANT_TEAM_MANAGER_ROLE,
+    PLAYER_MANAGER_ROLE
+]
+
+
+# Transfer settings
+
+MAX_TRANSFER_HISTORY = 100
+
+
+OFFER_EXPIRY_HOURS = 24
+
+
+# Default embed style
+
+BOT_NAME = "Super League S5 Transfer System"
+
+
+FOOTER_TEXT = (
+    " Super League S5 • Official Transfer System"
+)
