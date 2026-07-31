@@ -4,16 +4,19 @@ Super League S5 Bot Configuration
 
 
 # Bot Token
+
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 
 
 # Server
+
 SERVER_ID = 1519038150612226148
 
 
 
 # Database
+
 DATABASE_NAME = "league.db"
 
 
@@ -22,7 +25,7 @@ DATABASE_NAME = "league.db"
 
 LEAGUE_NAME = "Super League S5"
 
-LEAGUE_LOGO = "YOUR_LEAGUE_LOGO_URL_HERE" # Replace with your league's logo URL
+LEAGUE_LOGO = "YOUR_LEAGUE_LOGO_URL_HERE"
 
 FOOTER_TEXT = "Super League S5 • Official Transfer System"
 
@@ -30,13 +33,9 @@ BOT_NAME = "Super League S5 Transfer Bot"
 
 
 
-
-
 # Channels
 
 TRANSFER_CHANNEL_ID = 1519210891596398745
-
-
 
 
 
@@ -49,6 +48,24 @@ ASSISTANT_TEAM_MANAGER_ROLE = 1520899851393437797
 PLAYER_MANAGER_ROLE = 1521309945851547780
 
 
+
+# Promotion hierarchy
+# Lowest -> Highest
+
+STAFF_RANK_ROLES = [
+
+    PLAYER_MANAGER_ROLE,
+
+    ASSISTANT_TEAM_MANAGER_ROLE,
+
+    TEAM_MANAGER_ROLE
+
+]
+
+
+
+# Roles allowed to use manager commands
+
 ALLOWED_ROLES = [
 
     TEAM_MANAGER_ROLE,
@@ -59,10 +76,8 @@ ALLOWED_ROLES = [
 
 ]
 
+
 MANAGER_ROLES = ALLOWED_ROLES
-
-
-
 
 
 
@@ -78,15 +93,11 @@ COLOR_WARNING = 0xF1C40F
 
 
 
-
-
 # Transfer System
 
 CONTRACT_TYPE = "Professional First Team"
 
 OFFER_TIMEOUT = 86400
-
-
 
 
 
@@ -99,3 +110,25 @@ ENABLE_TRANSFER_HISTORY = True
 ENABLE_ROSTER_TRACKING = True
 
 SHOW_ROBLOX_NAMES = True
+
+# Color Roles
+
+COLOR_ROLES = {
+    "Red": 123456789,
+    "Blue": 123456789,
+    "Green": 123456789,
+    "Purple": 123456789
+}
+
+
+# Schedule System
+
+STAFF_CHANNEL_ID = 1529150206640128131
+
+# Game staff roles
+
+REF_ROLE_ID = 1520419503761002567
+
+COMMENTATOR_ROLE_ID = 1519257840911384576
+
+BROADCASTER_ROLE_ID = 1519067903146852483

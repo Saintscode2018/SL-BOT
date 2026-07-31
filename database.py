@@ -5,11 +5,8 @@ import config
 DATABASE = config.DATABASE_NAME
 
 
-
 def connect():
     return sqlite3.connect(DATABASE)
-
-
 
 
 
@@ -32,7 +29,11 @@ def setup():
 
         squad_size INTEGER DEFAULT 0,
 
-        squad_limit INTEGER DEFAULT 17
+        squad_limit INTEGER DEFAULT 17,
+
+        manager_id INTEGER,
+
+        assistant_manager_id INTEGER
 
     )
     """)
@@ -64,11 +65,57 @@ def setup():
     """)
 
 
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS matches (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        home_team TEXT NOT NULL,
+
+        away_team TEXT NOT NULL,
+
+        home_role_id INTEGER,
+
+        away_role_id INTEGER,
+
+        referee_id INTEGER,
+
+        broadcaster_id INTEGER,
+
+        commentator_id INTEGER,
+
+        result TEXT,
+
+        status TEXT DEFAULT 'SCHEDULED',
+
+        created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+    )
+    """)
+
+
+
+    try:
+        cur.execute(
+            "ALTER TABLE clubs ADD COLUMN manager_id INTEGER"
+        )
+    except sqlite3.OperationalError:
+        pass
+
+
+
+    try:
+        cur.execute(
+            "ALTER TABLE clubs ADD COLUMN assistant_manager_id INTEGER"
+        )
+    except sqlite3.OperationalError:
+        pass
+
+
+
     conn.commit()
     conn.close()
-
-
-
 
 
 
@@ -86,7 +133,6 @@ def load_default_clubs():
             17
         ),
 
-
         (
             1520903245458047007,
             "Manchester City",
@@ -96,142 +142,11 @@ def load_default_clubs():
             17
         ),
 
-
         (
-            1520903247945007105,
+            1520903245458047005,
             "Manchester United",
-            "https://cdn.discordapp.com/emojis/1520907262783127784.png",
+            "",
             0xDA291C,
-            0,
-            17
-        ),
-
-
-        (
-            1520903249000000001,
-            "Arsenal",
-            "",
-            0xEF0107,
-            0,
-            17
-        ),
-
-
-        (
-            1520903249000000002,
-            "Liverpool",
-            "https://cdn.discordapp.com/emojis/1520907988133744692.png",
-            0xC8102E,
-            0,
-            17
-        ),
-
-
-        (
-            1520903250969231430,
-            "Bayern Munich",
-            "https://cdn.discordapp.com/emojis/1519397326316371988.png",
-            0xDC052D,
-            0,
-            17
-        ),
-
-
-        (
-            1520903589931909141,
-            "FC Barcelona",
-            "https://cdn.discordapp.com/emojis/1519397322306355231.png",
-            0xA50044,
-            0,
-            17
-        ),
-
-
-        (
-            1520903596210655252,
-            "Real Madrid",
-            "https://cdn.discordapp.com/emojis/1519397321023033364.png",
-            0xFEBE10,
-            0,
-            17
-        ),
-
-
-        (
-            1520912782961414154,
-            "AC Milan",
-            "https://cdn.discordapp.com/emojis/1519397318124765194.png",
-            0x000000,
-            0,
-            17
-        ),
-
-
-        (
-            1520903249000000003,
-            "Inter Milan",
-            "https://cdn.discordapp.com/emojis/1520916422795202682.png",
-            0x00529F,
-            0,
-            17
-        ),
-
-
-        (
-            1520903249000000004,
-            "Juventus",
-            "https://cdn.discordapp.com/emojis/1520907534108725399.png",
-            0x000000,
-            0,
-            17
-        ),
-
-
-        (
-            1520903249000000005,
-            "Borussia Dortmund",
-            "https://cdn.discordapp.com/emojis/1520908303285223505.png",
-            0xFDE100,
-            0,
-            17
-        ),
-
-
-        (
-            1520903249000000006,
-            "Atletico Madrid",
-            "https://cdn.discordapp.com/emojis/1520909585232171018.png",
-            0xCB3524,
-            0,
-            17
-        ),
-
-
-        (
-            1520903249000000007,
-            "Tottenham Hotspur",
-            "",
-            0x132257,
-            0,
-            17
-        ),
-
-
-        (
-            1520903249000000008,
-            "Napoli",
-            "",
-            0x008CD2,
-            0,
-            17
-        ),
-
-
-        (
-            1520903249000000009,
-            "Chelsea",
-            "https://cdn.discordapp.com/emojis/1519397330120343592.png",
-            0x034694,
             0,
             17
         )
@@ -239,28 +154,27 @@ def load_default_clubs():
     ]
 
 
-
     conn = connect()
     cur = conn.cursor()
-
 
 
     for club in clubs:
 
         cur.execute(
             """
-            INSERT OR REPLACE INTO clubs
-
+            INSERT OR IGNORE INTO clubs
             (
                 role_id,
                 name,
                 logo,
                 color,
                 squad_size,
-                squad_limit
+                squad_limit,
+                manager_id,
+                assistant_manager_id
             )
 
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)
 
             """,
 
@@ -268,12 +182,8 @@ def load_default_clubs():
         )
 
 
-
     conn.commit()
     conn.close()
-
-
-
 
 
 
@@ -287,28 +197,18 @@ def get_club_by_role(role_id):
     cur.execute(
         """
         SELECT *
-
         FROM clubs
-
         WHERE role_id = ?
-
         """,
-
         (role_id,)
     )
 
 
     club = cur.fetchone()
 
-
     conn.close()
 
-
     return club
-
-
-
-
 
 
 
@@ -318,22 +218,15 @@ def get_all_clubs():
     conn = connect()
     cur = conn.cursor()
 
-
     cur.execute(
         "SELECT * FROM clubs"
     )
 
-
     clubs = cur.fetchall()
-
 
     conn.close()
 
-
     return clubs
-
-
-
 
 
 
@@ -342,7 +235,6 @@ def increase_roster(role_id):
 
     conn = connect()
     cur = conn.cursor()
-
 
     cur.execute(
         """
@@ -353,16 +245,34 @@ def increase_roster(role_id):
         WHERE role_id = ?
 
         """,
-
         (role_id,)
     )
-
 
     conn.commit()
     conn.close()
 
 
 
+
+def decrease_roster(role_id):
+
+    conn = connect()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        UPDATE clubs
+
+        SET squad_size = MAX(squad_size - 1,0)
+
+        WHERE role_id = ?
+
+        """,
+        (role_id,)
+    )
+
+    conn.commit()
+    conn.close()
 
 
 
@@ -413,3 +323,287 @@ def add_transfer(
 
     conn.commit()
     conn.close()
+
+
+
+
+def set_team_manager(role_id, manager_id):
+
+    conn = connect()
+    cur = conn.cursor()
+
+
+    cur.execute(
+        """
+        UPDATE clubs
+
+        SET manager_id = ?
+
+        WHERE role_id = ?
+
+        """,
+        (
+            manager_id,
+            role_id
+        )
+    )
+
+
+    conn.commit()
+    conn.close()
+
+
+
+
+def get_team_manager(role_id):
+
+    conn = connect()
+    cur = conn.cursor()
+
+
+    cur.execute(
+        """
+        SELECT manager_id
+        FROM clubs
+        WHERE role_id = ?
+        """,
+        (role_id,)
+    )
+
+
+    result = cur.fetchone()
+
+    conn.close()
+
+
+    return result[0] if result else None
+
+
+
+
+def set_assistant_manager(role_id, assistant_id):
+
+    conn = connect()
+    cur = conn.cursor()
+
+
+    cur.execute(
+        """
+        UPDATE clubs
+
+        SET assistant_manager_id = ?
+
+        WHERE role_id = ?
+
+        """,
+        (
+            assistant_id,
+            role_id
+        )
+    )
+
+
+    conn.commit()
+    conn.close()
+
+
+
+
+def get_assistant_manager(role_id):
+
+    conn = connect()
+    cur = conn.cursor()
+
+
+    cur.execute(
+        """
+        SELECT assistant_manager_id
+        FROM clubs
+        WHERE role_id = ?
+        """,
+        (role_id,)
+    )
+
+
+    result = cur.fetchone()
+
+    conn.close()
+
+
+    return result[0] if result else None
+
+
+
+
+def add_club(
+    role_id,
+    name,
+    logo="",
+    color=0
+):
+
+    conn = connect()
+    cur = conn.cursor()
+
+
+    cur.execute(
+        """
+        INSERT INTO clubs
+
+        (
+            role_id,
+            name,
+            logo,
+            color
+        )
+
+        VALUES (?, ?, ?, ?)
+
+        """,
+        (
+            role_id,
+            name,
+            logo,
+            color
+        )
+    )
+
+
+    conn.commit()
+    conn.close()
+
+
+
+
+def remove_club(role_id):
+
+    conn = connect()
+    cur = conn.cursor()
+
+
+    cur.execute(
+        """
+        DELETE FROM clubs
+        WHERE role_id = ?
+        """,
+        (role_id,)
+    )
+
+
+    conn.commit()
+    conn.close()
+
+
+
+
+# Schedule System
+
+
+def add_match(
+    home_team,
+    away_team,
+    home_role_id,
+    away_role_id
+):
+
+    conn = connect()
+    cur = conn.cursor()
+
+
+    cur.execute(
+        """
+        INSERT INTO matches
+
+        (
+            home_team,
+            away_team,
+            home_role_id,
+            away_role_id
+        )
+
+        VALUES (?, ?, ?, ?)
+
+        """,
+        (
+            home_team,
+            away_team,
+            home_role_id,
+            away_role_id
+        )
+    )
+
+
+    conn.commit()
+
+    match_id = cur.lastrowid
+
+    conn.close()
+
+    return match_id
+
+
+
+
+def update_match_staff(
+    match_id,
+    referee_id=None,
+    broadcaster_id=None,
+    commentator_id=None
+):
+
+    conn = connect()
+    cur = conn.cursor()
+
+
+    cur.execute(
+        """
+        UPDATE matches
+
+        SET
+
+        referee_id = ?,
+
+        broadcaster_id = ?,
+
+        commentator_id = ?
+
+        WHERE id = ?
+
+        """,
+
+        (
+            referee_id,
+            broadcaster_id,
+            commentator_id,
+            match_id
+        )
+    )
+
+
+    conn.commit()
+    conn.close()
+
+
+
+
+def get_match(match_id):
+
+    conn = connect()
+    cur = conn.cursor()
+
+
+    cur.execute(
+        """
+        SELECT *
+        FROM matches
+        WHERE id = ?
+        """,
+        (match_id,)
+    )
+
+
+    match = cur.fetchone()
+
+    conn.close()
+
+    return match
