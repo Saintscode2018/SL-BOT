@@ -2,15 +2,12 @@ import { ChannelType, MessageFlags, SlashCommandBuilder } from 'discord.js';
 
 import { ConfigurationError, ValidationError } from '../domain/errors.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
-import {
-  formatTeamBanner,
-  teamBannerConfigFrom,
-  type TeamBannerConfig,
-} from '../domain/team-label.js';
+import { formatTeamIdentity } from '../domain/team-label.js';
 import type { AuthorizationInput } from '../services/authorization-service.js';
 import { getFriendlyPositionName, type StaffType } from '../services/staff-management-service.js';
-import { createActorField, createInfoEmbed, createSuccessEmbed } from './embeds.js';
+import { createActorField, createInfoEmbed, createSuccessEmbed, EMBED_COLORS } from './embeds.js';
 import { getTeamThumbnail, validateTeamEmoji } from './emoji-helper.js';
+import { getTeamEmbedColor, resolveTeamPresentation } from './team-presentation.js';
 import type {
   CommandAutocompleteInteraction,
   CommandContext,
@@ -104,64 +101,6 @@ function requiredInteger(options: CommandInteractionOptions, name: string): numb
   const value = options.getInteger(name);
   if (value === null) throw new ConfigurationError(`${name} is required`);
   return value;
-}
-
-function requiredBoolean(options: CommandInteractionOptions, name: string): boolean {
-  const value = options.getBoolean?.(name) ?? null;
-  if (value === null) throw new ConfigurationError(`${name} is required`);
-  return value;
-}
-
-async function loadTeamBannerConfig(
-  context: CommandContext,
-  discordGuildId: string,
-): Promise<TeamBannerConfig> {
-  const configuration = await context.guildConfigurationService.load(discordGuildId);
-  return teamBannerConfigFrom(configuration.settings);
-}
-
-const exampleTeamBanner = {
-  emoji: '<:examplept:100000000000000001>',
-  name: 'Example Preview Team',
-  shortName: 'EPT',
-  discordRoleId: '100000000000000001',
-  discordRoleName: 'ExamplePreviewTeam',
-} as const;
-
-function bannerConfigurationText(config: TeamBannerConfig): string {
-  return [
-    `Emoji: ${config.bannerHasEmoji ? 'Enabled' : 'Disabled'}`,
-    `Name: ${config.bannerHasName ? 'Enabled' : 'Disabled'}`,
-    `Short Name: ${config.bannerHasShort ? 'Enabled' : 'Disabled'}`,
-    `Role: ${config.bannerHasRole ? 'Enabled' : 'Disabled'}`,
-  ].join('\n');
-}
-
-function bannerPreview(config: TeamBannerConfig): string {
-  return formatTeamBanner(exampleTeamBanner, config, 'autocomplete');
-}
-
-function rosterTitleIdentity(
-  team: Parameters<typeof formatTeamBanner>[0],
-  config: TeamBannerConfig,
-): string {
-  if (config.bannerHasEmoji || config.bannerHasName) {
-    return formatTeamBanner(team, {
-      bannerHasEmoji: config.bannerHasEmoji,
-      bannerHasName: config.bannerHasName,
-      bannerHasShort: false,
-      bannerHasRole: false,
-    });
-  }
-  if (config.bannerHasShort) {
-    return formatTeamBanner(team, {
-      bannerHasEmoji: false,
-      bannerHasName: false,
-      bannerHasShort: true,
-      bannerHasRole: false,
-    });
-  }
-  return 'Team';
 }
 
 const staffPositions = [
@@ -518,82 +457,12 @@ const setupCommand: CommandDefinition = {
             value: `👥 Default Squad Limit: ${view.defaultSquadLimit}\n⏰ Offer Lifetime: ${view.offerTimeoutMinutes} minutes`,
             inline: false,
           },
-          {
-            name: 'Team Banner',
-            value: bannerConfigurationText(view.banner),
-            inline: false,
-          },
-          { name: 'Preview', value: bannerPreview(view.banner), inline: false },
           { name: 'Missing Configuration', value: missingText, inline: false },
         ],
       });
 
       await interaction.editReply({ embeds: [embed] });
     }
-  },
-};
-
-const bannerConfigCommand: CommandDefinition = {
-  data: new SlashCommandBuilder()
-    .setName('bannerconfig')
-    .setDescription('Configure the guild team banner components')
-    .addBooleanOption((option) =>
-      option.setName('has_emoji').setDescription('Show the team emoji').setRequired(true),
-    )
-    .addBooleanOption((option) =>
-      option.setName('has_name').setDescription('Show the team name').setRequired(true),
-    )
-    .addBooleanOption((option) =>
-      option.setName('has_short').setDescription('Show the short team name').setRequired(true),
-    )
-    .addBooleanOption((option) =>
-      option.setName('has_role').setDescription('Show the Discord team role').setRequired(true),
-    ),
-  async execute(interaction, context) {
-    const execution = await enforceChannelPolicy(interaction, context);
-    const requested = {
-      bannerHasEmoji: requiredBoolean(execution.options, 'has_emoji'),
-      bannerHasName: requiredBoolean(execution.options, 'has_name'),
-      bannerHasShort: requiredBoolean(execution.options, 'has_short'),
-      bannerHasRole: requiredBoolean(execution.options, 'has_role'),
-    };
-
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    const updateBannerConfiguration = context.guildSetupService.updateBannerConfiguration;
-    if (updateBannerConfiguration === undefined) {
-      throw new ConfigurationError('team banner configuration service is unavailable');
-    }
-    const result = await updateBannerConfiguration.call(context.guildSetupService, {
-      authorization: execution.authorization,
-      ...requested,
-    });
-    const title = '✅ Team Banner Configuration Updated';
-    const preview = bannerPreview(result.after);
-    const configurationText = bannerConfigurationText(result.after);
-    const auditFields = [
-      { name: 'Enabled Components', value: configurationText, inline: false },
-      { name: 'Team Banner Preview', value: preview, inline: false },
-    ];
-    const auditPublished = await publishSetupAudit(context, {
-      channelId: result.settings.auditChannelId,
-      title,
-      description: 'Successfully updated the guild team banner configuration.',
-      fields: auditFields,
-      actorDiscordUserId: execution.authorization.discordUserId,
-    });
-    const embed = createSuccessEmbed({
-      title,
-      description: withAuditWarning(
-        'Successfully updated the guild team banner configuration.',
-        auditPublished,
-      ),
-      fields: [
-        { name: 'Team Banner Preview', value: preview, inline: false },
-        { name: 'Enabled Components', value: configurationText, inline: false },
-        createActorField('Configured', execution.authorization.discordUserId),
-      ],
-    });
-    await interaction.editReply({ embeds: [embed] });
   },
 };
 
@@ -605,12 +474,6 @@ const teamCommand: CommandDefinition = {
       subcommand
         .setName('add')
         .setDescription('Register a team linked to an existing role')
-        .addStringOption((option) =>
-          option.setName('name').setDescription('Team name').setRequired(true),
-        )
-        .addStringOption((option) =>
-          option.setName('short_name').setDescription('Short team name').setRequired(true),
-        )
         .addRoleOption((option) =>
           option.setName('role').setDescription('Existing team role').setRequired(true),
         )
@@ -632,8 +495,6 @@ const teamCommand: CommandDefinition = {
             .setAutocomplete(true)
             .setRequired(true),
         )
-        .addStringOption((option) => option.setName('name').setDescription('New team name'))
-        .addStringOption((option) => option.setName('short_name').setDescription('New short name'))
         .addRoleOption((option) => option.setName('role').setDescription('New team role'))
         .addStringOption((option) =>
           option.setName('emoji').setDescription('New custom or standard emoji for team branding'),
@@ -656,27 +517,28 @@ const teamCommand: CommandDefinition = {
     const execution = await enforceChannelPolicy(interaction, context);
     const subcommand = execution.options.getSubcommand();
     const guildEmojis = interaction.getGuildEmojis?.() ?? [];
-    const bannerConfig = await loadTeamBannerConfig(context, execution.guildId);
 
     if (subcommand === 'add') {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const rawEmoji = requiredString(execution.options, 'emoji');
       const validatedEmoji = validateTeamEmoji(rawEmoji, guildEmojis);
+      const role = requiredRole(execution.options, 'role');
 
       const club = await context.clubManagementService.create({
         authorization: execution.authorization,
-        name: requiredString(execution.options, 'name'),
-        shortName: requiredString(execution.options, 'short_name'),
-        discordRoleId: requiredRole(execution.options, 'role').id,
+        discordRoleId: role.id,
         emoji: validatedEmoji.display,
       });
 
-      const thumbnail = getTeamThumbnail(club.emoji, club.logoUrl);
+      const presentation = resolveTeamPresentation(interaction, club);
+      const thumbnail = getTeamThumbnail(club.emoji);
       const embed = createSuccessEmbed({
         title: '✅ Team Added',
-        description: `Successfully created team ${formatTeamBanner(club, bannerConfig)}.`,
+        description: `Successfully added ${formatTeamIdentity(presentation.team, 'message')}.`,
+        color: getTeamEmbedColor(presentation, EMBED_COLORS.SUCCESS),
         fields: [
-          { name: 'Squad Limit', value: 'Guild Default', inline: true },
+          { name: 'Role', value: `<@&${club.discordRoleId}>`, inline: true },
+          { name: 'Emoji', value: club.emoji, inline: true },
           createActorField('Added', execution.authorization.discordUserId),
         ],
         thumbnail,
@@ -689,8 +551,6 @@ const teamCommand: CommandDefinition = {
     if (subcommand === 'edit') {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const teamId = requiredString(execution.options, 'team');
-      const name = execution.options.getString('name') ?? undefined;
-      const shortName = execution.options.getString('short_name') ?? undefined;
       const role = execution.options.getRole('role');
       const rawEmoji = execution.options.getString('emoji');
 
@@ -703,16 +563,16 @@ const teamCommand: CommandDefinition = {
       const club = await context.clubManagementService.edit({
         authorization: execution.authorization,
         clubId: teamId,
-        ...(name === undefined ? {} : { name }),
-        ...(shortName === undefined ? {} : { shortName }),
         ...(role === null ? {} : { discordRoleId: role.id }),
         ...(emojiToUpdate === undefined ? {} : { emoji: emojiToUpdate }),
       });
 
-      const thumbnail = getTeamThumbnail(club.emoji, club.logoUrl);
+      const presentation = resolveTeamPresentation(interaction, club);
+      const thumbnail = getTeamThumbnail(club.emoji);
       const embed = createSuccessEmbed({
         title: '✅ Team Updated',
-        description: `Successfully updated ${formatTeamBanner(club, bannerConfig)}.`,
+        description: `Successfully updated ${formatTeamIdentity(presentation.team, 'message')}.`,
+        color: getTeamEmbedColor(presentation, EMBED_COLORS.SUCCESS),
         fields: [createActorField('Edited', execution.authorization.discordUserId)],
         thumbnail,
       });
@@ -726,10 +586,12 @@ const teamCommand: CommandDefinition = {
       const teamId = requiredString(execution.options, 'team');
       const club = await context.clubManagementService.deactivate(execution.authorization, teamId);
 
-      const thumbnail = getTeamThumbnail(club.emoji, club.logoUrl);
+      const presentation = resolveTeamPresentation(interaction, club);
+      const thumbnail = getTeamThumbnail(club.emoji);
       const embed = createSuccessEmbed({
         title: '✅ Team Removed',
-        description: `Successfully deactivated ${formatTeamBanner(club, bannerConfig)}. The team is now inactive.`,
+        description: `Successfully deactivated ${formatTeamIdentity(presentation.team, 'message')}. The team is now inactive.`,
+        color: getTeamEmbedColor(presentation, EMBED_COLORS.SUCCESS),
         fields: [
           { name: 'Status', value: 'Inactive', inline: true },
           {
@@ -759,7 +621,7 @@ const teamCommand: CommandDefinition = {
     }
 
     const teamLines = teams.map(({ club, activePlayerCount, effectiveLimit }) => {
-      return `${formatTeamBanner(club, bannerConfig)} — ${activePlayerCount}/${effectiveLimit}`;
+      return `${formatTeamIdentity(club, 'message')} — ${activePlayerCount}/${effectiveLimit}`;
     });
 
     const embed = createInfoEmbed({
@@ -824,7 +686,6 @@ const limitCommand: CommandDefinition = {
   async execute(interaction, context) {
     const execution = await enforceChannelPolicy(interaction, context);
     const subcommand = execution.options.getSubcommand();
-    const bannerConfig = await loadTeamBannerConfig(context, execution.guildId);
 
     if (subcommand === 'default') {
       const amount = requiredInteger(execution.options, 'amount');
@@ -854,9 +715,11 @@ const limitCommand: CommandDefinition = {
         amount,
       });
 
+      const presentation = resolveTeamPresentation(interaction, result.club);
       const embed = createSuccessEmbed({
         title: '✅ Team Squad Limit Updated',
-        description: `Squad limit override for ${formatTeamBanner(result.club, bannerConfig)} set to **${result.override}** (effective limit: **${result.effectiveLimit}**).`,
+        description: `Updated squad limit for ${formatTeamIdentity(presentation.team, 'message')} to **${result.override}** players.`,
+        color: getTeamEmbedColor(presentation, EMBED_COLORS.SUCCESS),
         fields: [createActorField('Updated', execution.authorization.discordUserId)],
       });
 
@@ -872,9 +735,11 @@ const limitCommand: CommandDefinition = {
         clubId: teamId,
       });
 
+      const presentation = resolveTeamPresentation(interaction, result.club);
       const embed = createSuccessEmbed({
         title: '✅ Team Squad Limit Reset',
-        description: `Squad limit override for ${formatTeamBanner(result.club, bannerConfig)} cleared (effective limit: **${result.effectiveLimit}**).`,
+        description: `Reset squad limit for ${formatTeamIdentity(presentation.team, 'message')} to the guild default (**${result.effectiveLimit}** players).`,
+        color: getTeamEmbedColor(presentation, EMBED_COLORS.SUCCESS),
         fields: [createActorField('Reset', execution.authorization.discordUserId)],
       });
 
@@ -887,10 +752,12 @@ const limitCommand: CommandDefinition = {
     const view = await context.limitManagementService.viewLimit(execution.guildId, teamId);
 
     if (view.selectedClub !== undefined) {
-      const thumbnail = getTeamThumbnail(view.selectedClub.emoji, view.selectedClub.logoUrl);
+      const presentation = resolveTeamPresentation(interaction, view.selectedClub.club);
+      const thumbnail = getTeamThumbnail(view.selectedClub.club.emoji);
       const embed = createInfoEmbed({
         title: 'Squad Limit',
-        description: formatTeamBanner(view.selectedClub, bannerConfig),
+        description: formatTeamIdentity(presentation.team, 'message'),
+        color: getTeamEmbedColor(presentation, EMBED_COLORS.INFO),
         fields: [
           { name: 'Guild Default', value: `${view.defaultSquadLimit}`, inline: true },
           {
@@ -910,7 +777,7 @@ const limitCommand: CommandDefinition = {
       view.clubsWithOverrides.length === 0
         ? 'None'
         : view.clubsWithOverrides
-            .map((club) => `- ${formatTeamBanner(club, bannerConfig)}: ${club.override}`)
+            .map(({ club, override }) => `- ${formatTeamIdentity(club, 'message')}: ${override}`)
             .join('\n');
 
     const embed = createInfoEmbed({
@@ -982,7 +849,6 @@ const staffCommand: CommandDefinition = {
   async execute(interaction, context) {
     const execution = await enforceChannelPolicy(interaction, context);
     const subcommand = execution.options.getSubcommand();
-    const bannerConfig = await loadTeamBannerConfig(context, execution.guildId);
 
     if (subcommand === 'appoint') {
       const teamId = requiredString(execution.options, 'team');
@@ -998,9 +864,11 @@ const staffCommand: CommandDefinition = {
       });
 
       const positionName = getFriendlyPositionName(staffType);
+      const presentation = resolveTeamPresentation(interaction, result.club);
       const embed = createSuccessEmbed({
         title: '✅ Staff Member Appointed',
-        description: `Successfully appointed <@${result.user.discordUserId}> as the ${positionName} of ${formatTeamBanner(result.club, bannerConfig)}.`,
+        description: `Successfully appointed <@${result.user.discordUserId}> as the ${positionName} of ${formatTeamIdentity(presentation.team, 'message')}.`,
+        color: getTeamEmbedColor(presentation, EMBED_COLORS.SUCCESS),
         fields: [createActorField('Appointed', execution.authorization.discordUserId)],
       });
 
@@ -1019,9 +887,11 @@ const staffCommand: CommandDefinition = {
       );
 
       const positionName = getFriendlyPositionName(staffType);
+      const presentation = resolveTeamPresentation(interaction, result.club);
       const embed = createSuccessEmbed({
         title: '✅ Staff Member Removed',
-        description: `Successfully removed <@${result.user.discordUserId}> as the ${positionName} of ${formatTeamBanner(result.club, bannerConfig)}.`,
+        description: `Successfully removed <@${result.user.discordUserId}> as the ${positionName} of ${formatTeamIdentity(presentation.team, 'message')}.`,
+        color: getTeamEmbedColor(presentation, EMBED_COLORS.SUCCESS),
         fields: [createActorField('Removed', execution.authorization.discordUserId)],
       });
 
@@ -1035,18 +905,20 @@ const staffCommand: CommandDefinition = {
       const staff = await context.staffManagementService.list(execution.guildId, selectedTeamId);
       const activeTeams = await context.clubManagementService.listActive(execution.guildId);
       const selectedClubItem = activeTeams.find((item) => item.club.id === selectedTeamId);
-      const thumbnail = selectedClubItem
-        ? getTeamThumbnail(selectedClubItem.club.emoji, selectedClubItem.club.logoUrl)
+      const presentation = selectedClubItem
+        ? resolveTeamPresentation(interaction, selectedClubItem.club)
         : null;
+      const thumbnail = selectedClubItem ? getTeamThumbnail(selectedClubItem.club.emoji) : null;
 
       const embed = createInfoEmbed({
         title: 'Team Staff',
+        ...(presentation ? { color: getTeamEmbedColor(presentation, EMBED_COLORS.INFO) } : {}),
         ...(selectedClubItem
           ? {
               fields: [
                 {
                   name: '\u200b',
-                  value: `${formatTeamBanner(selectedClubItem.club, bannerConfig)}\n\n${staffDirectoryBlock(staff)}`,
+                  value: `${formatTeamIdentity(selectedClubItem.club, 'message')}\n\n${staffDirectoryBlock(staff)}`,
                   inline: false,
                 },
               ],
@@ -1074,7 +946,7 @@ const staffCommand: CommandDefinition = {
         const staff = await context.staffManagementService.list(execution.guildId, club.id);
         return {
           name: '\u200b',
-          value: `${formatTeamBanner(club, bannerConfig)}\n\n${staffDirectoryBlock(staff)}`,
+          value: `${formatTeamIdentity(club, 'message')}\n\n${staffDirectoryBlock(staff)}`,
           inline: false,
         };
       }),
@@ -1115,19 +987,17 @@ const rosterCommand: CommandDefinition = {
       .catch(() => null);
 
     const effectiveLimit = getEffectiveSquadLimit(result.club, settings?.settings);
-    const thumbnail = getTeamThumbnail(result.club.emoji, result.club.logoUrl);
-    const bannerConfig = teamBannerConfigFrom(settings?.settings);
-    const fullBanner = formatTeamBanner(result.club, bannerConfig);
-    const titleIdentity = rosterTitleIdentity(result.club, bannerConfig);
+    const thumbnail = getTeamThumbnail(result.club.emoji);
+    const presentation = resolveTeamPresentation(interaction, result.club);
 
     const staffByType = new Map(result.staff.map((m) => [m.membershipType, m.user]));
     const tmUser = staffByType.get('TEAM_MANAGER');
     const atmUser = staffByType.get('ASSISTANT_MANAGER');
     const pmUser = staffByType.get('PLAYER_MANAGER');
 
-    const tmLine = tmUser ? `• <@${tmUser.discordUserId}>` : 'None';
-    const atmLine = atmUser ? `• <@${atmUser.discordUserId}>` : 'None';
-    const pmLine = pmUser ? `• <@${pmUser.discordUserId}>` : 'None';
+    const tmLine = tmUser ? `<@${tmUser.discordUserId}>` : 'None';
+    const atmLine = atmUser ? `<@${atmUser.discordUserId}>` : 'None';
+    const pmLine = pmUser ? `<@${pmUser.discordUserId}>` : 'None';
 
     const playerLines =
       result.players.length === 0
@@ -1138,8 +1008,8 @@ const rosterCommand: CommandDefinition = {
 
     const embed = createInfoEmbed({
       author: { name: leagueName },
-      title: `${titleIdentity} Roster`,
-      ...(fullBanner === titleIdentity ? {} : { description: fullBanner }),
+      title: `${formatTeamIdentity(presentation.team, 'title')} Roster`,
+      color: getTeamEmbedColor(presentation, EMBED_COLORS.INFO),
       fields: [
         {
           name: '📊 Roster Count',
@@ -1153,7 +1023,7 @@ const rosterCommand: CommandDefinition = {
         { name: '🏃 Players', value: playerLines.slice(0, 1024), inline: false },
       ],
       thumbnail,
-      footer: `Roster for ${leagueName}`,
+      footer: `Roster for ${formatTeamIdentity(presentation.team, 'footer')}, ${leagueName}`,
     });
 
     await interaction.reply({ embeds: [embed] });
@@ -1179,27 +1049,30 @@ const offerCommand: CommandDefinition = {
       execution.guildId,
       execution.authorization.discordUserId,
     );
+    const sourcePresentation = resolveTeamPresentation(interaction, destinationClub);
 
-    const result = await context.offerDeliveryService.createAndDeliver({
-      authorization: execution.authorization,
-      destinationClubId: destinationClub.id,
-      playerDiscordUserId: player.id,
-      playerIsBot: player.bot,
-    });
+    const result = await context.offerDeliveryService.createAndDeliver(
+      {
+        authorization: execution.authorization,
+        destinationClubId: destinationClub.id,
+        playerDiscordUserId: player.id,
+        playerIsBot: player.bot,
+      },
+      { sourceTeamRoleColor: sourcePresentation.role?.color ?? null },
+    );
 
     const club = result.destinationClub;
-    const thumbnail = getTeamThumbnail(club?.emoji, club?.logoUrl);
+    const presentation = resolveTeamPresentation(interaction, club ?? destinationClub);
+    const thumbnail = getTeamThumbnail(club?.emoji);
     const embed = createSuccessEmbed({
       title: '✅ Contract Offer Sent',
-      description: `A private contract offer has been sent to <@${result.player.discordUserId}> on behalf of ${formatTeamBanner(club ?? destinationClub, teamBannerConfigFrom(result.bannerConfig))}.`,
+      description: `A private contract offer has been sent to <@${result.player.discordUserId}> by <@${execution.authorization.discordUserId}> on behalf of ${formatTeamIdentity(presentation.team, 'message')}.`,
+      color: getTeamEmbedColor(presentation, EMBED_COLORS.SUCCESS),
       fields: [
         { name: 'Target Player', value: `<@${result.player.discordUserId}>`, inline: true },
         {
           name: 'Source Team',
-          value: formatTeamBanner(
-            club ?? destinationClub,
-            teamBannerConfigFrom(result.bannerConfig),
-          ),
+          value: formatTeamIdentity(presentation.team, 'message'),
           inline: true,
         },
       ],
@@ -1227,7 +1100,6 @@ export const debugResetCommand: CommandDefinition = {
 export const commandDefinitions = [
   healthCommand,
   setupCommand,
-  bannerConfigCommand,
   teamCommand,
   limitCommand,
   staffCommand,

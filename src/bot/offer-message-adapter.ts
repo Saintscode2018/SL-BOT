@@ -12,14 +12,16 @@ import {
 } from 'discord.js';
 
 import { OfferDeliveryError } from '../domain/errors.js';
-import { formatTeamBanner, teamBannerConfigFrom } from '../domain/team-label.js';
+import { formatTeamIdentity } from '../domain/team-label.js';
 import type {
   OfferMessageAdapter,
   OfferMessageReference,
+  OfferPresentationMetadata,
 } from '../services/offer-delivery-service.js';
 import type { OfferCreationResult } from '../services/offer-creation-service.js';
 import { createOfferCustomId } from './offer-custom-id.js';
 import { getTeamThumbnail } from './emoji-helper.js';
+import { resolveTeamRoleColor } from './team-presentation.js';
 
 const neutralColor = 0x5865f2;
 
@@ -40,17 +42,20 @@ function offerComponents(offerId: string, disabled = false): ActionRowBuilder<Bu
   ];
 }
 
-function offerEmbed(result: OfferCreationResult): EmbedBuilder {
+function offerEmbed(
+  result: OfferCreationResult,
+  presentation: OfferPresentationMetadata = {},
+): EmbedBuilder {
   const expiresAt = Math.floor(result.offer.expiresAt.getTime() / 1000);
   const remainingSpots = Math.max(0, result.effectiveSquadLimit - result.activePlayerCount);
   const embed = new EmbedBuilder()
-    .setColor(neutralColor)
+    .setColor(resolveTeamRoleColor(presentation.sourceTeamRoleColor, neutralColor))
     .setTitle(`${result.leagueName || 'SL League'} Contract Offer`)
     .setDescription('Professional First Team')
     .addFields(
       {
-        name: 'Destination Club',
-        value: formatTeamBanner(result.destinationClub, teamBannerConfigFrom(result.bannerConfig)),
+        name: 'Source Team',
+        value: formatTeamIdentity(result.destinationClub, 'message'),
         inline: true,
       },
       { name: 'Offered Player', value: `<@${result.player.discordUserId}>`, inline: true },
@@ -61,16 +66,9 @@ function offerEmbed(result: OfferCreationResult): EmbedBuilder {
         inline: true,
       },
       { name: 'Remaining Spots', value: String(remainingSpots), inline: true },
-      {
-        name: 'Current Club',
-        value: result.sourceClub
-          ? formatTeamBanner(result.sourceClub, teamBannerConfigFrom(result.bannerConfig))
-          : 'Free agent',
-        inline: true,
-      },
       { name: 'Expires', value: `<t:${expiresAt}:F>\n<t:${expiresAt}:R>` },
     );
-  const thumbnail = getTeamThumbnail(result.destinationClub.emoji, result.destinationClub.logoUrl);
+  const thumbnail = getTeamThumbnail(result.destinationClub.emoji);
   if (thumbnail !== null) {
     embed.setThumbnail(thumbnail);
   }
@@ -101,10 +99,13 @@ function disabledComponents(message: Message): ActionRowBuilder<ButtonBuilder>[]
 export class DiscordOfferMessageAdapter implements OfferMessageAdapter {
   public constructor(private readonly client: Client) {}
 
-  public async sendOffer(result: OfferCreationResult): Promise<OfferMessageReference> {
+  public async sendOffer(
+    result: OfferCreationResult,
+    presentation: OfferPresentationMetadata = {},
+  ): Promise<OfferMessageReference> {
     const user = await this.client.users.fetch(result.player.discordUserId);
     const channel = await user.createDM();
-    const message = await channel.send(createOfferMessagePayload(result));
+    const message = await channel.send(createOfferMessagePayload(result, presentation));
     return { channelId: message.channelId, messageId: message.id };
   }
 
@@ -139,7 +140,10 @@ export class DiscordOfferMessageAdapter implements OfferMessageAdapter {
   }
 }
 
-export function createOfferMessagePayload(result: OfferCreationResult): MessageCreateOptions {
+export function createOfferMessagePayload(
+  result: OfferCreationResult,
+  presentation: OfferPresentationMetadata = {},
+): MessageCreateOptions {
   return {
     allowedMentions: {
       parse: [],
@@ -147,7 +151,7 @@ export function createOfferMessagePayload(result: OfferCreationResult): MessageC
       roles: [],
       repliedUser: false,
     },
-    embeds: [offerEmbed(result)],
+    embeds: [offerEmbed(result, presentation)],
     components: offerComponents(result.offer.id),
   };
 }

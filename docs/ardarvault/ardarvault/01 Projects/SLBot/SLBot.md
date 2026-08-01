@@ -1,32 +1,38 @@
 ---
-title: SL Bot Project Overview
-type: project-index
+title: SL Bot
+type: project
 tags:
   - slbot
-  - discord-bot
-  - roblox-football-league
+  - discord
+  - stage4a
 ---
 
 # SL Bot Project Brain
 
-Welcome to the project memory for **SL Bot**, the official Discord administration bot for the Roblox Super League (SL).
+## Project overview
 
-## Project Overview
+SL Bot is a TypeScript/Discord.js league administration bot backed by Prisma and SQLite. Internal club IDs are stable database identities; Discord supplies readable role names and renders role mentions.
 
-SL Bot provides automated, authoritative league administration for Discord and SQLite. The final Stage 4A correction set uses emoji-plus-role banner defaults, safe `.examplept.` previews, `.emojiName.` plain-text autocomplete fallbacks with immutable club-ID values, compact team lists, normal-text staff banners, transactionally correlated roster reads, active-staff offer restrictions, ephemeral `Source Team` acknowledgements, persistent private offer buttons, authorization-aware channel guidance, and setup/configuration Discord audit publishing.
+The permanent team identity is only `<emoji> <@&DiscordRoleId>`. Emoji and Discord role are required. There is no team display name, abbreviation, or presentation configuration.
 
-## Quick Navigation
+## Quick navigation
 
-- [[Architecture]] — System layering, database authority, Prisma transactions, banner formatting, global staff uniqueness, structured channel policy, and setup audit delivery.
-- [[Commands]] — Current Stage 4A command tree, `/bannerconfig`, authorization-aware channel rules, embed-only response rules, and visibility matrix.
-- [[Product Decisions]] — Global permissions, bootstrap recovery, response visibility, guild emoji resolution, standard labels, private offers, accurate roster roles, and setup audit scope.
-- [[Roadmap]] — Development stages progress, Stage 4A Polish scope, planned future stages, and excluded features.
-- [[Testing and Deployment]] — Vitest integration suite, SQLite migrations, Gateway intent requirements, manual smoke test checklist.
-- [[Session Log]] — Chronological log of development sessions and changes made.
+- [[Architecture]] — Boundaries, schema, identity formatting, authorization, and migrations.
+- [[Commands]] — Current Stage 4A command tree, options, visibility, and autocomplete.
+- [[Product Decisions]] — Locked behavior and exclusions.
+- [[Roadmap]] — Completed work and Stage 4B+ boundaries.
+- [[Testing and Deployment]] — Verification and live smoke tests.
+- [[Session Log]] — Final Stage 4A simplification record.
 
-## Current Project Status
+## Current status
 
-- **Current Branch**: `stage4a-polish/errors-branding-command-ui`
-- **Current Stage**: **Stage 4A Polish — Live-Test Corrections**
-- **Database Engine**: SQLite 3 with Prisma ORM 6.19.3
-- **Bot Engine**: Node.js 22 + TypeScript + `discord.js` v14.27
+- `/team add role emoji` and `/team edit team [role] [emoji]` are final.
+- `/bannerconfig` is removed and stale cached interactions fail safely.
+- Autocomplete uses only `@CachedRoleName` (or `Unknown Team Role`) with club IDs as values.
+- Roster, staff, limit, team, offer, and relevant error output share `formatTeamIdentity`.
+- Rosters use `<emoji> @RoleName Roster`, no `Team` field, and a readable team/server footer; custom footer emoji use `.emojiName.`.
+- Single-team embeds and private offer DMs use live nonzero Discord role colors, with safe fallbacks and no persisted color data.
+- The ephemeral offer acknowledgement names the target, actor, and source team and never creates a public follow-up.
+- Setup view contains only channels, roles, operational settings, and missing configuration.
+- Offer source still derives from the caller's active database staff appointment.
+- Discord role synchronization, role-derived offer source, transfers, release/demand, and general mutation audit publication remain out of scope.

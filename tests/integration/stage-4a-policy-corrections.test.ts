@@ -143,33 +143,6 @@ describe('authorization aware channel policy', () => {
     }
   });
 
-  it('classifies banner configuration as a protected staff channel mutation', async () => {
-    await configureChannelsAndRoles();
-    const unauthorized = await policyError({
-      authorization: ordinaryUser,
-      commandName: 'bannerconfig',
-      channelId: botCommandsChannelId,
-    });
-    expect(unauthorized).toBeInstanceOf(AdministrativePermissionDeniedError);
-    expect(mapDiscordError(unauthorized).description).not.toContain(staffChannelId);
-
-    for (const authorization of [administrator, botPermissionsUser]) {
-      await expect(
-        new CommandChannelPolicyService(database.client).validateChannelPolicy({
-          authorization,
-          commandName: 'bannerconfig',
-          channelId: staffChannelId,
-        }),
-      ).resolves.toBeUndefined();
-      const wrongChannel = await policyError({
-        authorization,
-        commandName: 'bannerconfig',
-        channelId: botCommandsChannelId,
-      });
-      expect(wrongChannel).toBeInstanceOf(AdministrativeWrongChannelError);
-    }
-  });
-
   it('reports a missing staff channel to an authorized administrative caller', async () => {
     await new GuildSetupService(database.client).setupGuildOnly({
       authorization: administrator,

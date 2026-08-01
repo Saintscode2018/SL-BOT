@@ -9,6 +9,7 @@ import type {
   OfferMessageReference,
 } from '../services/offer-delivery-service.js';
 import type { OfferResponseService } from '../services/offer-response-service.js';
+import { formatTeamIdentity } from '../domain/team-label.js';
 import type {
   DeferredInteractionResponse,
   EditedInteractionResponse,
@@ -58,7 +59,7 @@ export class OfferButtonHandler {
           interaction.userId,
           reference,
           'ACCEPTED',
-          `${result.player.discordUserId === interaction.userId ? `<@${interaction.userId}>` : 'The player'} joined ${result.destinationClub.name} as a ${result.transactionType.toLowerCase()}.`,
+          `${result.player.discordUserId === interaction.userId ? `<@${interaction.userId}>` : 'The player'} joined ${formatTeamIdentity(result.destinationClub, 'message')} as a ${result.transactionType.toLowerCase()}.`,
         );
         await this.respond(interaction, 'Offer accepted successfully.');
       } else {

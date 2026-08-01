@@ -9,7 +9,6 @@ import {
   type GuildEmoji,
 } from '../../src/bot/emoji-helper.js';
 import { InvalidTeamEmojiError } from '../../src/domain/errors.js';
-import { formatTeamBanner } from '../../src/domain/team-label.js';
 
 const guildEmojis: readonly GuildEmoji[] = [
   { id: '123456789012345678', name: 'chelsea', animated: false },
@@ -93,63 +92,13 @@ describe('emoji helper', () => {
     }
   });
 
-  it('derives custom and unicode thumbnails', () => {
+  it('derives custom and unicode thumbnails only from the emoji', () => {
     expect(getTeamThumbnail('<:chelsea:123456789012345678>')).toBe(
       'https://cdn.discordapp.com/emojis/123456789012345678.png',
     );
     const twemojiUrl = getTwemojiUrl('⚽');
     expect(twemojiUrl).not.toBeNull();
     expect(getTeamThumbnail('⚽')).toBe(twemojiUrl);
-  });
-});
-
-describe('team labels', () => {
-  it('formats unicode custom and legacy labels', () => {
-    const allComponents = {
-      bannerHasEmoji: true,
-      bannerHasName: true,
-      bannerHasShort: true,
-      bannerHasRole: true,
-    };
-    expect(
-      formatTeamBanner({ name: 'Chelsea', shortName: 'CHE', emoji: '🔵' }, allComponents),
-    ).toBe('🔵 Chelsea (CHE)');
-    expect(
-      formatTeamBanner(
-        {
-          name: 'Chelsea',
-          shortName: 'CHE',
-          emoji: '<:chelsea:123456789012345678>',
-        },
-        allComponents,
-      ),
-    ).toBe('<:chelsea:123456789012345678> Chelsea (CHE)');
-    expect(
-      formatTeamBanner({ name: 'Chelsea', shortName: 'CHE', emoji: null }, allComponents),
-    ).toBe('Chelsea (CHE)');
-  });
-
-  it('uses a custom emoji name fallback for autocomplete', () => {
-    expect(
-      formatTeamBanner(
-        {
-          name: 'Chelsea',
-          shortName: 'CHE',
-          emoji: '<a:chelsea:123456789012345678>',
-        },
-        undefined,
-        'autocomplete',
-      ),
-    ).toBe('.chelsea.');
-    expect(
-      formatTeamBanner(
-        { name: 'Chelsea', shortName: 'CHE', emoji: '🔵' },
-        undefined,
-        'autocomplete',
-      ),
-    ).toBe('🔵');
-    expect(formatTeamBanner({ name: 'Chelsea', shortName: 'CHE' }, undefined, 'autocomplete')).toBe(
-      'Chelsea',
-    );
+    expect(getTeamThumbnail(null)).toBeNull();
   });
 });

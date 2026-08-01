@@ -17,11 +17,7 @@ import { OfferRepository } from '../repositories/offer-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
 import type { AuthorizationInput } from './authorization-service.js';
 import { AuthorizationService } from './authorization-service.js';
-import {
-  formatTeamBanner,
-  teamBannerConfigFrom,
-  type TeamBannerConfig,
-} from '../domain/team-label.js';
+import { formatTeamIdentity } from '../domain/team-label.js';
 import { getFriendlyPositionName, type StaffType } from './staff-management-service.js';
 
 export const offerCreatedAuditEventType = 'offer.created';
@@ -43,7 +39,6 @@ export interface OfferCreationResult {
   leagueName: string;
   activePlayerCount: number;
   effectiveSquadLimit: number;
-  bannerConfig?: TeamBannerConfig;
 }
 
 export class OfferCreationService {
@@ -75,7 +70,7 @@ export class OfferCreationService {
           throw new StaffMemberCannotReceiveOffersError(
             input.playerDiscordUserId,
             getFriendlyPositionName(staffMembership.membershipType as StaffType),
-            formatTeamBanner(staffMembership.club, teamBannerConfigFrom(authorization.settings)),
+            formatTeamIdentity(staffMembership.club, 'message'),
           );
         }
       }
@@ -134,7 +129,6 @@ export class OfferCreationService {
         leagueName: authorization.guild.name,
         activePlayerCount: playerCount,
         effectiveSquadLimit,
-        bannerConfig: teamBannerConfigFrom(authorization.settings),
       };
     });
   }

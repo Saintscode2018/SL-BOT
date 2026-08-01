@@ -9,6 +9,7 @@ import {
 
 import type { Logger } from '../logging/logger.js';
 import type { CommandRegistry } from './command-registry.js';
+import { createErrorEmbed } from './embeds.js';
 import { mapDiscordError } from './error-mapper.js';
 import type { OfferButtonInteraction } from './offer-button-handler.js';
 import { sendDebugResetPrompt } from './debug-reset-handler.js';
@@ -40,10 +41,6 @@ class DiscordCommandOptions implements CommandInteractionOptions {
 
   public getInteger(name: string): number | null {
     return this.interaction.options.getInteger(name);
-  }
-
-  public getBoolean(name: string): boolean | null {
-    return this.interaction.options.getBoolean(name);
   }
 
   public getUser(name: string): { id: string; bot: boolean } | null {
@@ -121,6 +118,15 @@ class DiscordCommandInteraction implements CommandInteraction {
       .map((emoji) => ({ id: emoji.id, name: emoji.name, animated: emoji.animated ?? false }));
   }
 
+  public getGuildRoleMetadata(roleId: string): {
+    id: string;
+    name: string;
+    color: number;
+  } | null {
+    const role = this.interaction.guild?.roles.cache.get(roleId);
+    return role === undefined ? null : { id: role.id, name: role.name, color: role.color };
+  }
+
   public async executeDebugReset(database: CommandContext['database']): Promise<void> {
     await sendDebugResetPrompt(this.interaction, database);
   }
@@ -156,6 +162,22 @@ export async function handleInteractionCreate(
   const command = registry.resolve(interaction.commandName);
   if (command === null) {
     logger.warn('unknown command received', { commandName: interaction.commandName });
+    await interaction
+      .reply({
+        embeds: [
+          createErrorEmbed({
+            title: '❌ Command Unavailable',
+            description: 'This command is no longer available. Refresh your Discord commands.',
+          }),
+        ],
+        flags: MessageFlags.Ephemeral,
+      })
+      .catch((error: unknown) => {
+        logger.warn('unknown command response could not be sent', {
+          commandName: interaction.commandName,
+          error,
+        });
+      });
     return;
   }
 
@@ -205,10 +227,10 @@ class DiscordAutocomplete implements CommandAutocompleteInteraction {
     return String(this.interaction.options.getFocused());
   }
 
-  public getGuildRoles(): readonly { id: string; name: string }[] {
+  public getGuildRoles(): readonly { id: string; name: string; color: number }[] {
     const roles = this.interaction.guild?.roles.cache.values();
     if (roles === undefined) return [];
-    return [...roles].map((role) => ({ id: role.id, name: role.name }));
+    return [...roles].map((role) => ({ id: role.id, name: role.name, color: role.color }));
   }
 
   public async respond(choices: Array<{ name: string; value: string }>): Promise<void> {

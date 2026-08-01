@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 import { commandDefinitions } from '../../src/bot/commands.js';
 import type { CommandRegistry } from '../../src/bot/command-registry.js';
+import { mapDiscordError } from '../../src/bot/error-mapper.js';
 import { handleInteractionCreate } from '../../src/bot/interaction-handler.js';
 import type {
   CommandContext,
@@ -77,6 +78,10 @@ class MockCommandInteraction implements CommandInteraction {
 
   public getGuildEmojis(): typeof this.guildEmojis {
     return this.guildEmojis;
+  }
+
+  public getGuildRoleMetadata(roleId: string) {
+    return { id: roleId, name: 'T1', color: 0xf97316 };
   }
 
   public get options(): CommandInteractionOptions {
@@ -225,8 +230,6 @@ describe('Stage 4A Polish Verification', () => {
             destinationClub: {
               id: 'club-1',
               guildId,
-              name: 'Chelsea',
-              shortName: 'CHE',
               discordRoleId: 'role-1',
               logoUrl: null,
               emoji: '⚽',
@@ -239,9 +242,6 @@ describe('Stage 4A Polish Verification', () => {
             leagueName: 'Development League',
             activePlayerCount: 5,
             effectiveSquadLimit: 17,
-            effectiveLimit: 17,
-            remainingSpaces: 12,
-            expiresAt: new Date(),
           }),
         ),
       },
@@ -269,8 +269,6 @@ describe('Stage 4A Polish Verification', () => {
       const clubService = new ClubManagementService(context.client);
       await clubService.create({
         authorization: adminAuth,
-        name: 'Chelsea',
-        shortName: 'CHE',
         discordRoleId: '300000000000000001',
         emoji: '⚽',
       });
@@ -278,41 +276,8 @@ describe('Stage 4A Polish Verification', () => {
       await expect(
         clubService.create({
           authorization: adminAuth,
-          name: 'Arsenal',
-          shortName: 'ARS',
           discordRoleId: '300000000000000001',
           emoji: '🔴',
-        }),
-      ).rejects.toThrow('⚽ <@&300000000000000001>');
-    });
-
-    it('detects duplicate team name and short name', async () => {
-      const clubService = new ClubManagementService(context.client);
-      await clubService.create({
-        authorization: adminAuth,
-        name: 'Chelsea',
-        shortName: 'CHE',
-        discordRoleId: '300000000000000001',
-        emoji: '⚽',
-      });
-
-      await expect(
-        clubService.create({
-          authorization: adminAuth,
-          name: 'Chelsea',
-          shortName: 'CHE2',
-          discordRoleId: '300000000000000002',
-          emoji: '🔵',
-        }),
-      ).rejects.toThrow('⚽ <@&300000000000000001>');
-
-      await expect(
-        clubService.create({
-          authorization: adminAuth,
-          name: 'Chelsea FC',
-          shortName: 'CHE',
-          discordRoleId: '300000000000000003',
-          emoji: '🔵',
         }),
       ).rejects.toThrow('⚽ <@&300000000000000001>');
     });
@@ -325,16 +290,12 @@ describe('Stage 4A Polish Verification', () => {
 
       const teamA = await clubService.create({
         authorization: adminAuth,
-        name: 'Team A',
-        shortName: 'TMA',
         discordRoleId: '300000000000000001',
         emoji: '⚽',
       });
 
       const teamB = await clubService.create({
         authorization: adminAuth,
-        name: 'Team B',
-        shortName: 'TMB',
         discordRoleId: '300000000000000002',
         emoji: '🦁',
       });
@@ -367,8 +328,6 @@ describe('Stage 4A Polish Verification', () => {
 
       const team = await clubService.create({
         authorization: adminAuth,
-        name: 'Team Alpha',
-        shortName: 'TMA',
         discordRoleId: '300000000000000001',
         emoji: '⚽',
       });
@@ -440,8 +399,6 @@ describe('Stage 4A Polish Verification', () => {
         'team',
         {
           subcommand: 'add',
-          name: 'Invalid Emoji Team',
-          short_name: 'IET',
           role: '300000000000000099',
           emoji: '<:foreign:999999999999999999>', // unavailable in this guild
         },
@@ -479,8 +436,6 @@ describe('Stage 4A Polish Verification', () => {
     it('delivers an offer for the callers appointed team and uses the exact title', async () => {
       const club = await commandContext.clubManagementService.create({
         authorization: adminAuth,
-        name: 'Offer Team',
-        shortName: 'OFR',
         discordRoleId: '300000000000000010',
         emoji: '🟢',
       });
@@ -505,6 +460,7 @@ describe('Stage 4A Polish Verification', () => {
 
       expect(commandContext.offerDeliveryService.createAndDeliver).toHaveBeenCalledWith(
         expect.objectContaining({ destinationClubId: club.id }),
+        { sourceTeamRoleColor: 0xf97316 },
       );
       expect(interaction.followUps).toEqual([]);
       expect(interaction.edits[0]?.embeds?.[0]?.data.title).toBe('✅ Contract Offer Sent');
@@ -549,8 +505,6 @@ describe('Stage 4A Polish Verification', () => {
     it('reports the specific inactive team error for an inactive source club', async () => {
       const club = await commandContext.clubManagementService.create({
         authorization: adminAuth,
-        name: 'Inactive Offer Team',
-        shortName: 'IOT',
         discordRoleId: '300000000000000011',
         emoji: '⚫',
       });
@@ -563,12 +517,13 @@ describe('Stage 4A Polish Verification', () => {
       });
       await commandContext.clubManagementService.deactivate(adminAuth, club.id);
 
-      await expect(
-        commandContext.staffManagementService.getCallerActiveStaffClub(
-          guildId,
-          adminAuth.discordUserId,
-        ),
-      ).rejects.toBeInstanceOf(ClubInactiveError);
+      const error = await commandContext.staffManagementService
+        .getCallerActiveStaffClub(guildId, adminAuth.discordUserId)
+        .catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ClubInactiveError);
+      expect(mapDiscordError(error).description).toBe(
+        `Source team ⚫ <@&${club.discordRoleId}> is inactive.`,
+      );
     });
   });
 
@@ -590,8 +545,6 @@ describe('Stage 4A Polish Verification', () => {
 
       const club = await clubService.create({
         authorization: adminAuth,
-        name: 'Chelsea FC',
-        shortName: 'CHE',
         discordRoleId: '300000000000000001',
         emoji: '⚽',
       });
@@ -638,6 +591,7 @@ describe('Stage 4A Polish Verification', () => {
                 data: {
                   author?: { name?: string };
                   title?: string;
+                  color?: number;
                   description?: string;
                   footer?: { text?: string };
                   fields?: Array<{ name: string; value: string }>;
@@ -647,19 +601,24 @@ describe('Stage 4A Polish Verification', () => {
           : (embedObj as {
               author?: { name?: string };
               title?: string;
+              color?: number;
               description?: string;
               footer?: { text?: string };
               fields?: Array<{ name: string; value: string }>;
             });
 
       expect(embedData.author?.name).toBe('Development League');
-      expect(embedData.title).toBe('⚽ Roster');
-      expect(embedData.description).toBe(`⚽ <@&${club.discordRoleId}>`);
-      expect(embedData.footer?.text).toContain('Roster for Development League');
+      expect(embedData.title).toBe('⚽ @T1 Roster');
+      expect(embedData.color).toBe(0xf97316);
+      expect(embedData.description).toBeUndefined();
+      expect(embedData.footer?.text).toBe('Roster for ⚽ @T1, Development League');
 
       const fields = embedData.fields ?? [];
       const fieldNames = fields.map((f) => f.name);
 
+      expect(fieldNames).not.toContain('Team');
+      expect(embedData.title).not.toContain(club.discordRoleId);
+      expect(embedData.footer?.text).not.toContain(club.discordRoleId);
       expect(fieldNames).toContain('📊 Roster Count');
       expect(fieldNames).toContain('👑 Team Manager');
       expect(fieldNames).toContain('👔 Assistant Team Manager');

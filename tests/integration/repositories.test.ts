@@ -62,17 +62,13 @@ describe('repositories and database constraints', () => {
     const guild = await guilds.create({ discordGuildId: '100000000000000001', name: 'guild one' });
     const clubA = await clubs.create({
       guildId: guild.id,
-      name: 'alpha club',
-      shortName: 'ALP',
       discordRoleId: '200000000000000001',
-      squadLimit: 17,
+      emoji: '🔵',
     });
     const clubB = await clubs.create({
       guildId: guild.id,
-      name: 'beta club',
-      shortName: 'BET',
       discordRoleId: '200000000000000002',
-      squadLimit: 17,
+      emoji: '🔴',
     });
     const player = await users.getOrCreateByDiscordUserId('300000000000000001');
     const manager = await users.getOrCreateByDiscordUserId('300000000000000002');
@@ -99,10 +95,8 @@ describe('repositories and database constraints', () => {
     });
     const club = await clubs.create({
       guildId: guild.id,
-      name: 'other club',
-      shortName: 'OTH',
       discordRoleId: '200000000000000099',
-      squadLimit: 17,
+      emoji: '🟢',
     });
     return { guild, club };
   }
@@ -144,18 +138,18 @@ describe('repositories and database constraints', () => {
   });
 
   describe('clubs', () => {
-    it.each([
-      ['name', { name: 'alpha club', shortName: 'NEW', discordRoleId: '200000000000000009' }],
-      ['short name', { name: 'new club', shortName: 'ALP', discordRoleId: '200000000000000009' }],
-      ['role id', { name: 'new club', shortName: 'NEW', discordRoleId: '200000000000000001' }],
-    ])('enforces unique %s within a guild', async (_label, values) => {
+    it('enforces a unique Discord role within a guild', async () => {
       const data = await seed();
       await expect(
-        clubs.create({ guildId: data.guild.id, squadLimit: 17, ...values }),
+        clubs.create({
+          guildId: data.guild.id,
+          discordRoleId: data.clubA.discordRoleId,
+          emoji: '🟡',
+        }),
       ).rejects.toBeInstanceOf(ConflictError);
     });
 
-    it('allows the same club name in another guild', async () => {
+    it('allows the same Discord role in another guild', async () => {
       const data = await seed();
       const otherGuild = await guilds.create({
         discordGuildId: '100000000000000002',
@@ -164,12 +158,10 @@ describe('repositories and database constraints', () => {
       await expect(
         clubs.create({
           guildId: otherGuild.id,
-          name: data.clubA.name,
-          shortName: data.clubA.shortName,
           discordRoleId: data.clubA.discordRoleId,
-          squadLimit: 17,
+          emoji: '🔵',
         }),
-      ).resolves.toMatchObject({ name: data.clubA.name });
+      ).resolves.toMatchObject({ discordRoleId: data.clubA.discordRoleId });
     });
 
     it('enforces a positive squad limit', async () => {
@@ -177,10 +169,9 @@ describe('repositories and database constraints', () => {
       await expect(
         clubs.create({
           guildId: guild.id,
-          name: 'invalid club',
-          shortName: 'INV',
           discordRoleId: '200000000000000001',
-          squadLimit: 0,
+          emoji: '🔵',
+          squadLimitOverride: 0,
         }),
       ).rejects.toBeInstanceOf(ConstraintViolationError);
     });
@@ -334,10 +325,8 @@ describe('repositories and database constraints', () => {
       });
       const otherClub = await clubs.create({
         guildId: otherGuild.id,
-        name: 'alpha club',
-        shortName: 'ALP',
         discordRoleId: '200000000000000001',
-        squadLimit: 17,
+        emoji: '🔵',
       });
       await memberships.createActive({
         guildId: data.guild.id,

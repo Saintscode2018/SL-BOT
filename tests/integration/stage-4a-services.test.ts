@@ -211,9 +211,8 @@ describe('Stage 4A Services and Policies', () => {
       const clubService = new ClubManagementService(context.client);
       const club = await clubService.create({
         authorization: ownerAuth(),
-        name: 'Arsenal',
-        shortName: 'ARS',
         discordRoleId: '300000000000000001',
+        emoji: '🔴',
       });
 
       const limitService = new LimitManagementService(context.client);
@@ -268,7 +267,7 @@ describe('Stage 4A Services and Policies', () => {
   });
 
   describe('Team Add & Edit Workflows', () => {
-    it('creates team with inherited limit and allows editing properties', async () => {
+    it('creates a team with an inherited limit and edits role and emoji', async () => {
       const setupService = new GuildSetupService(context.client);
       await setupService.setupGuildOnly({
         authorization: ownerAuth(),
@@ -278,21 +277,25 @@ describe('Stage 4A Services and Policies', () => {
       const clubService = new ClubManagementService(context.client);
       const club = await clubService.create({
         authorization: ownerAuth(),
-        name: 'Chelsea FC',
-        shortName: 'CHE',
         discordRoleId: '300000000000000002',
+        emoji: '🔵',
       });
 
       expect(club.squadLimitOverride).toBeNull();
 
-      const edited = await clubService.edit({
+      const roleEdited = await clubService.edit({
         authorization: ownerAuth(),
         clubId: club.id,
-        name: 'Chelsea Football Club',
+        discordRoleId: '300000000000000004',
       });
+      expect(roleEdited.discordRoleId).toBe('300000000000000004');
 
-      expect(edited.name).toBe('Chelsea Football Club');
-      expect(edited.shortName).toBe('CHE');
+      const emojiEdited = await clubService.edit({
+        authorization: ownerAuth(),
+        clubId: club.id,
+        emoji: '⚽',
+      });
+      expect(emojiEdited.emoji).toBe('⚽');
     });
 
     it('requires at least one edit parameter', async () => {
@@ -305,9 +308,8 @@ describe('Stage 4A Services and Policies', () => {
       const clubService = new ClubManagementService(context.client);
       const club = await clubService.create({
         authorization: ownerAuth(),
-        name: 'Liverpool',
-        shortName: 'LIV',
         discordRoleId: '300000000000000003',
+        emoji: '🔴',
       });
 
       await expect(

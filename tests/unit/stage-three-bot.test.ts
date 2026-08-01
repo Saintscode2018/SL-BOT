@@ -68,11 +68,9 @@ function offerCreationResult(): OfferCreationResult {
     destinationClub: {
       id: '2',
       guildId: '1',
-      name: 'Team',
-      shortName: 'TM',
       discordRoleId: '100000000000000007',
       logoUrl: null,
-      emoji: null,
+      emoji: '🔵',
       squadLimitOverride: 10,
       active: true,
       createdAt: now,
@@ -132,10 +130,14 @@ function commandContext(
       getCallerActiveStaffClub: () =>
         Promise.resolve({
           id: 'club-1',
-          name: 'Chelsea',
-          shortName: 'CHE',
+          guildId: 'guild-1',
+          discordRoleId: '100000000000000007',
           emoji: '⚽',
           logoUrl: null,
+          squadLimitOverride: null,
+          active: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
         }),
     },
 
@@ -232,6 +234,10 @@ class OfferCommandInteraction implements CommandInteraction {
     getChannel: () => null,
   };
 
+  public getGuildRoleMetadata(roleId: string) {
+    return roleId === '100000000000000007' ? { id: roleId, name: 'T2', color: 0xf97316 } : null;
+  }
+
   public reply(response: SafeInteractionResponse): Promise<void> {
     this.order.push('reply');
     this.replies.push(response);
@@ -287,6 +293,10 @@ class RosterCommandInteraction implements CommandInteraction {
     getChannel: () => null,
   };
 
+  public getGuildRoleMetadata(roleId: string) {
+    return roleId === 'r-1' ? { id: roleId, name: 'T1', color: 0x3498db } : null;
+  }
+
   public reply(response: SafeInteractionResponse): Promise<void> {
     this.replies.push(response);
     this.replied = true;
@@ -317,16 +327,7 @@ class RosterCommandInteraction implements CommandInteraction {
 describe('stage three command registry and deployment', () => {
   it('exports every visible command as exact deployment JSON', () => {
     const registry = loadCommands(commandDefinitions);
-    const expectedNames = [
-      'health',
-      'setup',
-      'bannerconfig',
-      'team',
-      'limit',
-      'staff',
-      'roster',
-      'offer',
-    ];
+    const expectedNames = ['health', 'setup', 'team', 'limit', 'staff', 'roster', 'offer'];
     if (process.env['SLBOT_ENABLE_DEBUG_COMMANDS'] === 'true') expectedNames.push('debugreset');
     expect(registry.toJSON().map(({ name }) => name)).toEqual(expectedNames);
     expect(registry.toJSON().find(({ name }) => name === 'offer')).toMatchObject({
@@ -387,11 +388,9 @@ describe('stage three command registry and deployment', () => {
           club: {
             id: 'club-1',
             guildId: 'g-1',
-            name: 'Arsenal',
-            shortName: 'ARS',
             discordRoleId: 'r-1',
             logoUrl: null,
-            emoji: null,
+            emoji: '🔴',
             squadLimitOverride: null,
             active: true,
             createdAt: now,
@@ -424,10 +423,6 @@ describe('stage three command registry and deployment', () => {
             playerManagerRoleId: null,
             defaultSquadLimit: 22,
             offerTimeoutSeconds: 86400,
-            bannerHasEmoji: true,
-            bannerHasName: true,
-            bannerHasShort: true,
-            bannerHasRole: true,
             createdAt: now,
             updatedAt: now,
           },
@@ -435,8 +430,11 @@ describe('stage three command registry and deployment', () => {
         }),
     };
     await command?.execute(interaction, context);
-    expect(interaction.replies[0]?.embeds?.[0]?.data?.title).toBe('Arsenal Roster');
-    expect(interaction.replies[0]?.embeds?.[0]?.data?.description).toBe('Arsenal (ARS) <@&r-1>');
+    const embed = interaction.replies[0]?.embeds?.[0]?.data;
+    expect(embed?.title).toBe('🔴 @T1 Roster');
+    expect(embed?.color).toBe(0x3498db);
+    expect(embed?.fields?.some(({ name }) => name === 'Team')).toBe(false);
+    expect(embed?.footer?.text).toBe('Roster for 🔴 @T1, Test Guild');
   });
 
   it('defers and edits the same private response after successful offer delivery', async () => {
@@ -455,8 +453,15 @@ describe('stage three command registry and deployment', () => {
     expect(interaction.edits[0]?.embeds?.[0]?.data?.title).toBe('✅ Contract Offer Sent');
     expect(interaction.edits[0]?.embeds?.[0]?.data?.fields?.[1]?.name).toBe('Source Team');
     expect(interaction.edits[0]?.embeds?.[0]?.data?.fields?.[1]?.value).toBe(
-      '<@&100000000000000007>',
+      '🔵 <@&100000000000000007>',
     );
+    expect(interaction.edits[0]?.embeds?.[0]?.data?.description).toBe(
+      'A private contract offer has been sent to <@100000000000000003> by <@100000000000000002> on behalf of 🔵 <@&100000000000000007>.',
+    );
+    expect(interaction.edits[0]?.embeds?.[0]?.data?.color).toBe(0xf97316);
+    expect(delivery).toHaveBeenCalledWith(expect.any(Object), {
+      sourceTeamRoleColor: 0xf97316,
+    });
     expect(JSON.stringify(interaction.edits[0])).not.toContain('Destination Team');
     expect(JSON.stringify(interaction.edits[0])).not.toContain('**<@&');
   });
@@ -508,18 +513,17 @@ describe('stage three command registry and deployment', () => {
       title: 'Test League Contract Offer',
       description: 'Professional First Team',
     });
-    expect(serialized.embeds[0]?.thumbnail).toBeUndefined();
+    expect(serialized.embeds[0]?.thumbnail?.url).toContain('twemoji');
     expect(
       Object.fromEntries(
         serialized.embeds[0]?.fields.map(({ name, value }) => [name, value]) ?? [],
       ),
     ).toMatchObject({
-      'Destination Club': '<@&100000000000000007>',
+      'Source Team': '🔵 <@&100000000000000007>',
       'Offered Player': '<@100000000000000003>',
       'Offering Manager': '<@100000000000000004>',
       Squad: '4/10',
       'Remaining Spots': '6',
-      'Current Club': 'Free agent',
     });
     expect(serialized.embeds[0]?.fields.find(({ name }) => name === 'Expires')?.value).toMatch(
       /^<t:\d+:F>\n<t:\d+:R>$/,
@@ -542,7 +546,7 @@ describe('stage three command registry and deployment', () => {
     ]);
   });
 
-  it('includes the destination club logo only when configured', () => {
+  it('does not use a legacy logo as a team thumbnail', () => {
     const withLogo = offerCreationResult();
     withLogo.destinationClub.logoUrl = 'https://example.com/team-logo.png';
     const payloadWithLogo = JSON.parse(JSON.stringify(createOfferMessagePayload(withLogo))) as {
@@ -551,21 +555,15 @@ describe('stage three command registry and deployment', () => {
     const payloadWithoutLogo = JSON.parse(
       JSON.stringify(createOfferMessagePayload(offerCreationResult())),
     ) as { embeds: Array<{ thumbnail?: { url: string } }> };
-    expect(payloadWithLogo.embeds[0]?.thumbnail?.url).toBe('https://example.com/team-logo.png');
-    expect(payloadWithoutLogo.embeds[0]?.thumbnail).toBeUndefined();
+    expect(payloadWithLogo.embeds[0]?.thumbnail?.url).toContain('twemoji');
+    expect(payloadWithoutLogo.embeds[0]?.thumbnail?.url).toBe(
+      payloadWithLogo.embeds[0]?.thumbnail?.url,
+    );
   });
 
-  it('brands the private offer with the configured issuing team banner and custom thumbnail', () => {
+  it('brands the private offer with the source team identity and custom thumbnail', () => {
     const result = offerCreationResult();
-    result.destinationClub.name = 'Newcastle';
-    result.destinationClub.shortName = 'NEW';
     result.destinationClub.emoji = '<:Newcastle:987654321098765432>';
-    result.bannerConfig = {
-      bannerHasEmoji: true,
-      bannerHasName: false,
-      bannerHasShort: false,
-      bannerHasRole: true,
-    };
 
     const payload = JSON.parse(JSON.stringify(createOfferMessagePayload(result))) as {
       embeds: Array<{
@@ -574,13 +572,38 @@ describe('stage three command registry and deployment', () => {
       }>;
     };
 
-    expect(payload.embeds[0]?.fields.find(({ name }) => name === 'Destination Club')?.value).toBe(
+    expect(payload.embeds[0]?.fields.find(({ name }) => name === 'Source Team')?.value).toBe(
       '<:Newcastle:987654321098765432> <@&100000000000000007>',
     );
     expect(payload.embeds[0]?.thumbnail?.url).toBe(
       'https://cdn.discordapp.com/emojis/987654321098765432.png',
     );
   });
+
+  it.each([
+    ['supplied role color', { sourceTeamRoleColor: 0xf97316 }, 0xf97316],
+    ['zero-color fallback', { sourceTeamRoleColor: 0 }, 0x5865f2],
+    ['missing metadata fallback', {}, 0x5865f2],
+  ] as const)(
+    'uses the %s for the private offer DM without changing its content',
+    (_, metadata, color) => {
+      const payload = JSON.parse(
+        JSON.stringify(createOfferMessagePayload(offerCreationResult(), metadata)),
+      ) as {
+        embeds: Array<{ color: number; fields: Array<{ name: string; value: string }> }>;
+        components: Array<{ components: Array<{ label: string }> }>;
+      };
+
+      expect(payload.embeds[0]?.color).toBe(color);
+      expect(payload.embeds[0]?.fields.find(({ name }) => name === 'Source Team')?.value).toBe(
+        '🔵 <@&100000000000000007>',
+      );
+      expect(payload.components[0]?.components.map(({ label }) => label)).toEqual([
+        'Sign Contract',
+        'Decline Offer',
+      ]);
+    },
+  );
 
   it('opens the offered player DM and never fetches a guild transfer channel', async () => {
     const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -666,11 +689,9 @@ describe('persistent offer buttons', () => {
       destinationClub: {
         id: '2',
         guildId: '1',
-        name: 'Team',
-        shortName: 'TM',
         discordRoleId: '7',
         logoUrl: null,
-        emoji: null,
+        emoji: '🔵',
         squadLimitOverride: 10,
         active: true,
         createdAt: now,

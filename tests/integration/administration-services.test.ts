@@ -103,18 +103,14 @@ describe('administration services', () => {
 
   async function createClub(
     roleId = '930000000000000001',
-    name = 'Istanbul Lions',
-    shortName = 'il',
     squadLimit = 5,
-    emoji?: string,
+    emoji = '🦁',
   ): Promise<Club> {
     return new ClubManagementService(database.client).create({
       authorization: authorization(),
-      name,
-      shortName,
       discordRoleId: roleId,
-      squadLimit,
-      ...(emoji === undefined ? {} : { emoji }),
+      emoji,
+      squadLimitOverride: squadLimit,
     });
   }
 
@@ -174,16 +170,10 @@ describe('administration services', () => {
     ).resolves.toBe(2);
   });
 
-  it('creates normalized clubs and rejects duplicate names roles and short names', async () => {
+  it('creates teams and rejects a duplicate Discord role', async () => {
     const club = await createClub();
-    expect(club.shortName).toBe('IL');
-    await expect(createClub('930000000000000002')).rejects.toBeInstanceOf(ConflictError);
-    await expect(createClub('930000000000000001', 'Different', 'DIFF')).rejects.toBeInstanceOf(
-      ConflictError,
-    );
-    await expect(createClub('930000000000000003', 'Different', 'IL')).rejects.toBeInstanceOf(
-      ConflictError,
-    );
+    expect(club).toMatchObject({ discordRoleId: '930000000000000001', emoji: '🦁' });
+    await expect(createClub('930000000000000001')).rejects.toBeInstanceOf(ConflictError);
     await expect(
       database.client.auditEvent.count({ where: { eventType: clubCreatedAuditEventType } }),
     ).resolves.toBe(1);
@@ -197,25 +187,23 @@ describe('administration services', () => {
     await expect(database.client.club.count({ where: { id: club.id } })).resolves.toBe(1);
   });
 
-  it('filters autocomplete by name and short name and caps results', async () => {
+  it('filters role-only autocomplete by cached role name and caps results', async () => {
     const service = new ClubManagementService(database.client);
-    const unicodeClub = await createClub('930000000000000001', 'Istanbul Lions', 'IL', 5, '🦁');
-    const customClub = await createClub(
-      '930000000000000002',
-      'Ankara United',
-      'ANK',
-      5,
-      '<:ankara:123456789012345678>',
-    );
-    const legacyClub = await createClub('930000000000000003', 'Bursa City', 'BUR');
-    await expect(service.autocomplete(guildId, 'lion')).resolves.toEqual([
-      { name: '🦁', value: unicodeClub.id },
+    const unicodeClub = await createClub('930000000000000001', 5, '🦁');
+    const customClub = await createClub('930000000000000002', 5, '<:ankara:123456789012345678>');
+    const unknownRoleClub = await createClub('930000000000000003', 5, '⚪');
+    const roleNames = {
+      [unicodeClub.discordRoleId]: 'Istanbul Lions',
+      [customClub.discordRoleId]: 'Ankara United',
+    };
+    await expect(service.autocomplete(guildId, 'lion', 25, roleNames)).resolves.toEqual([
+      { name: '@Istanbul Lions', value: unicodeClub.id },
     ]);
-    await expect(service.autocomplete(guildId, 'ank')).resolves.toEqual([
-      { name: '.ankara.', value: customClub.id },
+    await expect(service.autocomplete(guildId, 'ank', 25, roleNames)).resolves.toEqual([
+      { name: '@Ankara United', value: customClub.id },
     ]);
-    await expect(service.autocomplete(guildId, 'bursa')).resolves.toEqual([
-      { name: 'Bursa City', value: legacyClub.id },
+    await expect(service.autocomplete(guildId, 'unknown', 25, roleNames)).resolves.toEqual([
+      { name: 'Unknown Team Role', value: unknownRoleClub.id },
     ]);
     await expect(service.autocomplete(guildId, '', 1)).resolves.toHaveLength(1);
     await expect(service.autocomplete('999999999999999999', '')).resolves.toEqual([]);
@@ -344,7 +332,7 @@ describe('administration services', () => {
   });
 
   it('derives capacity from active players and ignores ended memberships', async () => {
-    const club = await createClub('930000000000000001', 'Small Club', 'SC', 1);
+    const club = await createClub('930000000000000001', 1);
     const service = new RosterManagementService(database.client);
     await service.add({
       authorization: authorization(),
@@ -404,10 +392,9 @@ describe('administration services', () => {
     });
     const otherClub = await new ClubRepository(database.client).create({
       guildId: otherGuild.id,
-      name: 'Other Club',
-      shortName: 'OC',
       discordRoleId: '930000000000000099',
-      squadLimit: 5,
+      emoji: '🟢',
+      squadLimitOverride: 5,
     });
     const player = await new UserRepository(database.client).getOrCreateByDiscordUserId(playerId);
     await new MembershipRepository(database.client).createActive({
@@ -428,7 +415,7 @@ describe('administration services', () => {
 
   it('creates offers with configured timeout source club and atomic audit', async () => {
     const destination = await createClub();
-    const source = await createClub('930000000000000002', 'Source Club', 'SRC');
+    const source = await createClub('930000000000000002');
     await new RosterManagementService(database.client).add({
       authorization: authorization(),
       clubId: source.id,
@@ -454,7 +441,7 @@ describe('administration services', () => {
   });
 
   it('authorizes team staff offers and rejects duplicates and full destinations', async () => {
-    const destination = await createClub('930000000000000001', 'Destination', 'DST', 1);
+    const destination = await createClub('930000000000000001', 1);
     await new StaffManagementService(database.client).appoint({
       authorization: authorization(),
       clubId: destination.id,
@@ -503,14 +490,8 @@ describe('administration services', () => {
   ] as const)(
     'blocks a target with an active %s team %s appointment before delivery',
     async (targetTeam, targetType, callerType) => {
-      const source = await createClub('930000000000000010', 'Source Team', 'SRC', 5, '⚽');
-      const other = await createClub(
-        '930000000000000011',
-        'Other Team',
-        'OTH',
-        5,
-        '<:Other:987654321098765432>',
-      );
+      const source = await createClub('930000000000000010', 5, '⚽');
+      const other = await createClub('930000000000000011', 5, '<:Other:987654321098765432>');
       const targetClub = targetTeam === 'source' ? source : other;
       const staff = new StaffManagementService(database.client);
       await staff.appoint({
@@ -573,8 +554,8 @@ describe('administration services', () => {
   );
 
   it('allows a removed former staff member to receive a private offer', async () => {
-    const source = await createClub('930000000000000010', 'Source Team', 'SRC', 5, '⚽');
-    const formerTeam = await createClub('930000000000000011', 'Former Team', 'FOR', 5, '🔵');
+    const source = await createClub('930000000000000010', 5, '⚽');
+    const formerTeam = await createClub('930000000000000011', 5, '🔵');
     const staff = new StaffManagementService(database.client);
     await staff.appoint({
       authorization: authorization(),

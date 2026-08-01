@@ -70,17 +70,14 @@ describe('offer acceptance service', () => {
     });
     const destination = await clubs.create({
       guildId: guild.id,
-      name: 'destination club',
-      shortName: 'DST',
       discordRoleId: '820000000000000001',
-      squadLimit,
+      emoji: '🔵',
+      ...(squadLimit === 17 ? {} : { squadLimitOverride: squadLimit }),
     });
     const source = await clubs.create({
       guildId: guild.id,
-      name: 'source club',
-      shortName: 'SRC',
       discordRoleId: '820000000000000002',
-      squadLimit: 17,
+      emoji: '🔴',
     });
     const player = await users.getOrCreateByDiscordUserId('830000000000000001');
     const manager = await users.getOrCreateByDiscordUserId('830000000000000002');
@@ -286,10 +283,8 @@ describe('offer acceptance service', () => {
     });
     const otherClub = await clubs.create({
       guildId: otherGuild.id,
-      name: 'other club',
-      shortName: 'OTH',
       discordRoleId: '820000000000000003',
-      squadLimit: 17,
+      emoji: '🟢',
     });
     await memberships.createActive({
       guildId: otherGuild.id,

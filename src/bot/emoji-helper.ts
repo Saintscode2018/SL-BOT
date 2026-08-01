@@ -136,20 +136,13 @@ export function validateCustomEmoji(
   validateTeamEmoji(input, guildEmojis);
 }
 
-export function getTeamThumbnail(
-  emojiInput: string | null | undefined,
-  fallbackLogoUrl?: string | null,
-): string | null {
-  if (!emojiInput) {
-    if (fallbackLogoUrl && fallbackLogoUrl.startsWith('http')) return fallbackLogoUrl;
-    return null;
-  }
+export function getTeamThumbnail(emojiInput: string | null | undefined): string | null {
+  if (!emojiInput) return null;
   const customParsed = parseCustomEmoji(emojiInput);
   if (customParsed !== null) return customParsed.cdnUrl;
   if (isUnicodeEmoji(emojiInput)) {
     const twemoji = getTwemojiUrl(emojiInput);
     if (twemoji !== null) return twemoji;
   }
-  if (fallbackLogoUrl && fallbackLogoUrl.startsWith('http')) return fallbackLogoUrl;
   return null;
 }

@@ -34,10 +34,6 @@ model GuildSettings {
   playerManagerRoleId    String?
   defaultSquadLimit      Int      @default(17)
   offerTimeoutSeconds    Int      @default(86400)
-  bannerHasEmoji         Boolean  @default(true)
-  bannerHasName          Boolean  @default(false)
-  bannerHasShort         Boolean  @default(false)
-  bannerHasRole          Boolean  @default(true)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
   guild                  Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade, onUpdate: Cascade)
@@ -46,11 +42,9 @@ model GuildSettings {
 model Club {
   id                      String              @id @default(uuid())
   guildId                 String
-  name                    String
-  shortName               String
   discordRoleId           String
   logoUrl                 String?
-  emoji                   String?
+  emoji                   String
   squadLimitOverride      Int?
   active                  Boolean             @default(true)
   createdAt               DateTime            @default(now())
@@ -61,8 +55,6 @@ model Club {
   sourceTransactions      LeagueTransaction[] @relation("sourceClub")
   destinationTransactions LeagueTransaction[] @relation("destinationClub")
 
-  @@unique([guildId, name])
-  @@unique([guildId, shortName])
   @@unique([guildId, discordRoleId])
   @@unique([id, guildId])
   @@index([guildId, active])

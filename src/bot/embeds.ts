@@ -2,6 +2,7 @@ import { EmbedBuilder, type APIEmbedField } from 'discord.js';
 
 export interface EmbedOptions {
   title: string;
+  color?: number;
   description?: string;
   fields?: APIEmbedField[];
   thumbnail?: string | null;
@@ -29,7 +30,9 @@ export function createActorField(
 }
 
 export function createSuccessEmbed(options: EmbedOptions): EmbedBuilder {
-  const embed = new EmbedBuilder().setTitle(options.title).setColor(EMBED_COLORS.SUCCESS);
+  const embed = new EmbedBuilder()
+    .setTitle(options.title)
+    .setColor(options.color ?? EMBED_COLORS.SUCCESS);
 
   if (options.author) {
     embed.setAuthor({
@@ -47,7 +50,9 @@ export function createSuccessEmbed(options: EmbedOptions): EmbedBuilder {
 }
 
 export function createInfoEmbed(options: EmbedOptions): EmbedBuilder {
-  const embed = new EmbedBuilder().setTitle(options.title).setColor(EMBED_COLORS.INFO);
+  const embed = new EmbedBuilder()
+    .setTitle(options.title)
+    .setColor(options.color ?? EMBED_COLORS.INFO);
 
   if (options.author) {
     embed.setAuthor({

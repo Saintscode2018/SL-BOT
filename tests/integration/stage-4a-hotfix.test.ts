@@ -232,8 +232,6 @@ describe('Stage 4A Hotfix Verification', () => {
             destinationClub: {
               id: 'club-1',
               guildId,
-              name: 'Arsenal',
-              shortName: 'ARS',
               discordRoleId: 'role-1',
               logoUrl: null,
               emoji: '<:ars:123456789012345678>',
@@ -246,9 +244,6 @@ describe('Stage 4A Hotfix Verification', () => {
             leagueName: 'Test League',
             activePlayerCount: 5,
             effectiveSquadLimit: 17,
-            effectiveLimit: 17,
-            remainingSpaces: 12,
-            expiresAt: new Date(),
           }),
         ),
       },
@@ -295,9 +290,8 @@ describe('Stage 4A Hotfix Verification', () => {
 
       const club = await commandContext.clubManagementService.create({
         authorization: adminAuth,
-        name: 'Chelsea',
-        shortName: 'CHE',
         discordRoleId: '300000000000000001',
+        emoji: '🔵',
       });
 
       const tmUserId = '700000000000000001';
@@ -451,8 +445,6 @@ describe('Stage 4A Hotfix Verification', () => {
         'team',
         {
           subcommand: 'add',
-          name: 'Test',
-          short_name: 'TST',
           role: '300000000000000001',
           emoji: '⚽',
         },
@@ -469,7 +461,7 @@ describe('Stage 4A Hotfix Verification', () => {
       expect(reply?.embeds?.[0]?.data.title).toBe('❌ Wrong Command Channel');
     });
 
-    it('returns public embeds for successful mutation commands in staff channel', async () => {
+    it('returns an ephemeral embed for a successful mutation in the staff channel', async () => {
       await setupLeagueAndChannels();
 
       const registry = {
@@ -480,8 +472,6 @@ describe('Stage 4A Hotfix Verification', () => {
         'team',
         {
           subcommand: 'add',
-          name: 'Real Madrid',
-          short_name: 'RMA',
           role: '300000000000000010',
           emoji: '⚽',
         },
@@ -502,8 +492,6 @@ describe('Stage 4A Hotfix Verification', () => {
 
       const club = await commandContext.clubManagementService.create({
         authorization: adminAuth,
-        name: 'Liverpool',
-        shortName: 'LIV',
         discordRoleId: '300000000000000099',
         emoji: '🔴',
       });

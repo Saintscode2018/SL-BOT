@@ -1,16 +1,14 @@
 import type { Club, PrismaClient } from '@prisma/client';
-import { z } from 'zod';
 
 import {
   ClubInactiveError,
-  DuplicateTeamNameError,
   DuplicateTeamRoleError,
-  DuplicateTeamShortNameError,
   EntityNotFoundError,
-  ValidationError,
+  InvalidTeamEmojiError,
+  NoTeamChangesProvidedError,
 } from '../domain/errors.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
-import { formatTeamBanner, teamBannerConfigFrom } from '../domain/team-label.js';
+import { formatTeamIdentity } from '../domain/team-label.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { ClubRepository } from '../repositories/club-repository.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
@@ -22,54 +20,36 @@ export const clubCreatedAuditEventType = 'club.created';
 export const clubEditedAuditEventType = 'club.edited';
 export const clubDeactivatedAuditEventType = 'club.deactivated';
 
-const clubNameSchema = z.string().trim().min(2).max(64);
-const clubShortNameSchema = z.string().trim().min(2).max(12);
-const optionalUrlSchema = z.string().url().max(2048).nullable();
-
 export interface CreateClubWorkflowInput {
   authorization: AuthorizationInput;
-  name: string;
-  shortName: string;
   discordRoleId: string;
-  squadLimit?: number; // legacy support
+  emoji: string;
   squadLimitOverride?: number | null;
-  logoUrl?: string | null;
-  emoji?: string | null;
 }
 
 export interface EditClubWorkflowInput {
   authorization: AuthorizationInput;
   clubId: string;
-  name?: string;
-  shortName?: string;
   discordRoleId?: string;
-  logoUrl?: string | null;
-  emoji?: string | null;
+  emoji?: string;
 }
 
 export interface ClubListItem {
   club: Club;
   activePlayerCount: number;
   effectiveLimit: number;
-  remainingSpaces: number;
 }
 
 export class ClubManagementService {
   public constructor(private readonly database: PrismaClient) {}
 
   public async create(input: CreateClubWorkflowInput): Promise<Club> {
+    const emoji = input.emoji.trim();
+    if (emoji.length === 0) throw new InvalidTeamEmojiError();
     const authorization = await new AuthorizationService(
       this.database,
     ).authorizeLeagueAdministration(input.authorization);
-    const name = clubNameSchema.parse(input.name);
-    const shortName = clubShortNameSchema.parse(input.shortName).toUpperCase();
-    const logoUrl = optionalUrlSchema.parse(input.logoUrl ?? null);
-    const squadLimitOverride =
-      input.squadLimitOverride !== undefined
-        ? input.squadLimitOverride
-        : input.squadLimit !== undefined && input.squadLimit !== 17
-          ? input.squadLimit
-          : null;
+
     return this.database.$transaction(async (transaction) => {
       const clubs = new ClubRepository(transaction);
       const existingRoleClub = await clubs.getByDiscordRoleId(
@@ -79,20 +59,7 @@ export class ClubManagementService {
       if (existingRoleClub !== null) {
         throw new DuplicateTeamRoleError(
           input.discordRoleId,
-          formatTeamBanner(existingRoleClub, teamBannerConfigFrom(authorization.settings)),
-        );
-      }
-      const existingNameClub = await clubs.getByName(authorization.guild.id, name);
-      if (existingNameClub !== null) {
-        throw new DuplicateTeamNameError(
-          formatTeamBanner(existingNameClub, teamBannerConfigFrom(authorization.settings)),
-        );
-      }
-      const existingShortNameClub = await clubs.getByShortName(authorization.guild.id, shortName);
-      if (existingShortNameClub !== null) {
-        throw new DuplicateTeamShortNameError(
-          shortName,
-          formatTeamBanner(existingShortNameClub, teamBannerConfigFrom(authorization.settings)),
+          formatTeamIdentity(existingRoleClub, 'message'),
         );
       }
 
@@ -101,12 +68,11 @@ export class ClubManagementService {
       );
       const club = await clubs.create({
         guildId: authorization.guild.id,
-        name,
-        shortName,
         discordRoleId: input.discordRoleId,
-        squadLimitOverride,
-        logoUrl,
-        emoji: input.emoji?.trim() || null,
+        emoji,
+        ...(input.squadLimitOverride === undefined
+          ? {}
+          : { squadLimitOverride: input.squadLimitOverride }),
       });
       await new AuditEventRepository(transaction).create({
         guildId: authorization.guild.id,
@@ -115,9 +81,8 @@ export class ClubManagementService {
         entityType: 'club',
         entityId: club.id,
         afterState: {
-          name: club.name,
-          shortName: club.shortName,
           discordRoleId: club.discordRoleId,
+          emoji: club.emoji,
           squadLimitOverride: club.squadLimitOverride,
           active: club.active,
         },
@@ -127,18 +92,14 @@ export class ClubManagementService {
   }
 
   public async edit(input: EditClubWorkflowInput): Promise<Club> {
+    const emoji = input.emoji?.trim();
+    if (emoji !== undefined && emoji.length === 0) throw new InvalidTeamEmojiError();
     const authorization = await new AuthorizationService(
       this.database,
     ).authorizeLeagueAdministration(input.authorization);
 
-    if (
-      input.name === undefined &&
-      input.shortName === undefined &&
-      input.discordRoleId === undefined &&
-      input.logoUrl === undefined &&
-      input.emoji === undefined
-    ) {
-      throw new ValidationError('at least one property must be edited');
+    if (input.discordRoleId === undefined && input.emoji === undefined) {
+      throw new NoTeamChangesProvidedError();
     }
 
     return this.database.$transaction(async (transaction) => {
@@ -155,62 +116,18 @@ export class ClubManagementService {
         if (existingRoleClub !== null && existingRoleClub.id !== club.id) {
           throw new DuplicateTeamRoleError(
             input.discordRoleId,
-            formatTeamBanner(existingRoleClub, teamBannerConfigFrom(authorization.settings)),
+            formatTeamIdentity(existingRoleClub, 'message'),
           );
-        }
-      }
-      if (input.name !== undefined) {
-        const parsedName = clubNameSchema.parse(input.name);
-        if (parsedName !== club.name) {
-          const existingNameClub = await clubs.getByName(authorization.guild.id, parsedName);
-          if (existingNameClub !== null && existingNameClub.id !== club.id) {
-            throw new DuplicateTeamNameError(
-              formatTeamBanner(existingNameClub, teamBannerConfigFrom(authorization.settings)),
-            );
-          }
-        }
-      }
-      if (input.shortName !== undefined) {
-        const parsedShortName = clubShortNameSchema.parse(input.shortName).toUpperCase();
-        if (parsedShortName !== club.shortName) {
-          const existingShortNameClub = await clubs.getByShortName(
-            authorization.guild.id,
-            parsedShortName,
-          );
-          if (existingShortNameClub !== null && existingShortNameClub.id !== club.id) {
-            throw new DuplicateTeamShortNameError(
-              parsedShortName,
-              formatTeamBanner(existingShortNameClub, teamBannerConfigFrom(authorization.settings)),
-            );
-          }
         }
       }
 
       const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
         input.authorization.discordUserId,
       );
-
-      const updates: {
-        name?: string;
-        shortName?: string;
-        discordRoleId?: string;
-        logoUrl?: string | null;
-        emoji?: string | null;
-      } = {};
-
-      if (input.name !== undefined) updates.name = clubNameSchema.parse(input.name);
-      if (input.shortName !== undefined) {
-        updates.shortName = clubShortNameSchema.parse(input.shortName).toUpperCase();
-      }
-      if (input.discordRoleId !== undefined) updates.discordRoleId = input.discordRoleId;
-      if (input.logoUrl !== undefined) {
-        updates.logoUrl = optionalUrlSchema.parse(input.logoUrl);
-      }
-      if (input.emoji !== undefined) {
-        updates.emoji = input.emoji === null ? null : input.emoji.trim() || null;
-      }
-
-      const updatedClub = await clubs.update(club.id, updates);
+      const updatedClub = await clubs.update(club.id, {
+        ...(input.discordRoleId === undefined ? {} : { discordRoleId: input.discordRoleId }),
+        ...(emoji === undefined ? {} : { emoji }),
+      });
 
       await new AuditEventRepository(transaction).create({
         guildId: authorization.guild.id,
@@ -219,17 +136,11 @@ export class ClubManagementService {
         entityType: 'club',
         entityId: club.id,
         beforeState: {
-          name: club.name,
-          shortName: club.shortName,
           discordRoleId: club.discordRoleId,
-          logoUrl: club.logoUrl,
           emoji: club.emoji,
         },
         afterState: {
-          name: updatedClub.name,
-          shortName: updatedClub.shortName,
           discordRoleId: updatedClub.discordRoleId,
-          logoUrl: updatedClub.logoUrl,
           emoji: updatedClub.emoji,
         },
       });
@@ -270,16 +181,11 @@ export class ClubManagementService {
     if (guild === null) return [];
     const settings = await guilds.getSettings(guild.id);
     const clubs = await new ClubRepository(this.database).listActiveWithPlayerCounts(guild.id);
-    return clubs.map(({ activePlayerCount, ...club }) => {
-      const effectiveLimit = getEffectiveSquadLimit(club, settings);
-      const remainingSpaces = Math.max(0, effectiveLimit - activePlayerCount);
-      return {
-        club,
-        activePlayerCount,
-        effectiveLimit,
-        remainingSpaces,
-      };
-    });
+    return clubs.map(({ activePlayerCount, ...club }) => ({
+      club,
+      activePlayerCount,
+      effectiveLimit: getEffectiveSquadLimit(club, settings),
+    }));
   }
 
   public async autocomplete(
@@ -288,28 +194,20 @@ export class ClubManagementService {
     limit = 25,
     roleNamesById: Readonly<Record<string, string>> = {},
   ): Promise<Array<{ name: string; value: string }>> {
-    const guilds = new GuildRepository(this.database);
-    const guild = await guilds.getByDiscordGuildId(discordGuildId);
+    const guild = await new GuildRepository(this.database).getByDiscordGuildId(discordGuildId);
     if (guild === null) return [];
-    const settings = await guilds.getSettings(guild.id);
-    const bannerConfig = teamBannerConfigFrom(settings);
-    const items = await this.listActive(discordGuildId);
+    const clubs = await new ClubRepository(this.database).listActive(guild.id);
     const normalized = query.trim().toLowerCase();
-    return items
-      .filter(
-        ({ club }) =>
-          normalized.length === 0 ||
-          club.name.toLowerCase().includes(normalized) ||
-          club.shortName.toLowerCase().includes(normalized),
-      )
-      .slice(0, Math.min(limit, 25))
-      .map(({ club }) => ({
-        name: formatTeamBanner(
+    return clubs
+      .map((club) => ({
+        club,
+        label: formatTeamIdentity(
           { ...club, discordRoleName: roleNamesById[club.discordRoleId] ?? null },
-          bannerConfig,
           'autocomplete',
         ),
-        value: club.id,
-      }));
+      }))
+      .filter(({ label }) => normalized.length === 0 || label.toLowerCase().includes(normalized))
+      .slice(0, Math.min(limit, 25))
+      .map(({ club, label }) => ({ name: label, value: club.id }));
   }
 }

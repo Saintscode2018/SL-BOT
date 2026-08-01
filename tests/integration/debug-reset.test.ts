@@ -53,9 +53,8 @@ async function seedGuild(
   const club = await database.club.create({
     data: {
       guildId: guild.id,
-      name: `Team ${suffix}`,
-      shortName: `T${suffix}`,
       discordRoleId: `50000000000000000${suffix}`,
+      emoji: suffix === '1' ? '🔵' : '🔴',
     },
   });
   const actor = await database.leagueUser.create({

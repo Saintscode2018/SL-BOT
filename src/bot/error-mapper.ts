@@ -11,18 +11,17 @@ import {
   ConflictError,
   DebugAdministratorPermissionRequiredError,
   DuplicateOfferError,
-  DuplicateTeamNameError,
   DuplicateTeamRoleError,
-  DuplicateTeamShortNameError,
   EntityNotFoundError,
   GuildConfigurationNotFoundError,
   GuildNotConfiguredError,
+  InactiveSourceTeamError,
   InvalidOfferMessageError,
-  InvalidBannerConfigurationError,
   InvalidStateTransitionError,
   InvalidTeamEmojiError,
   LeagueSetupRequiredError,
   NoStaffAppointmentError,
+  NoTeamChangesProvidedError,
   OfferDeliveryError,
   OfferExpiredError,
   SquadFullError,
@@ -77,14 +76,8 @@ export function mapDiscordError(error: unknown): MappedErrorResponse {
     title = '❌ League Setup Required';
     description = 'A Discord Administrator must run `/setup league` first.';
   } else if (error instanceof DuplicateTeamRoleError) {
-    title = '❌ Team Role Already In Use';
-    description = `The role <@&${error.roleId}> is already assigned to ${error.teamName}.\n\nChoose a different Discord role for this team.`;
-  } else if (error instanceof DuplicateTeamNameError) {
-    title = '❌ Team Name Already In Use';
-    description = `A team named ${error.teamName} already exists.`;
-  } else if (error instanceof DuplicateTeamShortNameError) {
-    title = '❌ Team Abbreviation Already In Use';
-    description = `The abbreviation ${error.shortName} is already assigned to ${error.teamName}.`;
+    title = '❌ Team Role Already in Use';
+    description = `The role <@&${error.roleId}> is already assigned to ${error.teamIdentity}.\n\nChoose a different Discord role.`;
   } else if (error instanceof StaffAlreadyAppointedError) {
     title = '❌ Staff Member Already Appointed';
     description = error.message;
@@ -97,8 +90,8 @@ export function mapDiscordError(error: unknown): MappedErrorResponse {
   } else if (error instanceof InvalidTeamEmojiError) {
     title = '❌ Invalid Team Emoji';
     description = error.message;
-  } else if (error instanceof InvalidBannerConfigurationError) {
-    title = '❌ Invalid Banner Configuration';
+  } else if (error instanceof NoTeamChangesProvidedError) {
+    title = '❌ No Team Changes Provided';
     description = error.message;
   } else if (error instanceof NoStaffAppointmentError) {
     title = '❌ Staff Appointment Required';
@@ -133,6 +126,9 @@ export function mapDiscordError(error: unknown): MappedErrorResponse {
       title = '❌ Invalid Command Options';
       description = error.message;
     }
+  } else if (error instanceof InactiveSourceTeamError) {
+    title = '❌ Team Inactive';
+    description = error.message;
   } else if (error instanceof ClubInactiveError) {
     title = '❌ Team Inactive';
     description = 'That team is inactive.';

@@ -34,21 +34,13 @@ export interface ResetTeamLimitInput {
 export interface LimitViewResult {
   defaultSquadLimit: number;
   clubsWithOverrides: Array<{
-    clubId: string;
-    name: string;
-    shortName: string;
-    emoji: string | null;
-    logoUrl: string | null;
+    club: Club;
     override: number;
     effectiveLimit: number;
   }>;
   selectedClub?:
     | {
-        clubId: string;
-        name: string;
-        shortName: string;
-        emoji: string | null;
-        logoUrl: string | null;
+        club: Club;
         override: number | null;
         effectiveLimit: number;
       }
@@ -94,7 +86,6 @@ export class LimitManagementService {
 
   public async setTeamLimit(input: SetTeamLimitInput): Promise<{
     club: Club;
-    clubName: string;
     override: number;
     effectiveLimit: number;
   }> {
@@ -132,7 +123,6 @@ export class LimitManagementService {
 
       return {
         club: updatedClub,
-        clubName: updatedClub.name,
         override: input.amount,
         effectiveLimit,
       };
@@ -141,7 +131,6 @@ export class LimitManagementService {
 
   public async resetTeamLimit(input: ResetTeamLimitInput): Promise<{
     club: Club;
-    clubName: string;
     effectiveLimit: number;
   }> {
     await new AuthorizationService(this.database).authorizeLeagueAdministration(
@@ -177,7 +166,6 @@ export class LimitManagementService {
 
       return {
         club: updatedClub,
-        clubName: updatedClub.name,
         effectiveLimit,
       };
     });
@@ -197,11 +185,7 @@ export class LimitManagementService {
     const clubsWithOverrides = activeClubs
       .filter((c) => c.squadLimitOverride !== null)
       .map((c) => ({
-        clubId: c.id,
-        name: c.name,
-        shortName: c.shortName,
-        emoji: c.emoji,
-        logoUrl: c.logoUrl,
+        club: c,
         override: c.squadLimitOverride!,
         effectiveLimit: getEffectiveSquadLimit(c, settings),
       }));
@@ -211,11 +195,7 @@ export class LimitManagementService {
       const found = activeClubs.find((c) => c.id === clubId);
       if (found !== undefined) {
         selectedClub = {
-          clubId: found.id,
-          name: found.name,
-          shortName: found.shortName,
-          emoji: found.emoji,
-          logoUrl: found.logoUrl,
+          club: found,
           override: found.squadLimitOverride,
           effectiveLimit: getEffectiveSquadLimit(found, settings),
         };

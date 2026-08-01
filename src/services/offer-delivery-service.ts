@@ -16,8 +16,15 @@ export interface OfferMessageReference {
   messageId: string;
 }
 
+export interface OfferPresentationMetadata {
+  sourceTeamRoleColor?: number | null;
+}
+
 export interface OfferMessageAdapter {
-  sendOffer(result: OfferCreationResult): Promise<OfferMessageReference>;
+  sendOffer(
+    result: OfferCreationResult,
+    presentation?: OfferPresentationMetadata,
+  ): Promise<OfferMessageReference>;
   setTerminalState(
     reference: OfferMessageReference,
     state: 'ACCEPTED' | 'DECLINED' | 'EXPIRED' | 'VOIDED' | 'CANCELLED',
@@ -34,11 +41,14 @@ export class OfferDeliveryService {
     private readonly creation = new OfferCreationService(database),
   ) {}
 
-  public async createAndDeliver(input: CreateOfferWorkflowInput): Promise<OfferCreationResult> {
+  public async createAndDeliver(
+    input: CreateOfferWorkflowInput,
+    presentation: OfferPresentationMetadata = {},
+  ): Promise<OfferCreationResult> {
     const result = await this.creation.createOffer(input);
     let reference: OfferMessageReference;
     try {
-      reference = await this.messages.sendOffer(result);
+      reference = await this.messages.sendOffer(result, presentation);
     } catch (error: unknown) {
       try {
         await this.voidOffer(result.offer.id, result.offeredBy.id, 'send_failed');

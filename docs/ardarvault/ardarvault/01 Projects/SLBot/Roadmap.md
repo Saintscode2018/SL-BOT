@@ -4,57 +4,36 @@ type: roadmap
 tags:
   - slbot
   - roadmap
-  - scope
+  - stage4a
 ---
 
-# SL Bot Roadmap & Stage Boundaries
+# SL Bot Roadmap and Stage Boundaries
 
-Index: [[SLBot]]
+## Completed Stage 4A
 
-## Completed Stages
+- Prisma/SQLite guild, settings, clubs, memberships, offers, transactions, and audits.
+- Setup channels/roles/settings, channel-policy enforcement, global permissions, and effective squad limits.
+- Required emoji + Discord-role team identity with shared message/title/footer/autocomplete formatter modes.
+- Corrective migration removing obsolete club presentation columns/indexes and guild presentation settings while preserving related data.
+- Final `/team add role emoji` and `/team edit team [role] [emoji]` command shapes.
+- Club-ID autocomplete with role-only cached `@RoleName` labels, safe unknown-role fallback, and no emoji or raw IDs.
+- Team/staff/roster/limit/offer identity-only presentation.
+- Readable roster title/footer presentation with no separate `Team` field.
+- Live Discord role colors for single-team embeds and private offer DMs, with safe zero/missing-color fallbacks and no color persistence.
+- Ephemeral offer acknowledgement naming target, actor, and source team, with no public follow-up.
+- Global staff uniqueness, per-position limits, active-staff offer rejection, and database-appointment offer source.
+- Setup audit publication with nonfatal delivery failure; read-only unaudited setup view.
+- Safe rejection of stale removed commands.
 
-- **Stage 1 — TypeScript Foundation**: Database schema, SQLite migrations, repository primitives, Vitest integration harness.
-- **Stage 2 — First Development-Guild MVP**: Basic bot initialization, `/health`, `/setup guild`, `/team create/list/deactivate`, `/staff appoint/remove/list`, `/roster add/remove/list`.
-- **Stage 3 — Private Contract Offers & Acceptance**: Private DM offer creation, persistent button handling, DM delivery failure recovery, deterministic button custom IDs, offer expiration script.
-- **Stage 4A — Setup Channels & Limits**: Split `/setup`, channel policies, squad limit management.
-- **Stage 4A Hotfix — Permissions, Embeds, & Discord UX**:
-  - Global bot permissions role (`bot_permissions` / `botPermissionsRoleId`) & Discord Administrator recovery.
-  - Final channel policy matrix: Dual-channel (`bot_commands` or `staff`) vs Staff-only (`staff`).
-  - Bootstrap exception for Discord Administrators before channel setup.
-  - Embed-only response architecture for all successes and errors.
-  - Subcommand rename: `/setup league`.
-- **Stage 4A Polish — Errors, Branding, & Command UX**:
-  - Specific domain conflict errors (duplicate role, name, short name, staff appointed, position occupied).
-  - Global staff uniqueness rule (1 active staff position per user league-wide).
-  - Guild-record custom emoji validation and composed Unicode emoji support.
-  - Flattened `/offer player:<user>` command (auto-derives source team from caller's active database staff appointment).
-  - Visual embed overhaul (`✅`/`❌` title prefixes, actor lines, vertical block fields for channels/roles).
-  - Roster layout with author, standard team-label title, thumbnail, count, actual TM/ATM/PM names, divider, and players.
-  - Development-only `/debugreset` command with confirmation flow.
-- **Stage 4A Live-Test Corrections**:
-  - Guild custom emoji resolution from full mentions, wrapped names, or plain names, plus composed Unicode regression coverage.
-  - Default emoji-plus-role banners, safe `.examplept.` previews, and `.emojiName.` plain-text autocomplete fallback.
-  - Correct TM/ATM/PM roster sections with no Assistant Coach placeholder.
-  - Ephemeral administrative success matrix and authorization-aware channel guidance.
-  - Setup/configuration Discord audit publishing for league, channels, roles, and team banners with nonfatal delivery failure.
-  - Guild-specific `/bannerconfig` with fixed-order emoji/name/short/role components, emoji-plus-role defaults, and all-false rejection.
-  - Shared team-banner formatting across normal output, safe text autocomplete, staff presentation, roster identity, offers, and relevant conflicts.
-  - Vertical staff-directory blocks, affected-user appointment/removal wording, role-safe roster titles, setup-view preview, and best-effort banner audit publishing.
-  - Compact `banner — current/max` team lists, normal-text staff banners, club-ID roster correlation, active-staff offer rejection, and ephemeral `Source Team` offer acknowledgements.
+## Stage 4B+ only
 
-## Explicitly Excluded / Future Stages (Stage 4B+)
+- Discord role synchronization or role-derived offer source.
+- Import tooling.
+- Transfer changes or public transfer announcements.
+- Release, demand, promote, or demote commands.
+- General mutation Discord auditing.
+- Retry queues, background scheduling, match management, moderation, applications, and cosmetic customization.
 
-The following features are **explicitly excluded** from Stage 4A Polish and must not be implemented as placeholders:
+The permanent identity model will not regain per-team aliases or configurable formatting in future stages.
 
-- `/import` (Bulk CSV/JSON roster import)
-- Discord Role Adapter & automatic role sync (`/sync`)
-- Retry tables & background scheduling engine
-- `/admin roster-add` and `/admin roster-remove`
-- Public transfer announcements in `transferChannelId`
-- Discord audit publishing for team, limit, staff, and debug-reset mutations
-- `/demand`, `/release`, `/staff promote`, `/staff demote`
-- Full `/team disband` workflow, `/team swap`, `/teamhealth`
-- Match management (`/schedule`, `/gameresult`)
-- Moderation, applications (`/apply`), fill requests (`/fofill`), customization (`/color`)
-
-Related notes: [[Architecture]], [[Commands]], [[Session Log]]
+Related notes: [[Architecture]], [[Commands]], [[Product Decisions]]

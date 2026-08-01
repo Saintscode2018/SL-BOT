@@ -21,10 +21,6 @@ export interface UpsertGuildSettingsInput {
   playerManagerRoleId?: string | null;
   defaultSquadLimit?: number;
   offerTimeoutSeconds?: number;
-  bannerHasEmoji?: boolean;
-  bannerHasName?: boolean;
-  bannerHasShort?: boolean;
-  bannerHasRole?: boolean;
 }
 
 function settingsData(
@@ -52,14 +48,6 @@ function settingsData(
   }
   if (input.offerTimeoutSeconds !== undefined) {
     data.offerTimeoutSeconds = input.offerTimeoutSeconds;
-  }
-  for (const field of [
-    'bannerHasEmoji',
-    'bannerHasName',
-    'bannerHasShort',
-    'bannerHasRole',
-  ] as const) {
-    if (input[field] !== undefined) data[field] = input[field];
   }
   return data;
 }

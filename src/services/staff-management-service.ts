@@ -4,13 +4,14 @@ import {
   BotUserNotAllowedError,
   ClubInactiveError,
   EntityNotFoundError,
+  InactiveSourceTeamError,
   NoStaffAppointmentError,
   StaffAlreadyAppointedError,
   TeamPositionOccupiedError,
 } from '../domain/errors.js';
 
 import type { MembershipType } from '../domain/enums.js';
-import { formatTeamBanner, teamBannerConfigFrom } from '../domain/team-label.js';
+import { formatTeamIdentity } from '../domain/team-label.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { ClubRepository } from '../repositories/club-repository.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
@@ -86,7 +87,7 @@ export class StaffManagementService {
         throw new StaffAlreadyAppointedError(
           input.staffDiscordUserId,
           posName,
-          formatTeamBanner(existingUserStaff.club, teamBannerConfigFrom(authorization.settings)),
+          formatTeamIdentity(existingUserStaff.club, 'message'),
         );
       }
 
@@ -102,7 +103,7 @@ export class StaffManagementService {
         const posName = getFriendlyPositionName(input.staffType);
         throw new TeamPositionOccupiedError(
           posName,
-          formatTeamBanner(club, teamBannerConfigFrom(authorization.settings)),
+          formatTeamIdentity(club, 'message'),
           holderUser?.discordUserId ?? existingPositionStaff.userId,
         );
       }
@@ -194,14 +195,7 @@ export class StaffManagementService {
   public async getCallerActiveStaffClub(
     discordGuildId: string,
     discordUserId: string,
-  ): Promise<{
-    id: string;
-    name: string;
-    shortName: string;
-    discordRoleId?: string;
-    emoji: string | null;
-    logoUrl: string | null;
-  }> {
+  ): Promise<Club> {
     return this.database.$transaction(async (transaction) => {
       const guild = await new GuildRepository(transaction).getByDiscordGuildId(discordGuildId);
       if (guild === null) throw new EntityNotFoundError('server is not configured');
@@ -211,7 +205,9 @@ export class StaffManagementService {
         transaction,
       ).getActiveStaffMembershipForUserInGuild(guild.id, user.id);
       if (staffMembership === null) throw new NoStaffAppointmentError();
-      if (!staffMembership.club.active) throw new ClubInactiveError('team is inactive');
+      if (!staffMembership.club.active) {
+        throw new InactiveSourceTeamError(formatTeamIdentity(staffMembership.club, 'message'));
+      }
       return staffMembership.club;
     });
   }

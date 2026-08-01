@@ -1,32 +1,17 @@
-import { InvalidBannerConfigurationError } from './errors.js';
+import { ValidationError } from './errors.js';
 
-export interface TeamBannerSource {
-  name: string;
-  shortName: string;
-  emoji?: string | null;
-  discordRoleId?: string | null;
+export interface TeamIdentitySource {
+  emoji: string;
+  discordRoleId: string;
   discordRoleName?: string | null;
 }
 
-export interface TeamBannerConfig {
-  bannerHasEmoji: boolean;
-  bannerHasName: boolean;
-  bannerHasShort: boolean;
-  bannerHasRole: boolean;
-}
+export type TeamIdentityMode = 'message' | 'title' | 'footer' | 'autocomplete';
 
-export type TeamBannerMode = 'embed' | 'autocomplete';
+export const autocompleteTeamIdentityMaxLength = 100;
+export const unknownTeamRoleLabel = 'Unknown Team Role';
 
-export const defaultTeamBannerConfig: TeamBannerConfig = {
-  bannerHasEmoji: true,
-  bannerHasName: false,
-  bannerHasShort: false,
-  bannerHasRole: true,
-};
-
-export const autocompleteBannerMaxLength = 100;
-
-const CUSTOM_EMOJI_MENTION_REGEX = /^<a?:([a-zA-Z0-9_]{2,32}):\d{17,20}>$/;
+const CUSTOM_EMOJI_MENTION_REGEX = /^<(a)?:([a-zA-Z0-9_]{2,32}):(\d{17,20})>$/;
 
 function graphemes(value: string): string[] {
   return [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(value)].map(
@@ -34,102 +19,54 @@ function graphemes(value: string): string[] {
   );
 }
 
-export function isTeamBannerConfigValid(config: TeamBannerConfig): boolean {
-  return (
-    config.bannerHasEmoji || config.bannerHasName || config.bannerHasShort || config.bannerHasRole
-  );
+function requireComponent(value: string, component: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    throw new ValidationError(`team ${component} is required`);
+  }
+  return trimmed;
 }
 
-export function requireValidTeamBannerConfig(config: TeamBannerConfig): TeamBannerConfig {
-  if (!isTeamBannerConfigValid(config)) throw new InvalidBannerConfigurationError();
-  return config;
-}
-
-export function teamBannerConfigFrom(
-  source: Partial<TeamBannerConfig> | null | undefined,
-): TeamBannerConfig {
-  return {
-    bannerHasEmoji: source?.bannerHasEmoji ?? true,
-    bannerHasName: source?.bannerHasName ?? false,
-    bannerHasShort: source?.bannerHasShort ?? false,
-    bannerHasRole: source?.bannerHasRole ?? true,
-  };
-}
-
-function autocompleteEmoji(team: TeamBannerSource): string | null {
-  const emoji = team.emoji?.trim();
-  if (!emoji) return null;
-
+function renderEmbedEmoji(emoji: string): string {
   const customEmoji = CUSTOM_EMOJI_MENTION_REGEX.exec(emoji);
-  return customEmoji ? `.${customEmoji[1]}.` : emoji;
+  if (customEmoji === null) return emoji;
+  return `<${customEmoji[1] ? 'a' : ''}:${customEmoji[2]}:${customEmoji[3]}>`;
 }
 
-function renderBannerComponents(
-  team: TeamBannerSource,
-  config: TeamBannerConfig,
-  mode: TeamBannerMode,
-  name: string,
-  roleName: string,
-): string {
-  const components: string[] = [];
-  const emoji = mode === 'autocomplete' ? autocompleteEmoji(team) : team.emoji?.trim() || null;
-  if (config.bannerHasEmoji && emoji) components.push(emoji);
-  if (config.bannerHasName && name) components.push(name);
-  if (config.bannerHasShort && team.shortName.trim()) {
-    components.push(`(${team.shortName.trim()})`);
-  }
-  if (config.bannerHasRole) {
-    if (mode === 'embed' && team.discordRoleId?.trim()) {
-      components.push(`<@&${team.discordRoleId.trim()}>`);
-    } else if (mode === 'autocomplete' && roleName) {
-      components.push(`@${roleName}`);
-    }
-  }
-  return components.join(' ');
+function renderPlainTextEmoji(emoji: string): string {
+  const customEmoji = CUSTOM_EMOJI_MENTION_REGEX.exec(emoji);
+  if (customEmoji !== null) return `.${customEmoji[2]}.`;
+  if (/[<>]|\d{17,20}/.test(emoji)) return 'Unknown Team Emoji';
+  return emoji;
 }
 
-function limitAutocompleteBanner(team: TeamBannerSource, config: TeamBannerConfig): string {
-  let name = team.name.trim();
-  let roleName = team.discordRoleName?.trim() ?? '';
-  const render = (): string =>
-    renderBannerComponents(team, config, 'autocomplete', name, roleName) || name;
-  let rendered = render();
-
-  while (rendered.length > autocompleteBannerMaxLength && roleName.length > 0) {
-    const segments = graphemes(roleName);
-    segments.pop();
-    roleName = segments.join('').trimEnd();
-    rendered = render();
+function limitAutocompleteIdentity(role: string): string {
+  let limitedRole = '';
+  for (const segment of graphemes(role)) {
+    if (limitedRole.length + segment.length > autocompleteTeamIdentityMaxLength) break;
+    limitedRole += segment;
   }
-  while (rendered.length > autocompleteBannerMaxLength && name.length > 0) {
-    const segments = graphemes(name);
-    segments.pop();
-    name = segments.join('').trimEnd();
-    rendered = render();
-  }
-
-  let limited = '';
-  for (const segment of graphemes(rendered)) {
-    if (limited.length + segment.length > autocompleteBannerMaxLength) break;
-    limited += segment;
-  }
-  return limited.trim();
+  return limitedRole.trim();
 }
 
-export function formatTeamBanner(
-  team: TeamBannerSource,
-  config: TeamBannerConfig = defaultTeamBannerConfig,
-  mode: TeamBannerMode = 'embed',
-): string {
-  requireValidTeamBannerConfig(config);
-  if (mode === 'autocomplete') return limitAutocompleteBanner(team, config);
-  return (
-    renderBannerComponents(
-      team,
-      config,
-      mode,
-      team.name.trim(),
-      team.discordRoleName?.trim() ?? '',
-    ) || team.name.trim()
-  );
+export function formatTeamIdentity(team: TeamIdentitySource, mode: TeamIdentityMode): string {
+  const emoji = requireComponent(team.emoji, 'emoji');
+  const roleId = requireComponent(team.discordRoleId, 'Discord role');
+
+  if (mode === 'message') {
+    return `${renderEmbedEmoji(emoji)} <@&${roleId}>`;
+  }
+
+  const roleName = team.discordRoleName?.trim();
+  const role = roleName ? `@${roleName}` : unknownTeamRoleLabel;
+
+  if (mode === 'title') {
+    return `${renderEmbedEmoji(emoji)} ${roleName ? `@${roleName}` : 'Team'}`;
+  }
+
+  if (mode === 'footer') {
+    return `${renderPlainTextEmoji(emoji)} ${role}`;
+  }
+
+  return limitAutocompleteIdentity(role);
 }

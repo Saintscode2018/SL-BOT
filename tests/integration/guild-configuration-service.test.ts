@@ -43,10 +43,9 @@ describe('guild configuration service', () => {
     });
     const activeClub = await clubs.create({
       guildId: guild.id,
-      name: 'configured club',
-      shortName: 'CFG',
       discordRoleId: '730000000000000001',
-      squadLimit: 20,
+      emoji: '🔵',
+      squadLimitOverride: 20,
     });
     const result = await service.load(guild.discordGuildId);
     expect(result).toEqual({ guild, settings, activeClubs: [activeClub] });
@@ -78,17 +77,13 @@ describe('guild configuration service', () => {
     await guilds.upsertSettings(guild.id, {});
     const active = await clubs.create({
       guildId: guild.id,
-      name: 'active club',
-      shortName: 'ACT',
       discordRoleId: '730000000000000001',
-      squadLimit: 17,
+      emoji: '🔵',
     });
     const inactive = await clubs.create({
       guildId: guild.id,
-      name: 'inactive club',
-      shortName: 'INA',
       discordRoleId: '730000000000000002',
-      squadLimit: 17,
+      emoji: '⚪',
     });
     await clubs.deactivate(inactive.id);
     await expect(service.load(guild.discordGuildId)).resolves.toMatchObject({

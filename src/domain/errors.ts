@@ -90,6 +90,12 @@ export class GuildNotConfiguredError extends DomainError {}
 
 export class ClubInactiveError extends DomainError {}
 
+export class InactiveSourceTeamError extends ClubInactiveError {
+  public constructor(public readonly teamIdentity: string) {
+    super(`Source team ${teamIdentity} is inactive.`);
+  }
+}
+
 export class TeamNotFoundError extends EntityNotFoundError {}
 
 export class DuplicateOfferError extends DomainError {}
@@ -103,24 +109,15 @@ export class InvalidOfferMessageError extends DomainError {}
 export class DuplicateTeamRoleError extends ConflictError {
   public constructor(
     public readonly roleId: string,
-    public readonly teamName: string,
+    public readonly teamIdentity: string,
   ) {
-    super(`The role <@&${roleId}> is already assigned to ${teamName}.`);
+    super(`The role <@&${roleId}> is already assigned to ${teamIdentity}.`);
   }
 }
 
-export class DuplicateTeamNameError extends ConflictError {
-  public constructor(public readonly teamName: string) {
-    super(`A team named ${teamName} already exists.`);
-  }
-}
-
-export class DuplicateTeamShortNameError extends ConflictError {
-  public constructor(
-    public readonly shortName: string,
-    public readonly teamName: string,
-  ) {
-    super(`The abbreviation ${shortName} is already assigned to ${teamName}.`);
+export class NoTeamChangesProvidedError extends ValidationError {
+  public constructor() {
+    super('Choose a new team role or team emoji to update.');
   }
 }
 
@@ -166,12 +163,6 @@ export class InvalidTeamEmojiError extends DomainError {
       message ??
         'Choose either a standard Discord emoji or a custom emoji from this server.\n\nExamples: ⚽ or `<:chelsea:123456789012345678>`',
     );
-  }
-}
-
-export class InvalidBannerConfigurationError extends ValidationError {
-  public constructor() {
-    super('At least one team banner component must be enabled.');
   }
 }
 
