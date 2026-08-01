@@ -636,6 +636,7 @@ describe('Stage 4A Polish Verification', () => {
                 data: {
                   author?: { name?: string };
                   title?: string;
+                  description?: string;
                   footer?: { text?: string };
                   fields?: Array<{ name: string; value: string }>;
                 };
@@ -644,12 +645,14 @@ describe('Stage 4A Polish Verification', () => {
           : (embedObj as {
               author?: { name?: string };
               title?: string;
+              description?: string;
               footer?: { text?: string };
               fields?: Array<{ name: string; value: string }>;
             });
 
       expect(embedData.author?.name).toBe('Development League');
-      expect(embedData.title).toBe('⚽ Chelsea FC (CHE) Roster');
+      expect(embedData.title).toBe('⚽ Chelsea FC Roster');
+      expect(embedData.description).toContain('⚽ Chelsea FC (CHE)');
       expect(embedData.footer?.text).toContain('Roster for Development League');
 
       const fields = embedData.fields ?? [];

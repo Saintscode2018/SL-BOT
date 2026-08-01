@@ -1,6 +1,6 @@
 # SL Bot
 
-SL Bot is a TypeScript Discord administration bot for the SL League. Stage 4A (with Stage 4A Polish updates) provides focused command subcommands, channel policy enforcement, squad limit management, public informational responses, custom & Unicode Discord emoji team branding, embed-only responses with consistent `✅`/`❌` formatting, global staff uniqueness rules, specific conflict error messages, roster reference layout, and structured project documentation while retaining legacy Python implementation files and `superleague.db` as untouched references.
+SL Bot is a TypeScript Discord administration bot for the SL League. Stage 4A provides focused command subcommands, channel policy enforcement, squad limit management, guild-configurable team banners, public informational responses, custom and Unicode Discord emoji team branding, embed-only responses with consistent `✅`/`❌` formatting, global staff uniqueness rules, specific conflict error messages, roster reference layout, and structured project documentation while retaining legacy Python implementation files and `superleague.db` as untouched references.
 
 The database is authoritative. Discord roles are linked presentation and authorization objects; this stage never assigns or removes them automatically.
 
@@ -11,6 +11,7 @@ The database is authoritative. Discord roles are linked presentation and authori
   - `channels`: Configure bot-commands, staff, transfer, and audit channels. (Ephemeral administrative embed; publishes to the newly saved audit channel)
   - `roles`: Configure bot_permissions, team_manager, assistant_manager, and player_manager roles. (Ephemeral administrative embed; mirrors to audit when configured)
   - `view`: Display current league configuration and missing settings. (Ephemeral administrative embed; never publishes an audit message)
+- `/bannerconfig has_emoji:<bool> has_name:<bool> has_short:<bool> has_role:<bool>`: Configure the guild-wide fixed-order team banner. Every option is required, at least one must be enabled, the response is ephemeral, and a successful change mirrors to the audit channel when configured.
 - `/team`
   - `add`: Register a new team linked to an existing role with required Discord emoji branding. (Ephemeral embed in staff channel)
   - `edit`: Update team name, short name, role, or team emoji. (Ephemeral embed in staff channel)
@@ -24,8 +25,8 @@ The database is authoritative. Discord roles are linked presentation and authori
 - `/staff`
   - `appoint`: Appoint a Team Manager, Assistant Team Manager, or Player Manager. (Ephemeral embed in staff channel)
   - `remove`: Remove active holder of a staff position. (Ephemeral embed in staff channel)
-  - `list`: List active team staff with team emojis and friendly position titles. (Public embed in bot-commands or staff)
-- `/roster`: Display team roster with the actual Team Manager, Assistant Team Manager, and Player Manager sections, followed by the player divider and player list. There is no Assistant Coach section. (Public embed in an authorized bot-commands or staff channel)
+  - `list`: List active team staff as vertical per-team blocks with the configured banner and friendly position titles. (Public embed in bot-commands or staff)
+- `/roster`: Display the configured team banner without putting role mentions in the title, followed by the actual Team Manager, Assistant Team Manager, and Player Manager sections, player divider, and player list. There is no Assistant Coach section. (Public embed in an authorized bot-commands or staff channel)
 - `/offer player:<user>`: Send a private contract offer DM to a player on behalf of the caller's team. Destination team is automatically derived from caller's active staff appointment. Includes Sign Contract and Decline Offer buttons, and outputs a public embed acknowledgement in channel.
 - `/health`: Report bot and database status ephemerally (`Online ✅`, `Connected ✅`). (Ephemeral embed in bot-commands or staff)
 - `/debugreset`: Temporary development-only command (`SLBOT_ENABLE_DEBUG_COMMANDS=true`) for Discord Administrators to reset all server application data safely. Only the initiating Administrator can use its confirmation buttons.
@@ -52,7 +53,7 @@ Commands are enforced via `CommandChannelPolicyService`:
 
 - **Informational Commands** (`/health`, `/team list`, `/staff list`, `/roster`, `/limit view`): Ordinary users use the configured **Bot Commands Channel**. Globally authorized callers may use either the bot-commands or staff channel.
 - **Team-Staff Command** (`/offer`): Bot-commands and staff remain valid execution channels. Wrong-channel guidance mentions only bot commands to non-global callers; global callers may receive both configured channel mentions. A valid channel is checked before the active TM/ATM/PM appointment.
-- **Staff-Only Commands** (`/setup *`, `/team add|edit|remove`, `/limit default|team|reset`, `/staff appoint|remove`): Must be used strictly in the configured **Staff Channel**.
+- **Staff-Only Commands** (`/setup *`, `/bannerconfig`, `/team add|edit|remove`, `/limit default|team|reset`, `/staff appoint|remove`): Must be used strictly in the configured **Staff Channel**.
 - **Bootstrap Exception**: Before the staff channel or `bot_permissions` role is configured, a Discord Administrator may execute `/setup` commands in the current channel.
 - **Administrative Visibility**: Successful setup, team mutation, limit mutation, staff mutation, and debug-reset responses are ephemeral. `/setup view` is also ephemeral. Team/staff/limit lists and rosters stay public, health stays ephemeral, and the successful offer acknowledgement stays public.
 - **Embed-Only Responses**: Every command response is a Discord embed with `✅` prefixes for successful administrative output and `❌` prefixes for errors, ending with an explicit actor line when applicable.
@@ -64,13 +65,16 @@ Commands are enforced via `CommandChannelPolicyService`:
 - `/team add` requires a team emoji; `/team edit` allows optional emoji updates.
 - Accepts full server custom mentions (`<:name:emojiId>`, `<a:name:emojiId>`), wrapped names (`:name:`), plain names (`name`), or standard Unicode emoji sequences such as `⚽`, `🇹🇷`, `👍🏽`, and family ZWJ emoji.
 - Custom mention IDs must exist in the current guild. Wrapped or plain names resolve by exact case-insensitive guild-emoji name and must have exactly one match; ambiguous names require the full custom mention. Deleted and cross-server emojis are rejected.
-- User-facing team labels use `<emoji> Name (SHORT)`, falling back to `Name (SHORT)` for legacy records. Autocomplete renders Unicode directly and uses `:name:` for custom emoji while retaining the club ID as the choice value.
+- `/bannerconfig` controls four guild-specific Boolean components: emoji, name, short name, and role. All default to enabled, at least one must remain enabled, and their fixed order is always `<emoji> Name (SHORT) @Role`; free-form templates and custom ordering are not supported.
+- Normal embeds and messages use real custom emoji mentions and Discord role mentions. Legacy records with missing emoji or role data omit those components safely.
+- Autocomplete renders Unicode directly, intentionally uses readable `:emojiName:` text for custom server emojis because Discord choice labels do not reliably render server emoji images, and uses `@RoleName` only when the role name is available from the guild cache. Raw custom emoji IDs and role IDs are never exposed, choice values remain club IDs, and names are limited safely to Discord's 100-character maximum.
+- Staff appointment and removal confirmations include the affected user, friendly position name, and configured team banner. Staff directory output uses one line each for `👑 Team Manager`, `👔 Assistant Team Manager`, and `🧠 Player Manager`, with `Vacant` for empty positions.
 - Single-team embeds (team add/edit confirmations, roster views, offer cards) use derived CDN or Twemoji URLs as their embed thumbnail.
 - Multi-team list embeds display team emojis inline beside team names.
 
 ## Setup audit publishing
 
-Successful `/setup league`, `/setup channels`, and `/setup roles` mutations publish an embed-only audit message to the configured audit channel when one is available. `/setup channels` saves first and can publish immediately to the newly configured audit channel. Audit messages contain meaningful configuration details, the actor mention, and a timestamp without internal database IDs or secrets. Delivery failure is logged and does not roll back the saved configuration. Discord audit publishing for team, limit, staff, and debug-reset mutations remains deferred to later stages.
+Successful `/setup league`, `/setup channels`, `/setup roles`, and `/bannerconfig` mutations publish an embed-only audit message to the configured audit channel when one is available. `/setup channels` saves first and can publish immediately to the newly configured audit channel. Banner audit messages list every enabled or disabled component and a safe preview. Audit messages contain meaningful configuration details, the actor mention as the final field, and a timestamp without internal database IDs or secrets. Delivery failure is logged and does not roll back the saved configuration. Discord audit publishing for team, limit, staff, and debug-reset mutations remains deferred to later stages.
 
 ## Squad limit model
 

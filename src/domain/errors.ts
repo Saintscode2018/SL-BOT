@@ -155,6 +155,12 @@ export class InvalidTeamEmojiError extends DomainError {
   }
 }
 
+export class InvalidBannerConfigurationError extends ValidationError {
+  public constructor() {
+    super('At least one team banner component must be enabled.');
+  }
+}
+
 export class NoStaffAppointmentError extends DomainError {
   public constructor() {
     super(

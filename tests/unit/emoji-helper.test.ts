@@ -9,7 +9,7 @@ import {
   type GuildEmoji,
 } from '../../src/bot/emoji-helper.js';
 import { InvalidTeamEmojiError } from '../../src/domain/errors.js';
-import { formatTeamAutocompleteLabel, formatTeamLabel } from '../../src/domain/team-label.js';
+import { formatTeamBanner } from '../../src/domain/team-label.js';
 
 const guildEmojis: readonly GuildEmoji[] = [
   { id: '123456789012345678', name: 'chelsea', animated: false },
@@ -105,33 +105,41 @@ describe('emoji helper', () => {
 
 describe('team labels', () => {
   it('formats unicode custom and legacy labels', () => {
-    expect(formatTeamLabel({ name: 'Chelsea', shortName: 'CHE', emoji: '🔵' })).toBe(
+    expect(formatTeamBanner({ name: 'Chelsea', shortName: 'CHE', emoji: '🔵' })).toBe(
       '🔵 Chelsea (CHE)',
     );
     expect(
-      formatTeamLabel({
+      formatTeamBanner({
         name: 'Chelsea',
         shortName: 'CHE',
         emoji: '<:chelsea:123456789012345678>',
       }),
     ).toBe('<:chelsea:123456789012345678> Chelsea (CHE)');
-    expect(formatTeamLabel({ name: 'Chelsea', shortName: 'CHE', emoji: null })).toBe(
+    expect(formatTeamBanner({ name: 'Chelsea', shortName: 'CHE', emoji: null })).toBe(
       'Chelsea (CHE)',
     );
   });
 
   it('uses a custom emoji name fallback for autocomplete', () => {
     expect(
-      formatTeamAutocompleteLabel({
-        name: 'Chelsea',
-        shortName: 'CHE',
-        emoji: '<a:chelsea:123456789012345678>',
-      }),
+      formatTeamBanner(
+        {
+          name: 'Chelsea',
+          shortName: 'CHE',
+          emoji: '<a:chelsea:123456789012345678>',
+        },
+        undefined,
+        'autocomplete',
+      ),
     ).toBe(':chelsea: Chelsea (CHE)');
-    expect(formatTeamAutocompleteLabel({ name: 'Chelsea', shortName: 'CHE', emoji: '🔵' })).toBe(
-      '🔵 Chelsea (CHE)',
-    );
-    expect(formatTeamAutocompleteLabel({ name: 'Chelsea', shortName: 'CHE' })).toBe(
+    expect(
+      formatTeamBanner(
+        { name: 'Chelsea', shortName: 'CHE', emoji: '🔵' },
+        undefined,
+        'autocomplete',
+      ),
+    ).toBe('🔵 Chelsea (CHE)');
+    expect(formatTeamBanner({ name: 'Chelsea', shortName: 'CHE' }, undefined, 'autocomplete')).toBe(
       'Chelsea (CHE)',
     );
   });

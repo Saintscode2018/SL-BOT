@@ -12,7 +12,7 @@ import {
 } from 'discord.js';
 
 import { OfferDeliveryError } from '../domain/errors.js';
-import { formatTeamLabel } from '../domain/team-label.js';
+import { formatTeamBanner, teamBannerConfigFrom } from '../domain/team-label.js';
 import type {
   OfferMessageAdapter,
   OfferMessageReference,
@@ -48,7 +48,11 @@ function offerEmbed(result: OfferCreationResult): EmbedBuilder {
     .setTitle(`${result.leagueName || 'SL League'} Contract Offer`)
     .setDescription('Professional First Team')
     .addFields(
-      { name: 'Destination Club', value: formatTeamLabel(result.destinationClub), inline: true },
+      {
+        name: 'Destination Club',
+        value: formatTeamBanner(result.destinationClub, teamBannerConfigFrom(result.bannerConfig)),
+        inline: true,
+      },
       { name: 'Offered Player', value: `<@${result.player.discordUserId}>`, inline: true },
       { name: 'Offering Manager', value: `<@${result.offeredBy.discordUserId}>`, inline: true },
       {
@@ -59,7 +63,9 @@ function offerEmbed(result: OfferCreationResult): EmbedBuilder {
       { name: 'Remaining Spots', value: String(remainingSpots), inline: true },
       {
         name: 'Current Club',
-        value: result.sourceClub ? formatTeamLabel(result.sourceClub) : 'Free agent',
+        value: result.sourceClub
+          ? formatTeamBanner(result.sourceClub, teamBannerConfigFrom(result.bannerConfig))
+          : 'Free agent',
         inline: true,
       },
       { name: 'Expires', value: `<t:${expiresAt}:F>\n<t:${expiresAt}:R>` },

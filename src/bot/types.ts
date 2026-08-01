@@ -60,6 +60,7 @@ export interface CommandInteractionOptions {
   getSubcommand(): string | null;
   getString(name: string): string | null;
   getInteger(name: string): number | null;
+  getBoolean?(name: string): boolean | null;
   getUser(name: string): { id: string; bot: boolean } | null;
   getRole(name: string): { id: string } | null;
   getChannel(name: string): { id: string; type: number } | null;
@@ -70,6 +71,7 @@ export interface CommandAutocompleteInteraction {
   readonly guildId: string | null;
   readonly focusedName: string;
   readonly focusedValue: string;
+  getGuildRoles?(): readonly { id: string; name: string }[];
   respond(choices: Array<{ name: string; value: string }>): Promise<void>;
 }
 
@@ -82,7 +84,8 @@ export interface CommandContext {
   guildSetupService: Pick<
     GuildSetupService,
     'setup' | 'setupGuildOnly' | 'setupChannels' | 'setupRoles' | 'getView'
-  >;
+  > &
+    Partial<Pick<GuildSetupService, 'updateBannerConfiguration'>>;
   clubManagementService: Pick<
     ClubManagementService,
     'create' | 'edit' | 'deactivate' | 'listActive' | 'autocomplete'

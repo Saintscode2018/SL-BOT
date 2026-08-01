@@ -1,0 +1,4 @@
+ALTER TABLE "GuildSettings" ADD COLUMN "bannerHasEmoji" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "GuildSettings" ADD COLUMN "bannerHasName" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "GuildSettings" ADD COLUMN "bannerHasShort" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "GuildSettings" ADD COLUMN "bannerHasRole" BOOLEAN NOT NULL DEFAULT true;

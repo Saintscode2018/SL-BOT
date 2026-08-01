@@ -36,7 +36,10 @@ Index: [[SLBot]]
   - Standard `<emoji> Name (SHORT)` labels and custom-emoji autocomplete fallback.
   - Correct TM/ATM/PM roster sections with no Assistant Coach placeholder.
   - Ephemeral administrative success matrix and authorization-aware channel guidance.
-  - Setup-only Discord audit publishing for league, channels, and roles with nonfatal delivery failure.
+  - Setup/configuration Discord audit publishing for league, channels, roles, and team banners with nonfatal delivery failure.
+  - Guild-specific `/bannerconfig` with four default-enabled fixed-order components and all-false rejection.
+  - Shared team-banner formatting across normal output, safe text autocomplete, staff presentation, roster identity, offers, and relevant conflicts.
+  - Vertical staff-directory blocks, affected-user appointment/removal wording, role-safe roster titles, setup-view preview, and best-effort banner audit publishing.
 
 ## Explicitly Excluded / Future Stages (Stage 4B+)
 

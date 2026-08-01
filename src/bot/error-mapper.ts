@@ -18,6 +18,7 @@ import {
   GuildConfigurationNotFoundError,
   GuildNotConfiguredError,
   InvalidOfferMessageError,
+  InvalidBannerConfigurationError,
   InvalidStateTransitionError,
   InvalidTeamEmojiError,
   LeagueSetupRequiredError,
@@ -90,6 +91,9 @@ export function mapDiscordError(error: unknown): MappedErrorResponse {
     description = error.message;
   } else if (error instanceof InvalidTeamEmojiError) {
     title = '❌ Invalid Team Emoji';
+    description = error.message;
+  } else if (error instanceof InvalidBannerConfigurationError) {
+    title = '❌ Invalid Banner Configuration';
     description = error.message;
   } else if (error instanceof NoStaffAppointmentError) {
     title = '❌ Staff Appointment Required';

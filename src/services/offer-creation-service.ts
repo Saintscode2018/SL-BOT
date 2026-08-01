@@ -16,6 +16,7 @@ import { OfferRepository } from '../repositories/offer-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
 import type { AuthorizationInput } from './authorization-service.js';
 import { AuthorizationService } from './authorization-service.js';
+import { teamBannerConfigFrom, type TeamBannerConfig } from '../domain/team-label.js';
 
 export const offerCreatedAuditEventType = 'offer.created';
 
@@ -36,6 +37,7 @@ export interface OfferCreationResult {
   leagueName: string;
   activePlayerCount: number;
   effectiveSquadLimit: number;
+  bannerConfig?: TeamBannerConfig;
 }
 
 export class OfferCreationService {
@@ -111,6 +113,7 @@ export class OfferCreationService {
         leagueName: authorization.guild.name,
         activePlayerCount: playerCount,
         effectiveSquadLimit,
+        bannerConfig: teamBannerConfigFrom(authorization.settings),
       };
     });
   }

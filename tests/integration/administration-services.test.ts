@@ -234,10 +234,12 @@ describe('administration services', () => {
       });
       expect(appointed.membership.createdByUserId).not.toBeNull();
       const removed = await service.remove(authorization(), club.id, staffType);
-      expect(removed).toMatchObject({
+      expect(removed.membership).toMatchObject({
         status: 'ENDED',
         endedByUserId: appointed.membership.createdByUserId,
       });
+      expect(removed.user.discordUserId).toBe(appointed.user.discordUserId);
+      expect(removed.club.id).toBe(club.id);
       await expect(database.client.clubMembership.count()).resolves.toBe(1);
       await expect(
         database.client.auditEvent.count({ where: { eventType: staffAppointedAuditEventType } }),

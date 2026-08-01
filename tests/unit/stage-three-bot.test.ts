@@ -316,7 +316,16 @@ class RosterCommandInteraction implements CommandInteraction {
 describe('stage three command registry and deployment', () => {
   it('exports every visible command as exact deployment JSON', () => {
     const registry = loadCommands(commandDefinitions);
-    const expectedNames = ['health', 'setup', 'team', 'limit', 'staff', 'roster', 'offer'];
+    const expectedNames = [
+      'health',
+      'setup',
+      'bannerconfig',
+      'team',
+      'limit',
+      'staff',
+      'roster',
+      'offer',
+    ];
     if (process.env['SLBOT_ENABLE_DEBUG_COMMANDS'] === 'true') expectedNames.push('debugreset');
     expect(registry.toJSON().map(({ name }) => name)).toEqual(expectedNames);
     expect(registry.toJSON().find(({ name }) => name === 'offer')).toMatchObject({
@@ -413,6 +422,10 @@ describe('stage three command registry and deployment', () => {
             playerManagerRoleId: null,
             defaultSquadLimit: 22,
             offerTimeoutSeconds: 86400,
+            bannerHasEmoji: true,
+            bannerHasName: true,
+            bannerHasShort: true,
+            bannerHasRole: true,
             createdAt: now,
             updatedAt: now,
           },
@@ -420,7 +433,8 @@ describe('stage three command registry and deployment', () => {
         }),
     };
     await command?.execute(interaction, context);
-    expect(interaction.replies[0]?.embeds?.[0]?.data?.title).toBe('Arsenal (ARS) Roster');
+    expect(interaction.replies[0]?.embeds?.[0]?.data?.title).toBe('Arsenal Roster');
+    expect(interaction.replies[0]?.embeds?.[0]?.data?.description).toBe('Arsenal (ARS) <@&r-1>');
   });
 
   it('defers offer creation privately before a public successful response', async () => {
@@ -492,7 +506,7 @@ describe('stage three command registry and deployment', () => {
         serialized.embeds[0]?.fields.map(({ name, value }) => [name, value]) ?? [],
       ),
     ).toMatchObject({
-      'Destination Club': 'Team (TM)',
+      'Destination Club': 'Team (TM) <@&100000000000000007>',
       'Offered Player': '<@100000000000000003>',
       'Offering Manager': '<@100000000000000004>',
       Squad: '4/10',

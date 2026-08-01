@@ -6,8 +6,14 @@ import { AuditEventRepository } from '../repositories/audit-event-repository.js'
 import { GuildRepository } from '../repositories/guild-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
 import { ConfigurationError } from '../domain/errors.js';
+import {
+  requireValidTeamBannerConfig,
+  teamBannerConfigFrom,
+  type TeamBannerConfig,
+} from '../domain/team-label.js';
 
 export const guildConfiguredAuditEventType = 'guild.configured';
+export const bannerConfiguredAuditEventType = 'guild.banner_configured';
 
 export interface SetupGuildInput {
   authorization: AuthorizationInput;
@@ -47,6 +53,17 @@ export interface GuildSetupResult {
   created: boolean;
 }
 
+export interface BannerConfigurationInput extends TeamBannerConfig {
+  authorization: AuthorizationInput;
+}
+
+export interface BannerConfigurationResult {
+  guild: Guild;
+  settings: GuildSettings;
+  before: TeamBannerConfig;
+  after: TeamBannerConfig;
+}
+
 export interface SetupViewResult {
   guildName: string;
   channels: {
@@ -63,6 +80,7 @@ export interface SetupViewResult {
   };
   defaultSquadLimit: number;
   offerTimeoutMinutes: number;
+  banner: TeamBannerConfig;
   missingConfigurations: string[];
 }
 
@@ -202,6 +220,37 @@ export class GuildSetupService {
     });
   }
 
+  public async updateBannerConfiguration(
+    input: BannerConfigurationInput,
+  ): Promise<BannerConfigurationResult> {
+    const authorization = await new AuthorizationService(
+      this.database,
+    ).authorizeLeagueAdministration(input.authorization);
+    const requested = requireValidTeamBannerConfig(teamBannerConfigFrom(input));
+
+    return this.database.$transaction(async (transaction) => {
+      const guilds = new GuildRepository(transaction);
+      const previousSettings = await guilds.getSettings(authorization.guild.id);
+      if (previousSettings === null) throw new ConfigurationError('league settings are missing');
+      const before = teamBannerConfigFrom(previousSettings);
+      const settings = await guilds.upsertSettings(authorization.guild.id, requested);
+      const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
+        input.authorization.discordUserId,
+      );
+      const after = teamBannerConfigFrom(settings);
+      await new AuditEventRepository(transaction).create({
+        guildId: authorization.guild.id,
+        actorUserId: actor.id,
+        eventType: bannerConfiguredAuditEventType,
+        entityType: 'guild_settings',
+        entityId: settings.id,
+        beforeState: { ...before },
+        afterState: { ...after },
+      });
+      return { guild: authorization.guild, settings, before, after };
+    });
+  }
+
   public async setup(input: SetupGuildInput): Promise<GuildSetupResult> {
     await new AuthorizationService(this.database).assertCanSetup(input.authorization);
     return this.database.$transaction(async (transaction) => {
@@ -300,6 +349,7 @@ export class GuildSetupService {
       },
       defaultSquadLimit: settings?.defaultSquadLimit ?? 17,
       offerTimeoutMinutes: Math.round((settings?.offerTimeoutSeconds ?? 86400) / 60),
+      banner: teamBannerConfigFrom(settings),
       missingConfigurations: missing,
     };
   }

@@ -1,4 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
+import { randomUUID } from 'node:crypto';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -23,6 +26,15 @@ interface ForeignKeyRow {
   table: string;
   from: string;
   to: string;
+}
+
+interface BannerSettingsRow {
+  bannerHasEmoji: number;
+  bannerHasName: number;
+  bannerHasShort: number;
+  bannerHasRole: number;
+  botCommandsChannelId: string;
+  defaultSquadLimit: number;
 }
 
 describe('database migrations', () => {
@@ -133,6 +145,79 @@ describe('database migrations', () => {
       await expect(second.client.guild.count()).resolves.toBe(0);
     } finally {
       await destroyTestDatabase(second);
+    }
+  });
+
+  it('defaults every team banner component to enabled on a fresh database', async () => {
+    const guild = await database.client.guild.create({
+      data: { discordGuildId: '100000000000000001', name: 'Banner League' },
+    });
+    const settings = await database.client.guildSettings.create({ data: { guildId: guild.id } });
+    expect(settings).toMatchObject({
+      bannerHasEmoji: true,
+      bannerHasName: true,
+      bannerHasShort: true,
+      bannerHasRole: true,
+    });
+  });
+
+  it('migrates an existing Stage 4A database without changing saved settings', () => {
+    const databasePath = join(process.cwd(), 'prisma', `.stage4a-${randomUUID()}.db`);
+    writeFileSync(databasePath, '', { flag: 'wx' });
+    const sqlite = new DatabaseSync(databasePath);
+    try {
+      for (const migration of [
+        '20260731130000_initial_foundation',
+        '20260801000000_setup_channels_and_squad_limits',
+        '20260801140000_rename_bot_permissions_role',
+      ]) {
+        sqlite.exec(
+          readFileSync(join(process.cwd(), 'prisma', 'migrations', migration, 'migration.sql'), {
+            encoding: 'utf8',
+          }),
+        );
+      }
+      sqlite
+        .prepare(
+          'INSERT INTO "Guild" ("id", "discordGuildId", "name", "updatedAt") VALUES (?, ?, ?, ?)',
+        )
+        .run('guild-1', '100000000000000002', 'Existing League', new Date().toISOString());
+      sqlite
+        .prepare(
+          'INSERT INTO "GuildSettings" ("id", "guildId", "botCommandsChannelId", "defaultSquadLimit", "offerTimeoutSeconds", "updatedAt") VALUES (?, ?, ?, ?, ?, ?)',
+        )
+        .run('settings-1', 'guild-1', '200000000000000001', 23, 7200, new Date().toISOString());
+
+      sqlite.exec(
+        readFileSync(
+          join(
+            process.cwd(),
+            'prisma',
+            'migrations',
+            '20260801190000_team_banner_configuration',
+            'migration.sql',
+          ),
+          { encoding: 'utf8' },
+        ),
+      );
+
+      const settings = sqlite
+        .prepare(
+          'SELECT "bannerHasEmoji", "bannerHasName", "bannerHasShort", "bannerHasRole", "botCommandsChannelId", "defaultSquadLimit" FROM "GuildSettings" WHERE "id" = ?',
+        )
+        .get('settings-1') as unknown as BannerSettingsRow;
+      expect(settings).toEqual({
+        bannerHasEmoji: 1,
+        bannerHasName: 1,
+        bannerHasShort: 1,
+        bannerHasRole: 1,
+        botCommandsChannelId: '200000000000000001',
+        defaultSquadLimit: 23,
+      });
+    } finally {
+      sqlite.close();
+      rmSync(databasePath, { force: true });
+      rmSync(`${databasePath}-journal`, { force: true });
     }
   });
 });

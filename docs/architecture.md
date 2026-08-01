@@ -33,7 +33,7 @@ Command deployment is an explicit REST operation through `scripts/deploy-command
 
 - **Informational Commands**: Ordinary callers use Bot Commands; globally authorized callers may use Bot Commands or Staff. This category contains `/health`, `/team list`, `/staff list`, `/roster`, and `/limit view`.
 - **Team-Staff Command**: `/offer` accepts Bot Commands or Staff, evaluates wrong-channel guidance before the caller's active staff appointment, and reveals the staff-channel option only to globally authorized callers on an unrelated channel.
-- **Staff Channel Only**: `/setup league`, `/setup channels`, `/setup roles`, `/setup view`, `/team add`, `/team edit`, `/team remove`, `/limit default`, `/limit team`, `/limit reset`, `/staff appoint`, `/staff remove`, `/debugreset`.
+- **Staff Channel Only**: `/setup league`, `/setup channels`, `/setup roles`, `/setup view`, `/bannerconfig`, `/team add`, `/team edit`, `/team remove`, `/limit default`, `/limit team`, `/limit reset`, `/staff appoint`, `/staff remove`, `/debugreset`.
 
 Validation rules:
 
@@ -74,7 +74,10 @@ Role IDs come from `GuildSettings`; staff authority comes from active database m
 - `/team add` requires a team emoji; `/team edit` permits optional emoji updates.
 - Supports full custom mentions, wrapped names (`:name:`), plain names, and composed Unicode emoji sequences.
 - `CommandInteraction.getGuildEmojis()` exposes only `{id, name, animated}` records. Full mentions resolve by guild ID and names resolve by one exact case-insensitive guild-cache match; the guild record determines the canonical mention and PNG/GIF CDN URL.
-- Team labels are centralized as `<emoji> Name (SHORT)` with a legacy no-emoji fallback. Autocomplete uses `:name:` for custom emoji labels and always stores the club ID as the choice value.
+- `GuildSettings` stores four non-null banner switches, all defaulting to true: `bannerHasEmoji`, `bannerHasName`, `bannerHasShort`, and `bannerHasRole`. `/bannerconfig` updates them together and rejects an all-false configuration without writing or auditing.
+- `formatTeamBanner` is the single fixed-order formatter for team identity. Embed mode uses canonical custom emoji and `<@&roleId>` mentions; autocomplete mode uses Unicode or intentional `:emojiName:` text plus cache-derived `@RoleName`, omits unresolved roles, never exposes raw IDs, retains club IDs as choice values, and enforces the 100-character choice-name limit without splitting grapheme clusters.
+- Team, limit, staff, roster, offer acknowledgement, private offer DM, and relevant conflict output use the shared formatter. Staff directories use vertical TM/ATM/PM lines and chunk fields within Discord embed limits.
+- Roster titles use enabled emoji/name components without role mentions. The full configured banner appears beneath the title only when it adds short-name or role information, avoiding redundant presentation.
 - Single-team embeds (team add/edit confirmations, roster views, offer cards) use derived custom emoji CDN or Twemoji URLs as thumbnails.
 - Multi-team list embeds display team emojis inline beside team names.
 
@@ -92,7 +95,7 @@ Staff members do not count toward player squad limits unless they also hold an a
 
 ## Administration transactions
 
-`GuildSetupService` manages `/setup` subcommands (`league`, `channels`, `roles`, `view`) and appends database audit events. After successful setup mutations, `SetupAuditService` calls one Discord adapter to publish a timestamped embed to the configured audit channel. Channel setup saves before publishing and uses the newly saved audit channel. Delivery failure is logged and does not roll back persistence. Setup view never publishes, and Discord publishing for team, limit, staff, and debug-reset mutations remains deferred.
+`GuildSetupService` manages `/setup` subcommands (`league`, `channels`, `roles`, `view`) and the `/bannerconfig` settings mutation. Banner changes are authorized and validated before a transactional four-field update, with database audit before/after state. After successful setup or banner mutations, `SetupAuditService` calls one Discord adapter to publish a timestamped embed to the configured audit channel. Channel setup saves before publishing and uses the newly saved audit channel. Delivery failure is logged and does not roll back persistence. Setup view never publishes, and Discord publishing for team, limit, staff, and debug-reset mutations remains deferred.
 
 `ClubManagementService` creates, edits, or deactivates clubs (`/team remove` performs a safe soft deactivation while preserving historical memberships, staff appointments, offers, transactions, and audit records). `StaffManagementService` creates and ends staff memberships with pre-flight uniqueness checks. Roster presentation uses the actual Team Manager, Assistant Team Manager, and Player Manager names and does not synthesize an Assistant Coach section.
 
@@ -102,6 +105,6 @@ Staff members do not count toward player squad limits unless they also hold an a
 
 ## Database guarantees and migration policy
 
-SQLite migration SQL owns conditional checks Prisma cannot express. Partial unique indexes enforce one active player per guild, one active holder of each staff type per club, and one pending offer per club/player. Composite foreign keys prevent memberships, offers, and transactions from referencing a club in another guild. Status/timestamp checks preserve membership and offer state consistency.
+SQLite migration SQL owns conditional checks Prisma cannot express. The team-banner migration adds four non-null Boolean columns with database defaults of true, so both fresh and existing Stage 4A guild settings begin fully enabled without rebuilding or losing settings. Partial unique indexes enforce one active player per guild, one active holder of each staff type per club, and one pending offer per club/player. Composite foreign keys prevent memberships, offers, and transactions from referencing a club in another guild. Status/timestamp checks preserve membership and offer state consistency.
 
 All integration tests execute against fresh file-backed SQLite databases using actual migrations.

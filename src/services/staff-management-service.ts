@@ -1,4 +1,4 @@
-import type { ClubMembership, LeagueUser, PrismaClient } from '@prisma/client';
+import type { Club, ClubMembership, LeagueUser, PrismaClient } from '@prisma/client';
 
 import {
   BotUserNotAllowedError,
@@ -10,7 +10,7 @@ import {
 } from '../domain/errors.js';
 
 import type { MembershipType } from '../domain/enums.js';
-import { formatTeamLabel } from '../domain/team-label.js';
+import { formatTeamBanner, teamBannerConfigFrom } from '../domain/team-label.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { ClubRepository } from '../repositories/club-repository.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
@@ -47,6 +47,13 @@ export interface AppointStaffInput {
 export interface StaffAppointmentResult {
   membership: ClubMembership;
   user: LeagueUser;
+  club: Club;
+}
+
+export interface StaffRemovalResult {
+  membership: ClubMembership;
+  user: LeagueUser;
+  club: Club;
 }
 
 export class StaffManagementService {
@@ -79,7 +86,7 @@ export class StaffManagementService {
         throw new StaffAlreadyAppointedError(
           input.staffDiscordUserId,
           posName,
-          formatTeamLabel(existingUserStaff.club),
+          formatTeamBanner(existingUserStaff.club, teamBannerConfigFrom(authorization.settings)),
         );
       }
 
@@ -95,7 +102,7 @@ export class StaffManagementService {
         const posName = getFriendlyPositionName(input.staffType);
         throw new TeamPositionOccupiedError(
           posName,
-          formatTeamLabel(club),
+          formatTeamBanner(club, teamBannerConfigFrom(authorization.settings)),
           holderUser?.discordUserId ?? existingPositionStaff.userId,
         );
       }
@@ -129,7 +136,7 @@ export class StaffManagementService {
         },
         metadata: { transactionId: leagueTransaction.id },
       });
-      return { membership, user };
+      return { membership, user, club };
     });
   }
 
@@ -138,7 +145,7 @@ export class StaffManagementService {
     clubId: string,
     staffType: StaffType,
     removedAt = new Date(),
-  ): Promise<ClubMembership> {
+  ): Promise<StaffRemovalResult> {
     const authorization = await new AuthorizationService(
       this.database,
     ).authorizeLeagueAdministration(authorizationInput);
@@ -151,6 +158,8 @@ export class StaffManagementService {
       const memberships = new MembershipRepository(transaction);
       const appointment = await memberships.getActiveStaffAppointment(club.id, staffType);
       if (appointment === null) throw new EntityNotFoundError('active staff appointment not found');
+      const user = await transaction.leagueUser.findUnique({ where: { id: appointment.userId } });
+      if (user === null) throw new EntityNotFoundError('appointed staff user was not found');
       const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
         authorizationInput.discordUserId,
       );
@@ -167,7 +176,7 @@ export class StaffManagementService {
         beforeState: { status: 'ACTIVE', membershipType: appointment.membershipType },
         afterState: { status: 'ENDED', leftAt: removedAt.toISOString() },
       });
-      return ended;
+      return { membership: ended, user, club };
     });
   }
 
@@ -189,6 +198,7 @@ export class StaffManagementService {
     id: string;
     name: string;
     shortName: string;
+    discordRoleId?: string;
     emoji: string | null;
     logoUrl: string | null;
   }> {

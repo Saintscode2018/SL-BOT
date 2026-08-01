@@ -11,11 +11,14 @@ import type {
   SafeInteractionResponse,
 } from '../../src/bot/types.js';
 import { AuthorizationError, ConfigurationError } from '../../src/domain/errors.js';
+import { ClubRepository } from '../../src/repositories/club-repository.js';
+import { GuildRepository } from '../../src/repositories/guild-repository.js';
 import type { AuthorizationInput } from '../../src/services/authorization-service.js';
 import { AuthorizationService } from '../../src/services/authorization-service.js';
 import { ClubManagementService } from '../../src/services/club-management-service.js';
 import { CommandChannelPolicyService } from '../../src/services/command-channel-policy-service.js';
 import { GuildSetupService } from '../../src/services/guild-setup-service.js';
+import { GuildConfigurationService } from '../../src/services/guild-configuration-service.js';
 import { LimitManagementService } from '../../src/services/limit-management-service.js';
 import { RosterManagementService } from '../../src/services/roster-management-service.js';
 import { StaffManagementService } from '../../src/services/staff-management-service.js';
@@ -178,7 +181,10 @@ describe('Stage 4A Hotfix Verification', () => {
       logger,
       database: context.client,
       databaseHealth: { check: () => Promise.resolve(true) },
-      guildConfigurationService: { load: () => Promise.reject(new Error('unused')) },
+      guildConfigurationService: new GuildConfigurationService(
+        new GuildRepository(context.client),
+        new ClubRepository(context.client),
+      ),
       offerAcceptanceService: { acceptOffer: vi.fn() },
       guildSetupService,
       clubManagementService,

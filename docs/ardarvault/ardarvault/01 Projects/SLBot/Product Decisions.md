@@ -28,7 +28,7 @@ Index: [[SLBot]] | Architecture: [[Architecture]]
 
 - **Informational Commands** (`/health`, `/team list`, `/staff list`, `/roster`, `/limit view`): Ordinary users use Bot Commands. Globally authorized users may use Bot Commands or Staff.
 - **Team-Staff Command** (`/offer`): Bot Commands and Staff are valid, channel guidance is evaluated before appointment, and unrelated-channel errors reveal Staff only to globally authorized callers.
-- **Staff-Only Commands** (`/setup league`, `/setup channels`, `/setup roles`, `/setup view`, `/team add`, `/team edit`, `/team remove`, `/limit default`, `/limit team`, `/limit reset`, `/staff appoint`, `/staff remove`, `/debugreset`): Restricted strictly to the **Staff Channel**.
+- **Staff-Only Commands** (`/setup league`, `/setup channels`, `/setup roles`, `/setup view`, `/bannerconfig`, `/team add`, `/team edit`, `/team remove`, `/limit default`, `/limit team`, `/limit reset`, `/staff appoint`, `/staff remove`, `/debugreset`): Restricted strictly to the **Staff Channel**.
 - **Bootstrap Exception**: Before the staff channel or `bot_permissions` role exists, a Discord Administrator may run setup commands in any current channel. Once configured, setup commands must use the staff channel.
 
 ## 3. Embed-Only Response Architecture & Ephemeral Errors
@@ -49,7 +49,8 @@ Index: [[SLBot]] | Architecture: [[Architecture]]
 - `/team add` requires a team emoji; `/team edit` allows optional emoji updates.
 - External `logo_url` inputs are removed from commands.
 - Supports full custom mentions, `:name:`, plain `name`, and composed Unicode emoji. Custom IDs and names resolve through bounded `{id, name, animated}` guild records. Name matching is exact and case-insensitive with ambiguity rejected.
-- Team labels use `<emoji> Name (SHORT)` with a legacy no-emoji fallback. Custom emoji autocomplete renders `:name:` and keeps the club ID as its value.
+- Team identity is guild-configurable through four required `/bannerconfig` Boolean options: `has_emoji`, `has_name`, `has_short`, and `has_role`. Every stored value defaults to true, at least one must remain true, and the fixed order is emoji, name, `(SHORT)`, role. Free-form templates, separators, ordering, and per-team configuration are excluded.
+- Normal output uses canonical custom emoji and Discord role mentions. Autocomplete intentionally renders custom emoji as `:emojiName:` text because Discord does not reliably render server emoji images in choice labels, uses readable cached role names, omits unresolved roles, exposes no raw IDs, and keeps the club ID value.
 - Single-team embeds use derived custom emoji CDN or Twemoji URLs as thumbnails.
 
 ## 6. Flattened `/offer` Command
@@ -60,9 +61,10 @@ Index: [[SLBot]] | Architecture: [[Architecture]]
 
 ## 7. Roster Reference Layout
 
-- Roster view follows exact visual reference layout:
+- Roster view follows the configured banner while keeping role mentions out of its title:
   - Author: `<Guild Name>`
-  - Title: `<EMOJI> <TEAM NAME> (<SHORT>) Roster`
+  - Title: enabled emoji/name identity plus `Roster`, with a safe fallback
+  - Description: full configured banner only when it contributes additional short-name or role information
   - Thumbnail: Team logo from emoji
   - Fields: `📊 Roster Count`, `👑 Team Manager`, `👔 Assistant Team Manager`, `🧠 Player Manager`, `──────── Players ────────`, `🏃 Players`
   - Footer: `Roster for <Guild Name>`
@@ -81,9 +83,14 @@ Index: [[SLBot]] | Architecture: [[Architecture]]
 
 ## 10. Setup Audit Publishing Boundary
 
-- Successful setup league/channels/roles mutations publish a timestamped embed to the configured audit channel after persistence.
+- Successful setup league/channels/roles and `/bannerconfig` mutations publish a timestamped embed to the configured audit channel after persistence.
 - Setup channels uses the newly saved audit channel. Setup league may succeed before any audit channel exists. Setup view never publishes.
 - Delivery failure is logged and does not roll back configuration.
 - Discord publishing for team, limit, staff, and debug-reset mutations remains deferred.
+
+## 11. Staff Presentation
+
+- Appointment and removal confirmations name the affected user, friendly staff position, and configured team banner; their actor field remains last.
+- Staff directory entries begin with the configured team banner and use separate `👑 Team Manager`, `👔 Assistant Team Manager`, and `🧠 Player Manager` lines. Empty positions display `Vacant`; pipe-separated rows and raw enum names are prohibited.
 
 Related notes: [[Commands]], [[Roadmap]], [[Architecture]]

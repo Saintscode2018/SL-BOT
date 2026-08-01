@@ -42,6 +42,10 @@ class DiscordCommandOptions implements CommandInteractionOptions {
     return this.interaction.options.getInteger(name);
   }
 
+  public getBoolean(name: string): boolean | null {
+    return this.interaction.options.getBoolean(name);
+  }
+
   public getUser(name: string): { id: string; bot: boolean } | null {
     const user = this.interaction.options.getUser(name);
     return user === null ? null : { id: user.id, bot: user.bot };
@@ -199,6 +203,12 @@ class DiscordAutocomplete implements CommandAutocompleteInteraction {
 
   public get focusedValue(): string {
     return String(this.interaction.options.getFocused());
+  }
+
+  public getGuildRoles(): readonly { id: string; name: string }[] {
+    const roles = this.interaction.guild?.roles.cache.values();
+    if (roles === undefined) return [];
+    return [...roles].map((role) => ({ id: role.id, name: role.name }));
   }
 
   public async respond(choices: Array<{ name: string; value: string }>): Promise<void> {

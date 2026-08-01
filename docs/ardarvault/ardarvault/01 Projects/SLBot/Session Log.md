@@ -19,6 +19,12 @@ Index: [[SLBot]] | Roadmap: [[Roadmap]]
 
 This section supersedes the older Stage 4A Polish presentation and visibility claims below while preserving them as session history.
 
+- Added `/bannerconfig` with four required guild-wide Boolean options. All database defaults are true, order is fixed as emoji/name/short/role, and all-false input is rejected without persistence or audit publication.
+- Replaced fixed labels with one banner formatter used by team, limit, staff, roster, offer acknowledgement, private offer DM, and relevant conflicts. Normal output uses real emoji and role mentions; autocomplete intentionally uses `:emojiName:` and readable cached role names without exposing raw IDs.
+- Autocomplete choice names remain club IDs as values, are capped at 100 characters, and are shortened without splitting Unicode grapheme clusters. Custom emoji text in autocomplete is expected Discord behavior, not a rendering bug in the bot.
+- Staff appointment and removal confirmations now include the affected user, friendly position, and configured banner. Staff lists use vertical TM/ATM/PM lines with `Vacant` and no pipe separators.
+- Roster titles omit role mentions and display the full configured banner beneath the title only when it adds enabled short-name or role information. Setup view includes banner state and a safe preview.
+- Successful banner changes remain ephemeral and publish a timestamped best-effort audit embed with enabled/disabled details, preview, and actor last. Audit failure does not roll back the settings update.
 - Custom emoji input now accepts full static or animated mentions, `:name:`, and plain `name`. Guild `{id, name, animated}` records are authoritative; duplicate names require a full mention, and deleted or cross-server emojis fail safely. Composed Unicode sequences remain supported.
 - Team display is centralized as `<emoji> Name (SHORT)` with custom emoji autocomplete rendered as `:name:` and club IDs retained as values.
 - Roster headings now use Team Manager, Assistant Team Manager, and Player Manager. Franchise Owner, General Manager, Head Coach, and Assistant Coach headings were removed.

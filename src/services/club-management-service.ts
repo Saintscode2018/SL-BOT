@@ -10,7 +10,7 @@ import {
   ValidationError,
 } from '../domain/errors.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
-import { formatTeamAutocompleteLabel, formatTeamLabel } from '../domain/team-label.js';
+import { formatTeamBanner, teamBannerConfigFrom } from '../domain/team-label.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { ClubRepository } from '../repositories/club-repository.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
@@ -77,15 +77,23 @@ export class ClubManagementService {
         input.discordRoleId,
       );
       if (existingRoleClub !== null) {
-        throw new DuplicateTeamRoleError(input.discordRoleId, formatTeamLabel(existingRoleClub));
+        throw new DuplicateTeamRoleError(
+          input.discordRoleId,
+          formatTeamBanner(existingRoleClub, teamBannerConfigFrom(authorization.settings)),
+        );
       }
       const existingNameClub = await clubs.getByName(authorization.guild.id, name);
       if (existingNameClub !== null) {
-        throw new DuplicateTeamNameError(formatTeamLabel(existingNameClub));
+        throw new DuplicateTeamNameError(
+          formatTeamBanner(existingNameClub, teamBannerConfigFrom(authorization.settings)),
+        );
       }
       const existingShortNameClub = await clubs.getByShortName(authorization.guild.id, shortName);
       if (existingShortNameClub !== null) {
-        throw new DuplicateTeamShortNameError(shortName, formatTeamLabel(existingShortNameClub));
+        throw new DuplicateTeamShortNameError(
+          shortName,
+          formatTeamBanner(existingShortNameClub, teamBannerConfigFrom(authorization.settings)),
+        );
       }
 
       const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
@@ -145,7 +153,10 @@ export class ClubManagementService {
           input.discordRoleId,
         );
         if (existingRoleClub !== null && existingRoleClub.id !== club.id) {
-          throw new DuplicateTeamRoleError(input.discordRoleId, formatTeamLabel(existingRoleClub));
+          throw new DuplicateTeamRoleError(
+            input.discordRoleId,
+            formatTeamBanner(existingRoleClub, teamBannerConfigFrom(authorization.settings)),
+          );
         }
       }
       if (input.name !== undefined) {
@@ -153,7 +164,9 @@ export class ClubManagementService {
         if (parsedName !== club.name) {
           const existingNameClub = await clubs.getByName(authorization.guild.id, parsedName);
           if (existingNameClub !== null && existingNameClub.id !== club.id) {
-            throw new DuplicateTeamNameError(formatTeamLabel(existingNameClub));
+            throw new DuplicateTeamNameError(
+              formatTeamBanner(existingNameClub, teamBannerConfigFrom(authorization.settings)),
+            );
           }
         }
       }
@@ -167,7 +180,7 @@ export class ClubManagementService {
           if (existingShortNameClub !== null && existingShortNameClub.id !== club.id) {
             throw new DuplicateTeamShortNameError(
               parsedShortName,
-              formatTeamLabel(existingShortNameClub),
+              formatTeamBanner(existingShortNameClub, teamBannerConfigFrom(authorization.settings)),
             );
           }
         }
@@ -273,7 +286,13 @@ export class ClubManagementService {
     discordGuildId: string,
     query: string,
     limit = 25,
+    roleNamesById: Readonly<Record<string, string>> = {},
   ): Promise<Array<{ name: string; value: string }>> {
+    const guilds = new GuildRepository(this.database);
+    const guild = await guilds.getByDiscordGuildId(discordGuildId);
+    if (guild === null) return [];
+    const settings = await guilds.getSettings(guild.id);
+    const bannerConfig = teamBannerConfigFrom(settings);
     const items = await this.listActive(discordGuildId);
     const normalized = query.trim().toLowerCase();
     return items
@@ -284,6 +303,13 @@ export class ClubManagementService {
           club.shortName.toLowerCase().includes(normalized),
       )
       .slice(0, Math.min(limit, 25))
-      .map(({ club }) => ({ name: formatTeamAutocompleteLabel(club), value: club.id }));
+      .map(({ club }) => ({
+        name: formatTeamBanner(
+          { ...club, discordRoleName: roleNamesById[club.discordRoleId] ?? null },
+          bannerConfig,
+          'autocomplete',
+        ),
+        value: club.id,
+      }));
   }
 }

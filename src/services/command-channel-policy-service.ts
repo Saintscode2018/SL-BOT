@@ -28,6 +28,7 @@ export class CommandChannelPolicyService {
   public getCategory(commandName: string, subcommand?: string | null): CommandChannelCategory {
     if (commandName === 'debugreset') return 'DEBUG';
     if (commandName === 'offer') return 'TEAM_STAFF';
+    if (commandName === 'bannerconfig') return 'ADMINISTRATIVE';
     if (
       commandName === 'health' ||
       commandName === 'roster' ||

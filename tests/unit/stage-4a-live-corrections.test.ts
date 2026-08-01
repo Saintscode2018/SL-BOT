@@ -1,4 +1,4 @@
-import { MessageFlags, type Client } from 'discord.js';
+import { ApplicationCommandOptionType, MessageFlags, type Client } from 'discord.js';
 import { describe, expect, it, vi } from 'vitest';
 
 import { commandDefinitions, debugResetCommand } from '../../src/bot/commands.js';
@@ -15,6 +15,8 @@ import type {
   SafeInteractionResponse,
 } from '../../src/bot/types.js';
 import type { AuthorizationInput } from '../../src/services/authorization-service.js';
+import { InvalidBannerConfigurationError } from '../../src/domain/errors.js';
+import type { TeamBannerConfig } from '../../src/domain/team-label.js';
 import type { GuildSetupResult } from '../../src/services/guild-setup-service.js';
 import {
   SetupAuditService,
@@ -66,6 +68,10 @@ function setupResult(auditChannelId: string | null = 'audit-channel'): GuildSetu
       playerManagerRoleId: 'pm-role',
       defaultSquadLimit: 17,
       offerTimeoutSeconds: 3600,
+      bannerHasEmoji: true,
+      bannerHasName: true,
+      bannerHasShort: true,
+      bannerHasRole: true,
       createdAt: new Date('2026-08-01T00:00:00.000Z'),
       updatedAt: new Date('2026-08-01T00:00:00.000Z'),
     },
@@ -90,7 +96,7 @@ class TestInteraction implements CommandInteraction {
 
   public constructor(
     public readonly commandName: string,
-    private readonly values: Record<string, string | number | null>,
+    private readonly values: Record<string, string | number | boolean | null>,
     public readonly channelId = 'staff-channel',
   ) {}
 
@@ -107,6 +113,10 @@ class TestInteraction implements CommandInteraction {
       getInteger: (name) => {
         const value = this.values[name];
         return typeof value === 'number' ? value : null;
+      },
+      getBoolean: (name) => {
+        const value = this.values[name];
+        return typeof value === 'boolean' ? value : null;
       },
       getUser: (name) => {
         const value = this.values[name];
@@ -174,8 +184,12 @@ class TestInteraction implements CommandInteraction {
 function createContext(input?: {
   auditChannelId?: string | null;
   auditPublish?: CommandContext['setupAuditService'];
+  bannerConfig?: TeamBannerConfig;
 }): CommandContext {
-  const result = setupResult(input?.auditChannelId ?? 'audit-channel');
+  const result = setupResult(
+    input && 'auditChannelId' in input ? (input.auditChannelId ?? null) : 'audit-channel',
+  );
+  if (input?.bannerConfig) Object.assign(result.settings, input.bannerConfig);
   return {
     logger: new MemoryLogger(),
     database: {} as CommandContext['database'],
@@ -194,6 +208,28 @@ function createContext(input?: {
       setupGuildOnly: () => Promise.resolve(result),
       setupChannels: () => Promise.resolve(result),
       setupRoles: () => Promise.resolve(result),
+      updateBannerConfiguration: (configuration) => {
+        const after = {
+          bannerHasEmoji: configuration.bannerHasEmoji,
+          bannerHasName: configuration.bannerHasName,
+          bannerHasShort: configuration.bannerHasShort,
+          bannerHasRole: configuration.bannerHasRole,
+        };
+        if (!Object.values(after).some(Boolean)) {
+          return Promise.reject(new InvalidBannerConfigurationError());
+        }
+        return Promise.resolve({
+          guild: result.guild,
+          settings: { ...result.settings, ...after },
+          before: {
+            bannerHasEmoji: true,
+            bannerHasName: true,
+            bannerHasShort: true,
+            bannerHasRole: true,
+          },
+          after,
+        });
+      },
       getView: () =>
         Promise.resolve({
           guildName: result.guild.name,
@@ -211,6 +247,12 @@ function createContext(input?: {
           },
           defaultSquadLimit: result.settings.defaultSquadLimit,
           offerTimeoutMinutes: 60,
+          banner: {
+            bannerHasEmoji: result.settings.bannerHasEmoji,
+            bannerHasName: result.settings.bannerHasName,
+            bannerHasShort: result.settings.bannerHasShort,
+            bannerHasRole: result.settings.bannerHasRole,
+          },
           missingConfigurations: [],
         }),
     },
@@ -226,8 +268,14 @@ function createContext(input?: {
         Promise.resolve({
           membership: { membershipType: 'TEAM_MANAGER' },
           user: { discordUserId: 'player-1' },
+          club: team,
         } as never),
-      remove: () => Promise.resolve({ membershipType: 'TEAM_MANAGER' } as never),
+      remove: () =>
+        Promise.resolve({
+          membership: { membershipType: 'TEAM_MANAGER' },
+          user: { discordUserId: 'player-1' },
+          club: team,
+        } as never),
       list: () => Promise.resolve([]),
       getCallerActiveStaffClub: () => Promise.resolve(team),
     },
@@ -309,6 +357,11 @@ const administrativeCases = [
   ],
   ['setup view', 'setup', { subcommand: 'view' }],
   [
+    'banner configuration',
+    'bannerconfig',
+    { has_emoji: true, has_name: true, has_short: true, has_role: true },
+  ],
+  [
     'team add',
     'team',
     {
@@ -387,6 +440,106 @@ describe('command visibility', () => {
   });
 });
 
+describe('banner configuration command', () => {
+  it('registers four required boolean options without subcommands', () => {
+    const json = resolveCommand('bannerconfig').data.toJSON();
+    expect(json.options).toHaveLength(4);
+    expect(json.options?.map((option) => option.name)).toEqual([
+      'has_emoji',
+      'has_name',
+      'has_short',
+      'has_role',
+    ]);
+    expect(json.options?.every((option) => option.required === true)).toBe(true);
+    expect(
+      json.options?.every((option) => option.type === ApplicationCommandOptionType.Boolean),
+    ).toBe(true);
+  });
+
+  it('publishes an actor attributed audit after an ephemeral successful save', async () => {
+    const publish = vi.fn((message: SetupAuditMessage) => {
+      void message;
+      return Promise.resolve(true);
+    });
+    const context = createContext({ auditPublish: { publish } });
+    const interaction = new TestInteraction('bannerconfig', {
+      has_emoji: true,
+      has_name: true,
+      has_short: false,
+      has_role: true,
+    });
+
+    await resolveCommand('bannerconfig').execute(interaction, context);
+
+    expect(interaction.deferrals[0]?.flags).toBe(MessageFlags.Ephemeral);
+    const response = interaction.edits[0]?.embeds?.[0]?.data;
+    expect(response?.title).toBe('✅ Team Banner Configuration Updated');
+    expect(response?.fields?.at(-1)).toMatchObject({
+      name: 'Configured by',
+      value: `<@${authorization.discordUserId}>`,
+      inline: false,
+    });
+    expect(publish).toHaveBeenCalledOnce();
+    expect(publish.mock.calls[0]?.[0]).toMatchObject({
+      channelId: 'audit-channel',
+      title: '✅ Team Banner Configuration Updated',
+      actorDiscordUserId: authorization.discordUserId,
+    });
+  });
+
+  it('rejects all false ephemerally and publishes no audit message', async () => {
+    const publish = vi.fn(() => Promise.resolve(true));
+    const context = createContext({ auditPublish: { publish } });
+    const interaction = new TestInteraction('bannerconfig', {
+      has_emoji: false,
+      has_name: false,
+      has_short: false,
+      has_role: false,
+    });
+    const registry = {
+      resolve: (name: string) => (name === 'bannerconfig' ? resolveCommand('bannerconfig') : null),
+    } as CommandRegistry;
+
+    await handleInteractionCreate(interaction, registry, context, context.logger);
+
+    expect(interaction.deferrals[0]?.flags).toBe(MessageFlags.Ephemeral);
+    expect(interaction.edits[0]?.embeds?.[0]?.data).toMatchObject({
+      title: '❌ Invalid Banner Configuration',
+      description: 'At least one team banner component must be enabled.',
+    });
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it('succeeds without an audit channel and keeps audit failure nonfatal', async () => {
+    const noChannelPublish = vi.fn(() => Promise.resolve(true));
+    const noChannel = new TestInteraction('bannerconfig', {
+      has_emoji: false,
+      has_name: true,
+      has_short: false,
+      has_role: false,
+    });
+    await resolveCommand('bannerconfig').execute(
+      noChannel,
+      createContext({ auditChannelId: null, auditPublish: { publish: noChannelPublish } }),
+    );
+    expect(noChannelPublish).not.toHaveBeenCalled();
+
+    const failedAudit = new TestInteraction('bannerconfig', {
+      has_emoji: true,
+      has_name: false,
+      has_short: false,
+      has_role: false,
+    });
+    await resolveCommand('bannerconfig').execute(
+      failedAudit,
+      createContext({ auditPublish: { publish: () => Promise.resolve(false) } }),
+    );
+    expect(failedAudit.edits[0]?.embeds?.[0]?.data.description).toContain(
+      'audit message could not be delivered',
+    );
+  });
+});
+
 describe('command team branding', () => {
   it.each([
     ['<:typed:123456789012345678>', '<:chelsea:123456789012345678>'],
@@ -456,11 +609,12 @@ describe('command team branding', () => {
       'bot-channel',
     );
     await resolveCommand('staff').execute(staff, context);
-    expect(staff.replies[0]?.embeds?.[0]?.data.title).toContain('🔵 Chelsea (CHE)');
+    expect(staff.replies[0]?.embeds?.[0]?.data.fields?.[0]?.name).toContain('🔵 Chelsea (CHE)');
 
     const roster = new TestInteraction('roster', { team: team.id }, 'bot-channel');
     await resolveCommand('roster').execute(roster, context);
-    expect(roster.replies[0]?.embeds?.[0]?.data.title).toBe('🔵 Chelsea (CHE) Roster');
+    expect(roster.replies[0]?.embeds?.[0]?.data.title).toBe('🔵 Chelsea Roster');
+    expect(roster.replies[0]?.embeds?.[0]?.data.description).toContain('🔵 Chelsea (CHE)');
 
     const offer = new TestInteraction('offer', { player: 'player-1' }, 'bot-channel');
     await resolveCommand('offer').execute(offer, context);
@@ -480,7 +634,107 @@ describe('command team branding', () => {
       'bot-channel',
     );
     await resolveCommand('limit').execute(limitView, context);
-    expect(limitView.replies[0]?.embeds?.[0]?.data.title).toContain('🔵 Chelsea (CHE)');
+    expect(limitView.replies[0]?.embeds?.[0]?.data.description).toContain('🔵 Chelsea (CHE)');
+  });
+});
+
+describe('configured staff and roster presentation', () => {
+  const nameAndRoleOnly: TeamBannerConfig = {
+    bannerHasEmoji: false,
+    bannerHasName: true,
+    bannerHasShort: false,
+    bannerHasRole: true,
+  };
+
+  it('uses the appointed and removed user position and configured banner in success wording', async () => {
+    const context = createContext({ bannerConfig: nameAndRoleOnly });
+    const appoint = new TestInteraction('staff', {
+      subcommand: 'appoint',
+      team: team.id,
+      user: 'player-1',
+      staff_type: 'TEAM_MANAGER',
+    });
+    await resolveCommand('staff').execute(appoint, context);
+    expect(appoint.edits[0]?.embeds?.[0]?.data.description).toBe(
+      'Successfully appointed <@player-1> as the Team Manager of Chelsea <@&role-1>.',
+    );
+    expect(appoint.edits[0]?.embeds?.[0]?.data.fields?.at(-1)?.name).toBe('Appointed by');
+
+    const remove = new TestInteraction('staff', {
+      subcommand: 'remove',
+      team: team.id,
+      staff_type: 'TEAM_MANAGER',
+    });
+    await resolveCommand('staff').execute(remove, context);
+    expect(remove.edits[0]?.embeds?.[0]?.data.description).toBe(
+      'Successfully removed <@player-1> as the Team Manager of Chelsea <@&role-1>.',
+    );
+    expect(remove.edits[0]?.embeds?.[0]?.data.fields?.at(-1)?.name).toBe('Removed by');
+  });
+
+  it('renders a vertical staff directory with the banner first and vacant positions', async () => {
+    const context = createContext({ bannerConfig: nameAndRoleOnly });
+    context.clubManagementService.listActive = () =>
+      Promise.resolve([
+        { club: team, activePlayerCount: 0, effectiveLimit: 17, remainingSpaces: 17 },
+      ]);
+    context.staffManagementService.list = () =>
+      Promise.resolve([
+        {
+          membershipType: 'TEAM_MANAGER',
+          user: { discordUserId: 'manager-1' },
+        },
+      ] as never);
+    const interaction = new TestInteraction('staff', { subcommand: 'list' }, 'bot-channel');
+
+    await resolveCommand('staff').execute(interaction, context);
+
+    const field = interaction.replies[0]?.embeds?.[0]?.data.fields?.[0];
+    expect(field?.name).toBe('Chelsea <@&role-1>');
+    expect(field?.value).toBe(
+      '👑 Team Manager: <@manager-1>\n👔 Assistant Team Manager: Vacant\n🧠 Player Manager: Vacant',
+    );
+    expect(field?.value).not.toContain('|');
+  });
+
+  it('keeps role mentions out of roster titles while respecting role only banners', async () => {
+    const context = createContext({
+      bannerConfig: {
+        bannerHasEmoji: false,
+        bannerHasName: false,
+        bannerHasShort: false,
+        bannerHasRole: true,
+      },
+    });
+    const interaction = new TestInteraction('roster', { team: team.id }, 'bot-channel');
+
+    await resolveCommand('roster').execute(interaction, context);
+
+    const data = interaction.replies[0]?.embeds?.[0]?.data;
+    expect(data?.title).toBe('Team Roster');
+    expect(data?.description).toBe('<@&role-1>');
+    expect(data?.fields?.map((field) => field.name)).toEqual(
+      expect.arrayContaining(['👑 Team Manager', '👔 Assistant Team Manager', '🧠 Player Manager']),
+    );
+    expect(JSON.stringify(data)).not.toContain('Assistant Coach');
+  });
+
+  it('shows banner settings and a safe readable preview in setup view without auditing', async () => {
+    const publish = vi.fn(() => Promise.resolve(true));
+    const context = createContext({
+      bannerConfig: nameAndRoleOnly,
+      auditPublish: { publish },
+    });
+    const interaction = new TestInteraction('setup', { subcommand: 'view' });
+
+    await resolveCommand('setup').execute(interaction, context);
+
+    const fields = interaction.edits[0]?.embeds?.[0]?.data.fields;
+    expect(fields?.find((field) => field.name === 'Team Banner')?.value).toContain(
+      'Emoji: Disabled',
+    );
+    expect(fields?.find((field) => field.name === 'Preview')?.value).toBe('Chelsea @Chelsea');
+    expect(publish).not.toHaveBeenCalled();
   });
 });
 

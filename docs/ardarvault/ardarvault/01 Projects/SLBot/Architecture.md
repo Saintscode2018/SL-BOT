@@ -68,16 +68,18 @@ SL Bot strictly separates Discord interface concerns from domain rules and datab
 
 1. **Informational Commands**: `/health`, `/team list`, `/staff list`, `/roster`, and `/limit view`. Ordinary callers use Bot Commands; globally authorized callers may use Bot Commands or Staff.
 2. **Team-Staff Command**: `/offer` accepts Bot Commands or Staff, checks channel guidance before active appointment resolution, and does not reveal Staff guidance to non-global callers in unrelated channels.
-3. **Staff Channel Commands**: `/setup league`, `/setup channels`, `/setup roles`, `/setup view`, `/team add`, `/team edit`, `/team remove`, `/limit default`, `/limit team`, `/limit reset`, `/staff appoint`, `/staff remove`, `/debugreset`.
+3. **Staff Channel Commands**: `/setup league`, `/setup channels`, `/setup roles`, `/setup view`, `/bannerconfig`, `/team add`, `/team edit`, `/team remove`, `/limit default`, `/limit team`, `/limit reset`, `/staff appoint`, `/staff remove`, `/debugreset`.
 
 Bootstrap Exception: Before staff channel or `bot_permissions` role is configured, Discord Administrators may execute setup commands in the current channel.
 
 ## Branding, roster, visibility, and setup audit
 
 - Custom team emoji input accepts full static/animated mentions, `:name:`, plain `name`, and composed Unicode sequences. Names require one exact case-insensitive match in the bounded guild emoji records; Discord IDs, names, and animation flags are canonicalized from the guild cache.
-- Team display uses `<emoji> Name (SHORT)` everywhere, with a legacy `Name (SHORT)` fallback. Autocomplete uses `:name:` for custom emoji and stores the club ID.
+- `GuildSettings` stores four guild-wide, default-true banner switches for emoji, name, short name, and role. `/bannerconfig` updates all four together; an all-false configuration is rejected without a write or audit.
+- One fixed-order formatter owns team identity. Normal embeds use real custom emoji and `<@&roleId>` mentions. Autocomplete intentionally uses `:emojiName:` text because Discord choice labels do not reliably render custom emoji images, uses cache-resolved `@RoleName`, omits unresolved roles, exposes no raw IDs, retains the club ID value, and stays within 100 characters without splitting grapheme clusters.
+- Team, limit, staff, roster, offer acknowledgement, private offer DM, and relevant conflict output share this formatter. Staff lists use vertical TM/ATM/PM lines with `Vacant`; roster titles exclude role mentions and show the full configured banner beneath the title only when it adds information.
 - Roster sections use Team Manager, Assistant Team Manager, and Player Manager directly. The former Franchise Owner, General Manager, Head Coach, and Assistant Coach sections are absent.
 - Successful setup, team, limit, staff, and debug-reset administrative responses are ephemeral. Setup view is ephemeral, informational lists and roster remain public, health remains ephemeral, and offer acknowledgement remains public.
-- Successful setup league/channels/roles mutations publish a timestamped, actor-attributed embed through `SetupAuditService` when an audit channel exists. Channel setup publishes only after saving and uses the new channel. Delivery failure is logged without rollback. Other mutation publishing is deferred.
+- Successful setup league/channels/roles and `/bannerconfig` mutations publish a timestamped, actor-attributed embed through `SetupAuditService` when an audit channel exists. Channel setup publishes only after saving and uses the new channel. Banner audits contain enabled/disabled state and a safe preview. Delivery failure is logged without rollback. Other mutation publishing is deferred.
 
 Related notes: [[Commands]], [[Product Decisions]], [[Testing and Deployment]]
