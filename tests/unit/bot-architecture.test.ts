@@ -59,6 +59,7 @@ function command(name: string, execute = vi.fn(() => Promise.resolve())): Comman
 function context(logger: MemoryLogger): CommandContext {
   return {
     logger,
+    database: {} as CommandContext['database'],
     databaseHealth: { check: () => Promise.resolve(true) },
     guildConfigurationService: {
       load: () => Promise.reject(new Error('not used')),
@@ -84,7 +85,9 @@ function context(logger: MemoryLogger): CommandContext {
       appoint: () => Promise.reject(new Error('not used')),
       remove: () => Promise.reject(new Error('not used')),
       list: () => Promise.reject(new Error('not used')),
+      getCallerActiveStaffClub: () => Promise.reject(new Error('not used')),
     },
+
     rosterManagementService: {
       add: () => Promise.reject(new Error('not used')),
       remove: () => Promise.reject(new Error('not used')),
@@ -193,7 +196,7 @@ describe('interaction handler', () => {
     expect(logger.entries.some(({ level }) => level === 'error')).toBe(true);
     expect(interaction.replies).toHaveLength(1);
     expect(interaction.replies[0]?.flags).toBe(MessageFlags.Ephemeral);
-    expect(interaction.replies[0]?.embeds?.[0]?.data?.title).toBe('Command failed');
+    expect(interaction.replies[0]?.embeds?.[0]?.data?.title).toBe('❌ Command failed');
     expect(JSON.stringify(interaction.replies)).not.toContain('private database detail');
   });
 
@@ -209,7 +212,7 @@ describe('interaction handler', () => {
     interaction.deferred = true;
     await handleInteractionCreate(interaction, registry, context(logger), logger);
     expect(interaction.edits).toHaveLength(1);
-    expect(interaction.edits[0]?.embeds?.[0]?.data?.title).toBe('Command failed');
+    expect(interaction.edits[0]?.embeds?.[0]?.data?.title).toBe('❌ Command failed');
     expect(JSON.stringify(interaction.edits)).not.toContain('private detail');
   });
 });

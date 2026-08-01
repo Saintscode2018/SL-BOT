@@ -6,18 +6,36 @@ export interface EmbedOptions {
   fields?: APIEmbedField[];
   thumbnail?: string | null;
   footer?: string;
+  author?: { name: string; iconURL?: string } | null;
 }
 
 export const EMBED_COLORS = {
-  SUCCESS: 0x57f287, // Discord Green
-  INFO: 0x5865f2, // Discord Blurple
-  WARNING: 0xfee75c, // Discord Yellow
-  ERROR: 0xed4245, // Discord Red
+  SUCCESS: 0x57f287, // discord green
+  INFO: 0x5865f2, // discord blurple
+  WARNING: 0xfee75c, // discord yellow
+  ERROR: 0xed4245, // discord red
 } as const;
+
+export function createActorField(
+  verb: 'Configured' | 'Updated' | 'Added' | 'Removed' | 'Appointed' | 'Edited' | 'Reset',
+  userId: string,
+): APIEmbedField {
+  return {
+    name: `${verb} by`,
+    value: `<@${userId}>`,
+    inline: false,
+  };
+}
 
 export function createSuccessEmbed(options: EmbedOptions): EmbedBuilder {
   const embed = new EmbedBuilder().setTitle(options.title).setColor(EMBED_COLORS.SUCCESS);
 
+  if (options.author) {
+    embed.setAuthor({
+      name: options.author.name,
+      ...(options.author.iconURL ? { iconURL: options.author.iconURL } : {}),
+    });
+  }
   if (options.description) embed.setDescription(options.description);
   if (options.fields && options.fields.length > 0) embed.addFields(options.fields);
   if (options.thumbnail) embed.setThumbnail(options.thumbnail);
@@ -29,6 +47,12 @@ export function createSuccessEmbed(options: EmbedOptions): EmbedBuilder {
 export function createInfoEmbed(options: EmbedOptions): EmbedBuilder {
   const embed = new EmbedBuilder().setTitle(options.title).setColor(EMBED_COLORS.INFO);
 
+  if (options.author) {
+    embed.setAuthor({
+      name: options.author.name,
+      ...(options.author.iconURL ? { iconURL: options.author.iconURL } : {}),
+    });
+  }
   if (options.description) embed.setDescription(options.description);
   if (options.fields && options.fields.length > 0) embed.addFields(options.fields);
   if (options.thumbnail) embed.setThumbnail(options.thumbnail);
@@ -40,6 +64,12 @@ export function createInfoEmbed(options: EmbedOptions): EmbedBuilder {
 export function createWarningEmbed(options: EmbedOptions): EmbedBuilder {
   const embed = new EmbedBuilder().setTitle(options.title).setColor(EMBED_COLORS.WARNING);
 
+  if (options.author) {
+    embed.setAuthor({
+      name: options.author.name,
+      ...(options.author.iconURL ? { iconURL: options.author.iconURL } : {}),
+    });
+  }
   if (options.description) embed.setDescription(options.description);
   if (options.fields && options.fields.length > 0) embed.addFields(options.fields);
   if (options.thumbnail) embed.setThumbnail(options.thumbnail);
@@ -51,6 +81,12 @@ export function createWarningEmbed(options: EmbedOptions): EmbedBuilder {
 export function createErrorEmbed(options: EmbedOptions): EmbedBuilder {
   const embed = new EmbedBuilder().setTitle(options.title).setColor(EMBED_COLORS.ERROR);
 
+  if (options.author) {
+    embed.setAuthor({
+      name: options.author.name,
+      ...(options.author.iconURL ? { iconURL: options.author.iconURL } : {}),
+    });
+  }
   if (options.description) embed.setDescription(options.description);
   if (options.fields && options.fields.length > 0) embed.addFields(options.fields);
   if (options.thumbnail) embed.setThumbnail(options.thumbnail);

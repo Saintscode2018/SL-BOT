@@ -1,7 +1,14 @@
 import type { Club, PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 
-import { ClubInactiveError, EntityNotFoundError, ValidationError } from '../domain/errors.js';
+import {
+  ClubInactiveError,
+  DuplicateTeamNameError,
+  DuplicateTeamRoleError,
+  DuplicateTeamShortNameError,
+  EntityNotFoundError,
+  ValidationError,
+} from '../domain/errors.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { ClubRepository } from '../repositories/club-repository.js';
@@ -63,10 +70,27 @@ export class ClubManagementService {
           ? input.squadLimit
           : null;
     return this.database.$transaction(async (transaction) => {
+      const clubs = new ClubRepository(transaction);
+      const existingRoleClub = await clubs.getByDiscordRoleId(
+        authorization.guild.id,
+        input.discordRoleId,
+      );
+      if (existingRoleClub !== null) {
+        throw new DuplicateTeamRoleError(input.discordRoleId, existingRoleClub.name);
+      }
+      const existingNameClub = await clubs.getByName(authorization.guild.id, name);
+      if (existingNameClub !== null) {
+        throw new DuplicateTeamNameError(existingNameClub.name);
+      }
+      const existingShortNameClub = await clubs.getByShortName(authorization.guild.id, shortName);
+      if (existingShortNameClub !== null) {
+        throw new DuplicateTeamShortNameError(shortName, existingShortNameClub.name);
+      }
+
       const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
         input.authorization.discordUserId,
       );
-      const club = await new ClubRepository(transaction).create({
+      const club = await clubs.create({
         guildId: authorization.guild.id,
         name,
         shortName,
@@ -113,6 +137,37 @@ export class ClubManagementService {
       const club = await clubs.getByIdInGuild(input.clubId, authorization.guild.id);
       if (club === null) throw new EntityNotFoundError('team was not found');
       if (!club.active) throw new ClubInactiveError('team is inactive');
+
+      if (input.discordRoleId !== undefined && input.discordRoleId !== club.discordRoleId) {
+        const existingRoleClub = await clubs.getByDiscordRoleId(
+          authorization.guild.id,
+          input.discordRoleId,
+        );
+        if (existingRoleClub !== null && existingRoleClub.id !== club.id) {
+          throw new DuplicateTeamRoleError(input.discordRoleId, existingRoleClub.name);
+        }
+      }
+      if (input.name !== undefined) {
+        const parsedName = clubNameSchema.parse(input.name);
+        if (parsedName !== club.name) {
+          const existingNameClub = await clubs.getByName(authorization.guild.id, parsedName);
+          if (existingNameClub !== null && existingNameClub.id !== club.id) {
+            throw new DuplicateTeamNameError(existingNameClub.name);
+          }
+        }
+      }
+      if (input.shortName !== undefined) {
+        const parsedShortName = clubShortNameSchema.parse(input.shortName).toUpperCase();
+        if (parsedShortName !== club.shortName) {
+          const existingShortNameClub = await clubs.getByShortName(
+            authorization.guild.id,
+            parsedShortName,
+          );
+          if (existingShortNameClub !== null && existingShortNameClub.id !== club.id) {
+            throw new DuplicateTeamShortNameError(parsedShortName, existingShortNameClub.name);
+          }
+        }
+      }
 
       const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
         input.authorization.discordUserId,

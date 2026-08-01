@@ -1,4 +1,4 @@
-import type { ClubMembership, LeagueUser } from '@prisma/client';
+import type { Club, ClubMembership, LeagueUser } from '@prisma/client';
 
 import { EntityNotFoundError, InvalidStateTransitionError } from '../domain/errors.js';
 import type { MembershipType } from '../domain/enums.js';
@@ -75,6 +75,21 @@ export class MembershipRepository {
         status: 'ACTIVE',
         membershipType: { in: ['TEAM_MANAGER', 'ASSISTANT_MANAGER', 'PLAYER_MANAGER'] },
       },
+    });
+  }
+
+  public async getActiveStaffMembershipForUserInGuild(
+    guildId: string,
+    userId: string,
+  ): Promise<(ClubMembership & { club: Club }) | null> {
+    return this.db.clubMembership.findFirst({
+      where: {
+        guildId,
+        userId,
+        status: 'ACTIVE',
+        membershipType: { in: ['TEAM_MANAGER', 'ASSISTANT_MANAGER', 'PLAYER_MANAGER'] },
+      },
+      include: { club: true },
     });
   }
 

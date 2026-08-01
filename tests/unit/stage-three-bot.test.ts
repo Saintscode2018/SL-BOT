@@ -106,6 +106,7 @@ function commandContext(
 ): CommandContext {
   return {
     logger,
+    database: {} as CommandContext['database'],
     databaseHealth: { check: databaseHealth },
     guildConfigurationService: { load: () => Promise.reject(new Error('unused')) },
     offerAcceptanceService: { acceptOffer: () => Promise.reject(new Error('unused')) },
@@ -126,8 +127,17 @@ function commandContext(
     staffManagementService: {
       appoint: () => Promise.reject(new Error('unused')),
       remove: () => Promise.reject(new Error('unused')),
-      list: () => Promise.reject(new Error('unused')),
+      list: () => Promise.resolve([]),
+      getCallerActiveStaffClub: () =>
+        Promise.resolve({
+          id: 'club-1',
+          name: 'Chelsea',
+          shortName: 'CHE',
+          emoji: '⚽',
+          logoUrl: null,
+        }),
     },
+
     rosterManagementService: {
       add: () => Promise.reject(new Error('unused')),
       remove: () => Promise.reject(new Error('unused')),
@@ -285,7 +295,7 @@ describe('stage three command registry and deployment', () => {
       'offer',
     ]);
     expect(registry.toJSON().find(({ name }) => name === 'offer')).toMatchObject({
-      options: [expect.objectContaining({ name: 'create' })],
+      options: [expect.objectContaining({ name: 'player' })],
     });
   });
 
@@ -332,19 +342,19 @@ describe('stage three command registry and deployment', () => {
   it('formats roster using effective squad limit from guild settings', async () => {
     const command = loadCommands(commandDefinitions).resolve('roster');
     const interaction = new RosterCommandInteraction();
-    const logger = new MemoryLogger();
-    const context = commandContext(logger);
+    const context = commandContext(new MemoryLogger());
     const now = new Date();
     context.rosterManagementService = {
-      ...context.rosterManagementService,
+      add: () => Promise.reject(new Error('unused')),
+      remove: () => Promise.reject(new Error('unused')),
       list: () =>
         Promise.resolve({
           club: {
             id: 'club-1',
-            guildId: '100000000000000001',
+            guildId: 'g-1',
             name: 'Arsenal',
             shortName: 'ARS',
-            discordRoleId: 'role-1',
+            discordRoleId: 'r-1',
             logoUrl: null,
             emoji: null,
             squadLimitOverride: null,
@@ -385,7 +395,7 @@ describe('stage three command registry and deployment', () => {
         }),
     };
     await command?.execute(interaction, context);
-    expect(interaction.replies[0]?.embeds?.[0]?.data?.title).toBe('Team Roster — Arsenal (ARS)');
+    expect(interaction.replies[0]?.embeds?.[0]?.data?.title).toBe('Arsenal Roster');
   });
 
   it('defers offer creation before delivery and edits the successful response', async () => {
@@ -401,7 +411,7 @@ describe('stage three command registry and deployment', () => {
     expect(interaction.replies).toEqual([]);
     expect(interaction.followUps).toEqual([]);
     expect(interaction.edits).toHaveLength(1);
-    expect(interaction.edits[0]?.embeds?.[0]?.data?.title).toBe('Contract Offer Sent');
+    expect(interaction.edits[0]?.embeds?.[0]?.data?.title).toBe('✅ Contract Offer Sent');
   });
 
   it('edits a deferred command with a safe failure and never sends a second initial reply', async () => {
@@ -740,16 +750,16 @@ describe('persistent offer buttons', () => {
 describe('discord error mapping', () => {
   it('maps expected errors and keeps unknown internal text private', () => {
     const authMapped = mapDiscordError(new AuthorizationError('private authorization detail'));
-    expect(authMapped.title).toBe('Permission denied');
+    expect(authMapped.title).toBe('❌ Permission denied');
     expect(authMapped.description).toBe('private authorization detail');
 
     const unknownMapped = mapDiscordError(new Error('raw database password'));
-    expect(unknownMapped.title).toBe('Command failed');
+    expect(unknownMapped.title).toBe('❌ Command failed');
     expect(unknownMapped.description).toBe('An unexpected error occurred. Please try again later.');
     expect(unknownMapped.description).not.toContain('password');
 
     const invalidOfferMapped = mapDiscordError(new InvalidOfferMessageError('private message ids'));
-    expect(invalidOfferMapped.title).toBe('Invalid offer interaction');
+    expect(invalidOfferMapped.title).toBe('❌ Invalid offer interaction');
     expect(invalidOfferMapped.description).toBe('This offer interaction is no longer valid.');
   });
 });

@@ -11,6 +11,7 @@ import type { Logger } from '../logging/logger.js';
 import type { CommandRegistry } from './command-registry.js';
 import { mapDiscordError } from './error-mapper.js';
 import type { OfferButtonInteraction } from './offer-button-handler.js';
+import { sendDebugResetPrompt } from './debug-reset-handler.js';
 import type {
   CommandAutocompleteInteraction,
   CommandContext,
@@ -107,6 +108,14 @@ class DiscordCommandInteraction implements CommandInteraction {
     return new DiscordCommandOptions(this.interaction);
   }
 
+  public hasGuildEmoji(emojiId: string): boolean {
+    return this.interaction.guild?.emojis.cache.has(emojiId) ?? false;
+  }
+
+  public async executeDebugReset(database: CommandContext['database']): Promise<void> {
+    await sendDebugResetPrompt(this.interaction, database);
+  }
+
   public async reply(response: SafeInteractionResponse): Promise<void> {
     await this.interaction.reply(response);
   }
@@ -141,6 +150,7 @@ export async function handleInteractionCreate(
     await command.execute(interaction, context);
   } catch (error: unknown) {
     logger.error('command execution failed', error, { commandName: interaction.commandName });
+
     const mapped = mapDiscordError(error);
     const response: SafeInteractionResponse = {
       embeds: [mapped.embed],

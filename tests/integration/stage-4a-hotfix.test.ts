@@ -172,6 +172,7 @@ describe('Stage 4A Hotfix Verification', () => {
 
     commandContext = {
       logger,
+      database: context.client,
       databaseHealth: { check: () => Promise.resolve(true) },
       guildConfigurationService: { load: () => Promise.reject(new Error('unused')) },
       offerAcceptanceService: { acceptOffer: vi.fn() },
@@ -301,7 +302,7 @@ describe('Stage 4A Hotfix Verification', () => {
         discordGuildId: guildId,
         discordUserId: tmUserId,
         guildOwnerId: adminAuth.guildOwnerId,
-        memberRoleIds: ['666666666666666666'], // TM role only, no bot permissions role
+        memberRoleIds: ['666666666666666666'], // team role without bot permissions
         hasAdministratorPermission: false,
       };
 
@@ -368,7 +369,7 @@ describe('Stage 4A Hotfix Verification', () => {
     it('bootstrap exception allows setup for Discord Administrator in unconfigured channel before setup', async () => {
       const policyService = new CommandChannelPolicyService(context.client);
 
-      // Admin bootstrapping in arbitrary channel
+      // administrator bootstrap in any channel
       await expect(
         policyService.validateChannelPolicy({
           discordGuildId: '990000000000000099',
@@ -379,7 +380,7 @@ describe('Stage 4A Hotfix Verification', () => {
         }),
       ).resolves.toBeUndefined();
 
-      // Non-admin attempting bootstrap
+      // non administrator bootstrap attempt
       await expect(
         policyService.validateChannelPolicy({
           discordGuildId: '990000000000000099',
@@ -433,8 +434,14 @@ describe('Stage 4A Hotfix Verification', () => {
 
       const interaction = new MockCommandInteraction(
         'team',
-        { subcommand: 'add', name: 'Test', short_name: 'TST', role: '300000000000000001' },
-        botCmdChannel, // Wrong channel for mutation!
+        {
+          subcommand: 'add',
+          name: 'Test',
+          short_name: 'TST',
+          role: '300000000000000001',
+          emoji: '⚽',
+        },
+        botCmdChannel, // wrong channel for mutation
         adminAuth,
       );
 
@@ -442,9 +449,9 @@ describe('Stage 4A Hotfix Verification', () => {
 
       expect(interaction.replies).toHaveLength(1);
       const reply = interaction.replies[0];
-      expect(reply?.flags).toBe(64); // MessageFlags.Ephemeral
+      expect(reply?.flags).toBe(64); // ephemeral message flag
       expect(reply?.embeds).toBeDefined();
-      expect(reply?.embeds?.[0]?.data.title).toBe('Command unavailable here');
+      expect(reply?.embeds?.[0]?.data.title).toBe('❌ Command unavailable here');
     });
 
     it('returns public embeds for successful mutation commands in staff channel', async () => {
@@ -456,7 +463,13 @@ describe('Stage 4A Hotfix Verification', () => {
 
       const interaction = new MockCommandInteraction(
         'team',
-        { subcommand: 'add', name: 'Real Madrid', short_name: 'RMA', role: '300000000000000010' },
+        {
+          subcommand: 'add',
+          name: 'Real Madrid',
+          short_name: 'RMA',
+          role: '300000000000000010',
+          emoji: '⚽',
+        },
         staffChannel,
         adminAuth,
       );
@@ -466,7 +479,7 @@ describe('Stage 4A Hotfix Verification', () => {
       expect(interaction.edits).toHaveLength(1);
       const edit = interaction.edits[0];
       expect(edit?.embeds).toBeDefined();
-      expect(edit?.embeds?.[0]?.data.title).toBe('Team Registered');
+      expect(edit?.embeds?.[0]?.data.title).toBe('✅ Team Added');
     });
 
     it('/team remove deactivates the team while preserving database history', async () => {
@@ -477,6 +490,7 @@ describe('Stage 4A Hotfix Verification', () => {
         name: 'Liverpool',
         shortName: 'LIV',
         discordRoleId: '300000000000000099',
+        emoji: '🔴',
       });
 
       const registry = {
@@ -494,10 +508,10 @@ describe('Stage 4A Hotfix Verification', () => {
 
       expect(interaction.edits).toHaveLength(1);
       const edit = interaction.edits[0];
-      expect(edit?.embeds?.[0]?.data.title).toBe('Team Removed');
+      expect(edit?.embeds?.[0]?.data.title).toBe('✅ Team Removed');
       expect(edit?.embeds?.[0]?.data.description).toContain('The team is now inactive.');
 
-      // Verify in DB that the club still exists but active === false (soft deactivation, not deletion)
+      // verify the team remains stored and inactive
       const dbClub = await context.client.club.findUnique({ where: { id: club.id } });
       expect(dbClub).not.toBeNull();
       expect(dbClub?.active).toBe(false);

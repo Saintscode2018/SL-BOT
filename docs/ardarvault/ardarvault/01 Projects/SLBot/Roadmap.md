@@ -22,14 +22,19 @@ Index: [[SLBot]]
   - Final channel policy matrix: Dual-channel (`bot_commands` or `staff`) vs Staff-only (`staff`).
   - Bootstrap exception for Discord Administrators before channel setup.
   - Embed-only response architecture for all successes and errors.
-  - Ephemeral error embeds preserving server log stack traces.
   - Subcommand rename: `/setup league`.
-  - Custom Discord emoji team branding & derived CDN thumbnails (`.png`/`.gif`).
-  - Safe `/team remove` deactivation workflow.
+- **Stage 4A Polish — Errors, Branding, & Command UX**:
+  - Specific domain conflict errors (duplicate role, name, short name, staff appointed, position occupied).
+  - Global staff uniqueness rule (1 active staff position per user league-wide).
+  - Option A custom emoji validation (checked against current guild emojis via `hasGuildEmoji`) + Unicode emoji support.
+  - Flattened `/offer player:<user>` command (auto-derives destination team from caller's active staff appointment).
+  - Visual embed overhaul (`✅`/`❌` title prefixes, actor lines, vertical block fields for channels/roles).
+  - Reference roster layout (author, title, thumbnail, roster count, Franchise Owner, GM, Head Coach, Assistant Coach, Players).
+  - Development-only `/debugreset` command with confirmation flow.
 
 ## Explicitly Excluded / Future Stages (Stage 4B+)
 
-The following features are **explicitly excluded** from Stage 4A Hotfix and must not be implemented as placeholders:
+The following features are **explicitly excluded** from Stage 4A Polish and must not be implemented as placeholders:
 
 - `/import` (Bulk CSV/JSON roster import)
 - Discord Role Adapter & automatic role sync (`/sync`)

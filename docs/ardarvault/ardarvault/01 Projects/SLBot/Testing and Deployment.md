@@ -8,7 +8,7 @@ tags:
   - gateway-intents
 ---
 
-# Testing and Deployment Guide (Stage 4A Hotfix Updated)
+# Testing and Deployment Guide (Stage 4A Polish Updated)
 
 Index: [[SLBot]] | Architecture: [[Architecture]]
 
@@ -18,8 +18,8 @@ SL Bot utilizes **Vitest** for unit and integration testing.
 
 - Integration tests use real **file-backed SQLite databases** generated dynamically in isolated temporary files.
 - Tests apply committed migrations (`prisma migrate deploy`) against fresh SQLite databases.
-- Schema evolution tests verify column renames (`botPermissionsRoleId`).
-- Network calls to Discord are mocked (`DiscordOfferMessageAdapter` mocks).
+- Schema evolution tests verify schema recreation and column renames (`botPermissionsRoleId`).
+- Network calls to Discord are mocked (`DiscordOfferMessageAdapter` mocks, mock guild emoji ID caches).
 
 ### Running Quality & Test Verification
 
@@ -32,8 +32,6 @@ npm run typecheck
 npm run build
 npm test
 ```
-
-Current test count: **177 passing tests** across 13 test suites.
 
 ## Gateway Intent Review
 
@@ -49,7 +47,7 @@ SL Bot requires only **one non-privileged Gateway intent**:
 
 ## Manual Live Smoke Test Walkthrough
 
-To verify Stage 4A Hotfix in a live Discord development server:
+To verify Stage 4A Polish in a live Discord development server:
 
 1. Deploy guild commands:
    ```bash
@@ -59,18 +57,24 @@ To verify Stage 4A Hotfix in a live Discord development server:
    ```bash
    npm run dev
    ```
-3. Test `/health` in bot commands or staff channel (Expect ephemeral embed).
-4. Run `/setup league` to set offer timeout.
-5. Run `/setup channels` to link bot-commands, staff, transfer, and audit channels.
-6. Run `/setup roles` with `bot_permissions` role option.
-7. Run `/setup view` to confirm configured state and check for missing items.
-8. Test channel policy & permission enforcement:
-   - Try `/team list` in an unauthorized channel (Expect ephemeral error embed mentioning target channels).
-   - Run `/team list` in bot commands or staff channel (Expect public embed listing active teams with custom emoji mentions).
-   - Try `/team add` without `bot_permissions` role or Admin permission (Expect ephemeral permission error embed).
-   - Run `/team add` with custom emoji `<:name:123456789012345678>` in staff channel (Expect public success embed with derived CDN thumbnail URL).
-9. Manage squad limits via `/limit default`, `/limit team`, `/limit reset`, and `/limit view`.
-10. Test `/team remove` to safely deactivate a team.
-11. Verify contract offers (`/offer create`) deliver private DMs with custom emoji thumbnails while posting a public embed acknowledgement in channel.
+3. Test `/health` in bot commands or staff channel (Expect ephemeral embed with `Online ✅` and `Connected ✅`).
+4. Run `/setup league`, `/setup channels`, `/setup roles`, `/setup view` in staff channel (Expect public embeds with `✅` titles, emoji field blocks, and actor lines).
+5. Test conflict error handling:
+   - Try creating two teams with the same role (`❌ Team role already in use`).
+   - Try creating two teams with the same name (`❌ Team name already in use`).
+6. Test global staff uniqueness:
+   - Appoint a user as Team Manager on Team A.
+   - Try appointing the same user on Team B (`❌ Staff member already appointed`).
+   - Try appointing a second Team Manager on Team A (`❌ Position already occupied`).
+7. Test team branding with custom server emoji and Unicode emoji:
+   - Run `/team add` with `emoji: ⚽` or `<:custom:123456789012345678>`.
+8. Test flattened `/offer player:<user>`:
+   - Execute `/offer player:@user` as active staff (Expect private DM offer card to target player and public channel acknowledgement embed).
+9. Test visual roster formatting via `/roster team:<id>`:
+   - Verify author (`<Guild Name>`), title (`<EMOJI> <TEAM NAME> Roster`), thumbnail, squad count, staff sections, player list, and footer.
+   - Verify Assistant Coach displays as a future unavailable role rather than missing server configuration.
+10. Test development reset (if `SLBOT_ENABLE_DEBUG_COMMANDS=true`):
+    - Run `/debugreset` in staff channel as Discord Administrator (Expect warning prompt with 60s expiring confirmation buttons).
+    - Verify only the initiating Discord Administrator can use the confirmation buttons.
 
 Related notes: [[Commands]], [[Product Decisions]], [[Session Log]]

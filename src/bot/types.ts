@@ -3,6 +3,7 @@ import type {
   MessageFlags,
   RESTPostAPIChatInputApplicationCommandsJSONBody,
 } from 'discord.js';
+import type { PrismaClient } from '@prisma/client';
 
 import type { Logger } from '../logging/logger.js';
 import type { ClubManagementService } from '../services/club-management-service.js';
@@ -43,7 +44,10 @@ export interface CommandInteraction {
   readonly memberRoleIds?: readonly string[] | undefined;
   readonly hasAdministratorPermission?: boolean | undefined;
   readonly options?: CommandInteractionOptions | undefined;
+  hasGuildEmoji?(emojiId: string): boolean;
+  executeDebugReset?(database: PrismaClient): Promise<void>;
   reply(response: SafeInteractionResponse): Promise<void>;
+
   deferReply(response?: DeferredInteractionResponse): Promise<void>;
   editReply(response: EditedInteractionResponse): Promise<void>;
   followUp(response: SafeInteractionResponse): Promise<void>;
@@ -68,6 +72,7 @@ export interface CommandAutocompleteInteraction {
 
 export interface CommandContext {
   logger: Logger;
+  database: PrismaClient;
   databaseHealth: { check(): Promise<boolean> };
   guildConfigurationService: Pick<GuildConfigurationService, 'load'>;
   offerAcceptanceService: Pick<OfferAcceptanceService, 'acceptOffer'>;
@@ -79,7 +84,11 @@ export interface CommandContext {
     ClubManagementService,
     'create' | 'edit' | 'deactivate' | 'listActive' | 'autocomplete'
   >;
-  staffManagementService: Pick<StaffManagementService, 'appoint' | 'remove' | 'list'>;
+  staffManagementService: Pick<
+    StaffManagementService,
+    'appoint' | 'remove' | 'list' | 'getCallerActiveStaffClub'
+  >;
+
   rosterManagementService: Pick<RosterManagementService, 'add' | 'remove' | 'list'>;
   limitManagementService: Pick<
     LimitManagementService,

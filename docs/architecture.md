@@ -31,8 +31,8 @@ Command deployment is an explicit REST operation through `scripts/deploy-command
 
 `CommandChannelPolicyService` classifies commands prior to execution:
 
-- **Dual-Channel Commands** (Bot Commands Channel or Staff Channel): `/health`, `/team list`, `/staff list`, `/roster`, `/limit view`, `/offer create`.
-- **Staff Channel Only**: `/setup league`, `/setup channels`, `/setup roles`, `/setup view`, `/team add`, `/team edit`, `/team remove`, `/limit default`, `/limit team`, `/limit reset`, `/staff appoint`, `/staff remove`.
+- **Dual-Channel Commands** (Bot Commands Channel or Staff Channel): `/health`, `/team list`, `/staff list`, `/roster`, `/limit view`, `/offer`.
+- **Staff Channel Only**: `/setup league`, `/setup channels`, `/setup roles`, `/setup view`, `/team add`, `/team edit`, `/team remove`, `/limit default`, `/limit team`, `/limit reset`, `/staff appoint`, `/staff remove`, `/debugreset`.
 
 Validation rules:
 
@@ -47,23 +47,31 @@ Commands extract a plain authorization input containing guild ID, user ID, owner
 
 - **Global Bot Permissions**: Granted to users who hold the configured `bot_permissions` role (`botPermissionsRoleId`) OR have the Discord **Administrator** permission.
 - **Discord Administrator Bootstrap/Recovery**: Discord Administrator permission grants bootstrap setup and emergency administrative recovery access.
-- **Club Staff Scope**: Club staff positions (`TEAM_MANAGER`, `ASSISTANT_MANAGER`, `PLAYER_MANAGER`) permit managing offers for their specific team, but DO NOT grant global bot permissions or setup authority.
+- **Club Staff Scope**: Club staff positions (`TEAM_MANAGER`, `ASSISTANT_MANAGER`, `PLAYER_MANAGER`) permit managing contract offers for their team, but DO NOT grant global bot permissions or setup authority.
 
 Role IDs come from `GuildSettings`; staff authority comes from active database memberships. Discord default command permissions are not the sole authorization mechanism. Every club and authorization value is revalidated during execution.
+
+## Global Staff Uniqueness & Pre-flight Conflict Checks
+
+- **League-wide Staff Uniqueness**: A user may hold only **one active club staff appointment across the entire league** (guild). A user cannot simultaneously hold TM, ATM, or PM roles on multiple teams. Attempting to appoint an already-appointed user throws `StaffAlreadyAppointedError` before database writes.
+- **Per-team Position Limits**: Each team can have at most one active holder for each staff position (`TEAM_MANAGER`, `ASSISTANT_MANAGER`, `PLAYER_MANAGER`). Attempting to appoint a second holder throws `TeamPositionOccupiedError`.
+- **Team Domain Conflicts**: Duplicate team role, name, or short name attempts trigger `DuplicateTeamRoleError`, `DuplicateTeamNameError`, or `DuplicateTeamShortNameError`, producing ephemeral red error embeds with specific conflict details.
 
 ## Embed-Only Response System & Error Feedback
 
 - Every command execution and error response is delivered as a Discord embed.
-- Reusable embed builders (`createSuccessEmbed`, `createInfoEmbed`, `createWarningEmbed`, `createErrorEmbed`) enforce standard styling and color codes across all commands.
-- Handled errors produce visible ephemeral embeds in Discord while preserving detailed stack traces in application logs.
-- Unknown runtime errors map to a safe generic error embed without exposing stack traces to end users.
+- Embed titles automatically feature `✅` for successful administrative mutations and `❌` for error responses.
+- Reusable embed builders (`createSuccessEmbed`, `createInfoEmbed`, `createWarningEmbed`, `createErrorEmbed`) enforce standard styling and color codes.
+- Mutation embeds conclude with a full-width actor line (`Configured by`, `Added by`, `Appointed by`, `Removed by`).
+- Handled errors produce visible ephemeral red embeds in Discord detailing specific domain conflicts without exposing database IDs or stack traces.
 
-## Team Branding & Custom Emojis
+## Team Branding, Custom & Unicode Emojis
 
-- Teams support custom Discord emojis (`<:name:emojiId>` or `<a:name:emojiId>`).
-- Emoji helper validates format and derives Discord CDN URLs (`https://cdn.discordapp.com/emojis/EMOJI_ID.png` or `.gif`).
-- Single-team embeds (team add/edit confirmations, roster views, offer cards) use derived custom emoji CDN URLs as thumbnails.
-- Multi-team lists display inline custom emoji mentions beside team names.
+- `/team add` requires a team emoji; `/team edit` permits optional emoji updates.
+- Supports server custom emojis (`<:name:emojiId>` or `<a:name:emojiId>`) and standard Unicode emojis (`⚽`, `🦁`).
+- Custom emojis are validated against the current guild's emoji collection via `CommandInteraction.hasGuildEmoji`.
+- Single-team embeds (team add/edit confirmations, roster views, offer cards) use derived custom emoji CDN or Twemoji URLs as thumbnails.
+- Multi-team list embeds display team emojis inline beside team names.
 
 ## Squad limits and effective capacity
 
@@ -79,14 +87,14 @@ Staff members do not count toward player squad limits unless they also hold an a
 
 ## Administration transactions
 
-`GuildSetupService` manages `/setup` subcommands (`league`, `channels`, `roles`, `view`) and appends audit events (`guild.configured`, `guild.channels_configured`, `guild.roles_configured`). `ClubManagementService` creates, edits, or deactivates clubs (`/team remove` performs a safe soft deactivation while preserving historical memberships, staff appointments, offers, transactions, and audit records, distinguishing it from the future complete `/disband` franchise shutdown workflow). `StaffManagementService` creates and ends staff memberships while database partial indexes enforce one active holder per staff type. Bot users are rejected.
+`GuildSetupService` manages `/setup` subcommands (`league`, `channels`, `roles`, `view`) and appends audit events. `ClubManagementService` creates, edits, or deactivates clubs (`/team remove` performs a safe soft deactivation while preserving historical memberships, staff appointments, offers, transactions, and audit records). `StaffManagementService` creates and ends staff memberships with pre-flight uniqueness checks.
 
-`RosterManagementService` performs player registration and removal atomically. Registration checks the guild-wide active player membership and derived destination capacity against the effective squad limit, then creates the membership, `SIGNING`, and audit. Removal ends the exact team membership and creates a `RELEASE` plus audit. Audit failure rolls back the other writes.
+`RosterManagementService` performs player registration and removal atomically. Registration checks the guild-wide active player membership and derived destination capacity against the effective squad limit, creating the membership, `SIGNING`, and audit.
 
-Squad counts always query active `PLAYER` memberships. No mutable roster counter exists. Cross-guild composite foreign keys and existing partial unique indexes remain the final concurrency guard.
+`/offer player:<user>` automatically derives the offering team from the caller's active staff appointment. Callers without an active staff position are rejected with an ephemeral red error embed.
 
 ## Database guarantees and migration policy
 
 SQLite migration SQL owns conditional checks Prisma cannot express. Partial unique indexes enforce one active player per guild, one active holder of each staff type per club, and one pending offer per club/player. Composite foreign keys prevent memberships, offers, and transactions from referencing a club in another guild. Status/timestamp checks preserve membership and offer state consistency.
 
-Schema migrations track column renames safely (`botPermissionsRoleId`). All integration tests execute against fresh file-backed SQLite databases using actual migrations.
+All integration tests execute against fresh file-backed SQLite databases using actual migrations.

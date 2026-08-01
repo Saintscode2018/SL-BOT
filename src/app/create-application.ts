@@ -78,6 +78,7 @@ export function createApplication(
   const commands = loadCommands(commandDefinitions);
   const context: CommandContext = {
     logger,
+    database: prisma,
     databaseHealth: new DatabaseHealthService(prisma),
     guildConfigurationService,
     offerAcceptanceService,

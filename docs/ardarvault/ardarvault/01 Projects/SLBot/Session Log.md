@@ -12,6 +12,50 @@ tags:
 
 Index: [[SLBot]] | Roadmap: [[Roadmap]]
 
+## Stage 4A Polish Session — Errors, Branding, & Command UX
+
+**Date**: August 1, 2026
+**Branch**: `stage4a-polish/errors-branding-command-ui`
+**Parent Branch**: `stage4a-hotfix/permissions-embeds`
+
+### Key Changes Implemented
+
+1. **Specific Domain Conflict Errors**:
+   - Created domain error classes `DuplicateTeamRoleError`, `DuplicateTeamNameError`, `DuplicateTeamShortNameError`, `StaffAlreadyAppointedError`, and `TeamPositionOccupiedError` extending `ConflictError`.
+   - Updated `ClubManagementService` and `StaffManagementService` to perform pre-flight checks and throw typed conflict errors.
+   - Updated `mapDiscordError` to render ephemeral red error embeds with specific conflict messages.
+
+2. **Global Staff Uniqueness Rule**:
+   - Added `getActiveStaffMembershipForUserInGuild` to `MembershipRepository`.
+   - Enforced that a user may hold only one active club staff appointment across the entire league.
+   - Enforced per-team staff position limits (1 TM, 1 ATM, 1 PM per team).
+
+3. **Team Branding with Custom & Unicode Emojis**:
+   - Updated `emoji-helper.ts` with `validateTeamEmoji` supporting Option A custom guild emoji validation (`CommandInteraction.hasGuildEmoji`) and standard Unicode emojis (`⚽`, `🦁`).
+   - Derived Twemoji CDN URLs for Unicode emojis to serve as embed thumbnails.
+   - Made `emoji` required on `/team add` and optional on `/team edit`. Removed `logo_url` from command inputs.
+
+4. **Flattened `/offer` Command**:
+   - Refactored `/offer` to top-level `/offer player:<user>` (removed `create` subcommand, removed `team` option).
+   - Automatically derives destination team from caller's active staff appointment (`getCallerActiveStaffClub`).
+   - Rejects callers without an active staff appointment with `❌ Staff appointment required`.
+
+5. **Visual Embed Overhaul & Roster Reference Layout**:
+   - Updated all success embed titles with `✅` and error titles with `❌`.
+   - Added `createActorField` helper adding an explicit actor line (`Configured by`, `Added by`, `Appointed by`, `Removed by`) at the bottom of mutation embeds.
+   - Recreated `/roster` layout matching reference structure: Author (`<Guild Name>`), Title (`<EMOJI> <TEAM NAME> Roster`), Thumbnail, `📊 Roster Count`, `👑 Franchise Owner(s)`, `👔 General Manager(s)`, `🧠 Head Coach(es)`, `📋 Assistant Coach(es)`, `──────── Players ────────`, `🏃 Players`, and Footer. Assistant Coach is explicitly shown as a future unavailable role rather than missing configuration.
+
+6. **Development `/debugreset` Command**:
+   - Added `/debugreset` gated by `SLBOT_ENABLE_DEBUG_COMMANDS=true`.
+   - Restrict to Discord Administrators in Staff Channel.
+   - Interactive confirmation flow with buttons, 60s timeout, initiating-Administrator-only filter and check, and transactional FK-safe data reset.
+
+7. **Integration & Unit Testing**:
+   - Added `tests/integration/stage-4a-polish.test.ts` covering conflict errors, global staff uniqueness, emoji validation, `/offer` flattening, and roster reference formatting.
+   - Updated existing test suites.
+
+---
+
 ## Stage 4A Hotfix Session — Permissions, Embeds, & Discord UX
 
 **Date**: August 1, 2026
@@ -29,7 +73,7 @@ Index: [[SLBot]] | Roadmap: [[Roadmap]]
 
 2. **Final Channel Policy Matrix**:
    - Updated `CommandChannelPolicyService` to categorize commands into Dual-Channel (`bot_commands` or `staff`) and Staff-Only (`staff`).
-   - Allowed `/health`, `/team list`, `/limit view`, `/staff list`, `/roster`, and `/offer create` acknowledgement in both `bot_commands` and `staff` channels.
+   - Allowed `/health`, `/team list`, `/limit view`, `/staff list`, `/roster`, and `/offer` acknowledgement in both `bot_commands` and `staff` channels.
    - Restricted `/setup *`, `/team add|edit|remove`, `/limit default|team|reset`, and `/staff appoint|remove` strictly to `staff` channel.
    - Added bootstrap exception allowing Discord Administrators to run `/setup` in any channel before `staff` channel or `bot_permissions` role exists.
 

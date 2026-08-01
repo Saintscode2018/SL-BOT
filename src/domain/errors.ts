@@ -50,3 +50,67 @@ export class BotUserNotAllowedError extends DomainError {}
 export class OfferDeliveryError extends DomainError {}
 
 export class InvalidOfferMessageError extends DomainError {}
+
+export class DuplicateTeamRoleError extends ConflictError {
+  public constructor(
+    public readonly roleId: string,
+    public readonly teamName: string,
+  ) {
+    super(`The role <@&${roleId}> is already assigned to ${teamName}.`);
+  }
+}
+
+export class DuplicateTeamNameError extends ConflictError {
+  public constructor(public readonly teamName: string) {
+    super(`A team named ${teamName} already exists.`);
+  }
+}
+
+export class DuplicateTeamShortNameError extends ConflictError {
+  public constructor(
+    public readonly shortName: string,
+    public readonly teamName: string,
+  ) {
+    super(`The abbreviation ${shortName} is already assigned to ${teamName}.`);
+  }
+}
+
+export class StaffAlreadyAppointedError extends ConflictError {
+  public constructor(
+    public readonly discordUserId: string,
+    public readonly positionName: string,
+    public readonly teamName: string,
+  ) {
+    super(
+      `<@${discordUserId}> is already the ${positionName} of ${teamName}.\n\nThey must be removed from that position before receiving another appointment.`,
+    );
+  }
+}
+
+export class TeamPositionOccupiedError extends ConflictError {
+  public constructor(
+    public readonly positionName: string,
+    public readonly teamName: string,
+    public readonly currentHolderUserId: string,
+  ) {
+    super(
+      `${teamName} already has a ${positionName}: <@${currentHolderUserId}>.\n\nRemove the current ${positionName} before appointing another one.`,
+    );
+  }
+}
+
+export class InvalidTeamEmojiError extends DomainError {
+  public constructor() {
+    super(
+      'Choose either a standard Discord emoji or a custom emoji from this server.\n\nExamples: ⚽ or <:chelsea:123456789012345678>',
+    );
+  }
+}
+
+export class NoStaffAppointmentError extends DomainError {
+  public constructor() {
+    super(
+      'You must be an active Team Manager, Assistant Team Manager, or Player Manager of a team to issue contract offers.',
+    );
+  }
+}

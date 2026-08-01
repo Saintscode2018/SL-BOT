@@ -92,6 +92,28 @@ export class ClubRepository {
     });
   }
 
+  public async getByName(guildId: string, name: string): Promise<Club | null> {
+    return this.db.club.findUnique({
+      where: {
+        guildId_name: {
+          guildId,
+          name,
+        },
+      },
+    });
+  }
+
+  public async getByShortName(guildId: string, shortName: string): Promise<Club | null> {
+    return this.db.club.findUnique({
+      where: {
+        guildId_shortName: {
+          guildId,
+          shortName,
+        },
+      },
+    });
+  }
+
   public async listActive(guildId: string): Promise<Club[]> {
     return this.db.club.findMany({
       where: { guildId, active: true },

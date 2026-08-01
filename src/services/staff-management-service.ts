@@ -4,7 +4,11 @@ import {
   BotUserNotAllowedError,
   ClubInactiveError,
   EntityNotFoundError,
+  NoStaffAppointmentError,
+  StaffAlreadyAppointedError,
+  TeamPositionOccupiedError,
 } from '../domain/errors.js';
+
 import type { MembershipType } from '../domain/enums.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { ClubRepository } from '../repositories/club-repository.js';
@@ -18,6 +22,17 @@ import { AuthorizationService } from './authorization-service.js';
 export type StaffType = Exclude<MembershipType, 'PLAYER'>;
 export const staffAppointedAuditEventType = 'staff.appointed';
 export const staffRemovedAuditEventType = 'staff.removed';
+
+export function getFriendlyPositionName(staffType: StaffType): string {
+  switch (staffType) {
+    case 'TEAM_MANAGER':
+      return 'Team Manager';
+    case 'ASSISTANT_MANAGER':
+      return 'Assistant Team Manager';
+    case 'PLAYER_MANAGER':
+      return 'Player Manager';
+  }
+}
 
 export interface AppointStaffInput {
   authorization: AuthorizationInput;
@@ -51,7 +66,40 @@ export class StaffManagementService {
       const users = new UserRepository(transaction);
       const actor = await users.getOrCreateByDiscordUserId(input.authorization.discordUserId);
       const user = await users.getOrCreateByDiscordUserId(input.staffDiscordUserId);
-      const membership = await new MembershipRepository(transaction).createActive({
+      const memberships = new MembershipRepository(transaction);
+
+      // check for an existing staff appointment
+      const existingUserStaff = await memberships.getActiveStaffMembershipForUserInGuild(
+        authorization.guild.id,
+        user.id,
+      );
+      if (existingUserStaff !== null) {
+        const posName = getFriendlyPositionName(existingUserStaff.membershipType as StaffType);
+        throw new StaffAlreadyAppointedError(
+          input.staffDiscordUserId,
+          posName,
+          existingUserStaff.club.name,
+        );
+      }
+
+      // check whether the team position is occupied
+      const existingPositionStaff = await memberships.getActiveStaffAppointment(
+        club.id,
+        input.staffType,
+      );
+      if (existingPositionStaff !== null) {
+        const holderUser = await transaction.leagueUser.findUnique({
+          where: { id: existingPositionStaff.userId },
+        });
+        const posName = getFriendlyPositionName(input.staffType);
+        throw new TeamPositionOccupiedError(
+          posName,
+          club.name,
+          holderUser?.discordUserId ?? existingPositionStaff.userId,
+        );
+      }
+
+      const membership = await memberships.createActive({
         guildId: authorization.guild.id,
         clubId: club.id,
         userId: user.id,
@@ -131,5 +179,29 @@ export class StaffManagementService {
     const club = await new ClubRepository(this.database).getByIdInGuild(clubId, guild.id);
     if (club === null || !club.active) throw new EntityNotFoundError('active team was not found');
     return new MembershipRepository(this.database).listActiveStaffWithUsers(club.id);
+  }
+
+  public async getCallerActiveStaffClub(
+    discordGuildId: string,
+    discordUserId: string,
+  ): Promise<{
+    id: string;
+    name: string;
+    shortName: string;
+    emoji: string | null;
+    logoUrl: string | null;
+  }> {
+    return this.database.$transaction(async (transaction) => {
+      const guild = await new GuildRepository(transaction).getByDiscordGuildId(discordGuildId);
+      if (guild === null) throw new EntityNotFoundError('server is not configured');
+      const user = await new UserRepository(transaction).getByDiscordUserId(discordUserId);
+      if (user === null) throw new NoStaffAppointmentError();
+      const staffMembership = await new MembershipRepository(
+        transaction,
+      ).getActiveStaffMembershipForUserInGuild(guild.id, user.id);
+      if (staffMembership === null) throw new NoStaffAppointmentError();
+      if (!staffMembership.club.active) throw new ClubInactiveError('team is inactive');
+      return staffMembership.club;
+    });
   }
 }
