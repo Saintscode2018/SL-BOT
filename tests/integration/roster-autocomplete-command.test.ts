@@ -208,9 +208,10 @@ describe('roster autocomplete command correlation', () => {
 
       expect(interaction.replies).toHaveLength(1);
       const embed = interaction.replies[0]?.embeds?.[0]?.data;
-      expect(embed?.title).toBe(`${emoji} @${roleName} Roster`);
+      expect(embed?.title).toBeUndefined();
+      expect(embed?.description).toBe(`${emoji} <@&${roleId}> Roster`);
       expect(embed?.fields?.some(({ name }) => name === 'Team')).toBe(false);
-      expect(embed?.title).not.toContain(roleId);
+      expect(embed?.description?.match(new RegExp(`<@&${roleId}>`, 'g'))).toHaveLength(1);
       expect(embed?.footer?.text).toBe(
         `Roster for ${emoji.startsWith('<:') ? '.Newcastle.' : emoji} @${roleName}, Roster League`,
       );

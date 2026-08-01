@@ -608,16 +608,18 @@ describe('Stage 4A Polish Verification', () => {
             });
 
       expect(embedData.author?.name).toBe('Development League');
-      expect(embedData.title).toBe('⚽ @T1 Roster');
+      expect(embedData.title).toBeUndefined();
+      expect(embedData.description).toBe(`⚽ <@&${club.discordRoleId}> Roster`);
       expect(embedData.color).toBe(0xf97316);
-      expect(embedData.description).toBeUndefined();
       expect(embedData.footer?.text).toBe('Roster for ⚽ @T1, Development League');
 
       const fields = embedData.fields ?? [];
       const fieldNames = fields.map((f) => f.name);
 
       expect(fieldNames).not.toContain('Team');
-      expect(embedData.title).not.toContain(club.discordRoleId);
+      expect(
+        JSON.stringify(embedData).match(new RegExp(`<@&${club.discordRoleId}>`, 'g')),
+      ).toHaveLength(1);
       expect(embedData.footer?.text).not.toContain(club.discordRoleId);
       expect(fieldNames).toContain('📊 Roster Count');
       expect(fieldNames).toContain('👑 Team Manager');

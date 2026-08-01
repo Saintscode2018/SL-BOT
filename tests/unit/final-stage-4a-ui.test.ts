@@ -450,14 +450,15 @@ describe('final Stage 4A command UI', () => {
     expect(text).not.toContain('**🔵');
   });
 
-  it('uses the readable roster title and removes the separate team field', async () => {
+  it('uses the message-mode roster description and removes title and team field', async () => {
     const interaction = new TestInteraction('roster', { team: team.id }, 'bot-channel');
 
     await command('roster').execute(interaction, createContext());
 
     const embed = interaction.replies[0]?.embeds?.[0]?.data;
     const text = responseText(interaction);
-    expect(embed?.title).toBe('🔵 @T1 Roster');
+    expect(embed?.title).toBeUndefined();
+    expect(embed?.description).toBe(`🔵 <@&${team.discordRoleId}> Roster`);
     expect(embed?.color).toBe(0xf97316);
     expect(embed?.footer?.text).toBe('Roster for 🔵 @T1, Development League');
     expect(embed?.fields?.map(({ name }) => name)).toEqual([
@@ -468,12 +469,11 @@ describe('final Stage 4A command UI', () => {
       '──────── Players ────────',
       '🏃 Players',
     ]);
-    expect(text).not.toContain(`<@&${team.discordRoleId}>`);
-    expect(embed?.title).not.toContain(team.discordRoleId);
+    expect(text.match(new RegExp(`<@&${team.discordRoleId}>`, 'g'))).toHaveLength(1);
     expect(text).not.toContain('Assistant Coach');
   });
 
-  it('renders custom-emoji roster title/footer safely with a blue role', async () => {
+  it('renders a custom-emoji roster description/footer safely with a blue role', async () => {
     const customTeam = {
       ...team,
       discordRoleId: '300000000000000002',
@@ -491,7 +491,10 @@ describe('final Stage 4A command UI', () => {
     await command('roster').execute(interaction, context);
 
     const embed = interaction.replies[0]?.embeds?.[0]?.data;
-    expect(embed?.title).toBe('<:Newcastle:987654321098765432> @T2 Roster');
+    expect(embed?.title).toBeUndefined();
+    expect(embed?.description).toBe(
+      '<:Newcastle:987654321098765432> <@&300000000000000002> Roster',
+    );
     expect(embed?.color).toBe(0x3498db);
     expect(embed?.footer?.text).toBe('Roster for .Newcastle. @T2, Development League');
     expect(embed?.footer?.text).not.toMatch(/<:|<@&|\d{17,20}/u);
@@ -513,9 +516,12 @@ describe('final Stage 4A command UI', () => {
     const embed = interaction.replies[0]?.embeds?.[0]?.data;
     expect(embed?.color).toBe(EMBED_COLORS.INFO);
     if (roleMetadata === null) {
-      expect(embed?.title).toBe('🔵 Team Roster');
+      expect(embed?.title).toBeUndefined();
+      expect(embed?.description).toBe(`🔵 <@&${team.discordRoleId}> Roster`);
       expect(embed?.footer?.text).toBe('Roster for 🔵 Unknown Team Role, Development League');
-      expect(JSON.stringify(embed)).not.toContain(team.discordRoleId);
+      expect(
+        JSON.stringify(embed).match(new RegExp(`<@&${team.discordRoleId}>`, 'g')),
+      ).toHaveLength(1);
     }
   });
 

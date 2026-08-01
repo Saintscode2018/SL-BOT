@@ -1,7 +1,7 @@
 import { EmbedBuilder, type APIEmbedField } from 'discord.js';
 
 export interface EmbedOptions {
-  title: string;
+  title?: string;
   color?: number;
   description?: string;
   fields?: APIEmbedField[];
@@ -29,7 +29,7 @@ export function createActorField(
   };
 }
 
-export function createSuccessEmbed(options: EmbedOptions): EmbedBuilder {
+export function createSuccessEmbed(options: EmbedOptions & { title: string }): EmbedBuilder {
   const embed = new EmbedBuilder()
     .setTitle(options.title)
     .setColor(options.color ?? EMBED_COLORS.SUCCESS);
@@ -50,10 +50,9 @@ export function createSuccessEmbed(options: EmbedOptions): EmbedBuilder {
 }
 
 export function createInfoEmbed(options: EmbedOptions): EmbedBuilder {
-  const embed = new EmbedBuilder()
-    .setTitle(options.title)
-    .setColor(options.color ?? EMBED_COLORS.INFO);
+  const embed = new EmbedBuilder().setColor(options.color ?? EMBED_COLORS.INFO);
 
+  if (options.title) embed.setTitle(options.title);
   if (options.author) {
     embed.setAuthor({
       name: options.author.name,
@@ -69,7 +68,7 @@ export function createInfoEmbed(options: EmbedOptions): EmbedBuilder {
   return embed;
 }
 
-export function createWarningEmbed(options: EmbedOptions): EmbedBuilder {
+export function createWarningEmbed(options: EmbedOptions & { title: string }): EmbedBuilder {
   const embed = new EmbedBuilder().setTitle(options.title).setColor(EMBED_COLORS.WARNING);
 
   if (options.author) {
@@ -87,7 +86,7 @@ export function createWarningEmbed(options: EmbedOptions): EmbedBuilder {
   return embed;
 }
 
-export function createErrorEmbed(options: EmbedOptions): EmbedBuilder {
+export function createErrorEmbed(options: EmbedOptions & { title: string }): EmbedBuilder {
   const embed = new EmbedBuilder().setTitle(options.title).setColor(EMBED_COLORS.ERROR);
 
   if (options.author) {

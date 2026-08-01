@@ -1008,7 +1008,7 @@ const rosterCommand: CommandDefinition = {
 
     const embed = createInfoEmbed({
       author: { name: leagueName },
-      title: `${formatTeamIdentity(presentation.team, 'title')} Roster`,
+      description: `${formatTeamIdentity(presentation.team, 'message')} Roster`,
       color: getTeamEmbedColor(presentation, EMBED_COLORS.INFO),
       fields: [
         {
