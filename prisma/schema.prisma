@@ -28,7 +28,7 @@ model GuildSettings {
   staffChannelId         String?
   transferChannelId      String?
   auditChannelId         String?
-  adminRoleId            String?
+  botPermissionsRoleId   String?
   teamManagerRoleId      String?
   assistantManagerRoleId String?
   playerManagerRoleId    String?

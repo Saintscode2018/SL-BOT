@@ -7,23 +7,27 @@ tags:
   - discord
 ---
 
-# Command Architecture & Visibility Matrix
+# Command Architecture & Visibility Matrix (Stage 4A Hotfix Updated)
 
 Index: [[SLBot]] | Architecture: [[Architecture]]
 
-## Stage 4A Target Command Tree
+> [!IMPORTANT]
+> Supersedes original Stage 4A matrix per Stage 4A Hotfix product decisions. All responses are Discord embeds. Errors are always ephemeral embeds.
+
+## Stage 4A Hotfix Command Tree
 
 ```
 /setup
-  ├── guild           (Inputs: offer_timeout_minutes)
+  ├── league          (Inputs: [offer_timeout_minutes])
   ├── channels        (Inputs: bot_commands, staff, transfer, audit)
-  ├── roles           (Inputs: league_admin, team_manager, assistant_manager, player_manager)
-  └── view            (Displays configuration & missing settings)
+  ├── roles           (Inputs: bot_permissions, team_manager, assistant_manager, player_manager)
+  └── view            (Displays league configuration & missing settings)
 
 /team
-  ├── add             (Inputs: name, short_name, role, [logo_url], [emoji])
-  ├── edit            (Inputs: team, [name], [short_name], [role], [logo_url], [emoji])
-  └── list            (Displays active teams, counts, limits, remaining spaces)
+  ├── add             (Inputs: name, short_name, role, [emoji], [logo_url])
+  ├── edit            (Inputs: team, [name], [short_name], [role], [emoji], [logo_url])
+  ├── remove          (Inputs: team) - Safe soft deactivation preserving historical records (distinguished from future /disband)
+  └── list            (Displays active teams with custom emojis, counts, limits, remaining spaces)
 
 /limit
   ├── default         (Inputs: amount 1-100)
@@ -44,28 +48,35 @@ Index: [[SLBot]] | Architecture: [[Architecture]]
 /health               (Check bot & DB status)
 ```
 
-## Response Visibility Matrix
+## Response Visibility & Channel Matrix
 
-| Command           | Allowed Channel                             | Response Visibility                           |
-| :---------------- | :------------------------------------------ | :-------------------------------------------- |
-| `/health`         | Any channel                                 | **Ephemeral**                                 |
-| `/setup guild`    | Staff channel (or anywhere if unconfigured) | **Ephemeral**                                 |
-| `/setup channels` | Staff channel (or anywhere if unconfigured) | **Ephemeral**                                 |
-| `/setup roles`    | Staff channel (or anywhere if unconfigured) | **Ephemeral**                                 |
-| `/setup view`     | Staff channel (or anywhere if unconfigured) | **Ephemeral**                                 |
-| `/team add`       | Staff channel                               | **Ephemeral**                                 |
-| `/team edit`      | Staff channel                               | **Ephemeral**                                 |
-| `/team list`      | Bot Commands channel                        | **Public**                                    |
-| `/limit default`  | Staff channel                               | **Ephemeral**                                 |
-| `/limit team`     | Staff channel                               | **Ephemeral**                                 |
-| `/limit reset`    | Staff channel                               | **Ephemeral**                                 |
-| `/limit view`     | Bot Commands channel                        | **Public**                                    |
-| `/staff appoint`  | Staff channel                               | **Ephemeral**                                 |
-| `/staff remove`   | Staff channel                               | **Ephemeral**                                 |
-| `/staff list`     | Bot Commands channel                        | **Public**                                    |
-| `/roster`         | Bot Commands channel                        | **Public**                                    |
-| `/offer create`   | Staff channel                               | **Ephemeral** (Delivers private DM to player) |
+| Command           | Allowed Channels                               | Authorization                       | Response Visibility                        |
+| :---------------- | :--------------------------------------------- | :---------------------------------- | :----------------------------------------- |
+| `/health`         | Bot Commands OR Staff                          | Normal bot user                     | **Ephemeral Embed**                        |
+| `/setup league`   | Staff channel only (Bootstrap exception below) | Global bot permission               | **Public Embed**                           |
+| `/setup channels` | Staff channel only (Bootstrap exception below) | Global bot permission               | **Public Embed**                           |
+| `/setup roles`    | Staff channel only (Bootstrap exception below) | Global bot permission               | **Public Embed**                           |
+| `/setup view`     | Staff channel only (Bootstrap exception below) | Global bot permission               | **Public Embed**                           |
+| `/team add`       | Staff channel only                             | Global bot permission               | **Public Embed**                           |
+| `/team edit`      | Staff channel only                             | Global bot permission               | **Public Embed**                           |
+| `/team remove`    | Staff channel only                             | Global bot permission               | **Public Embed**                           |
+| `/team list`      | Bot Commands OR Staff                          | Normal bot user                     | **Public Embed**                           |
+| `/limit default`  | Staff channel only                             | Global bot permission               | **Public Embed**                           |
+| `/limit team`     | Staff channel only                             | Global bot permission               | **Public Embed**                           |
+| `/limit reset`    | Staff channel only                             | Global bot permission               | **Public Embed**                           |
+| `/limit view`     | Bot Commands OR Staff                          | Normal bot user                     | **Public Embed**                           |
+| `/staff appoint`  | Staff channel only                             | Global bot permission               | **Public Embed**                           |
+| `/staff remove`   | Staff channel only                             | Global bot permission               | **Public Embed**                           |
+| `/staff list`     | Bot Commands OR Staff                          | Normal bot user                     | **Public Embed**                           |
+| `/roster`         | Bot Commands OR Staff                          | Normal bot user                     | **Public Embed**                           |
+| `/offer create`   | Bot Commands OR Staff                          | Club Staff or Global bot permission | **Public Embed Ack** (DM to target player) |
 
-All error responses and channel restriction warnings are strictly **ephemeral**.
+### Bootstrap Exception Rules
+
+- Before `staff` channel or `bot_permissions` role is configured, a Discord **Administrator** may execute setup commands in the current channel.
+- Once configured, setup commands MUST be run in the `staff` channel.
+- Ordinary users never receive bootstrap access.
+
+All error responses and channel policy violations produce **ephemeral error embeds**.
 
 Related notes: [[Product Decisions]], [[Roadmap]], [[Testing and Deployment]]

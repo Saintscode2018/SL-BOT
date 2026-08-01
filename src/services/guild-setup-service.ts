@@ -16,7 +16,7 @@ export interface SetupGuildInput {
   auditChannelId?: string;
   botCommandsChannelId?: string;
   staffChannelId?: string;
-  adminRoleId?: string;
+  botPermissionsRoleId?: string;
   teamManagerRoleId?: string;
   assistantManagerRoleId?: string;
   playerManagerRoleId?: string;
@@ -35,7 +35,7 @@ export interface SetupChannelsInput {
 export interface SetupRolesInput {
   authorization: AuthorizationInput;
   guildName: string;
-  adminRoleId: string;
+  botPermissionsRoleId: string;
   teamManagerRoleId: string;
   assistantManagerRoleId: string;
   playerManagerRoleId: string;
@@ -56,7 +56,7 @@ export interface SetupViewResult {
     auditChannelId: string | null;
   };
   roles: {
-    adminRoleId: string | null;
+    botPermissionsRoleId: string | null;
     teamManagerRoleId: string | null;
     assistantManagerRoleId: string | null;
     playerManagerRoleId: string | null;
@@ -74,7 +74,7 @@ export class GuildSetupService {
     guildName: string;
     offerTimeoutSeconds?: number;
   }): Promise<GuildSetupResult> {
-    new AuthorizationService(this.database).assertCanSetup(input.authorization);
+    await new AuthorizationService(this.database).assertCanSetup(input.authorization);
     return this.database.$transaction(async (transaction) => {
       const guilds = new GuildRepository(transaction);
       const existing = await guilds.getByDiscordGuildId(input.authorization.discordGuildId);
@@ -113,7 +113,7 @@ export class GuildSetupService {
   }
 
   public async setupChannels(input: SetupChannelsInput): Promise<GuildSetupResult> {
-    new AuthorizationService(this.database).assertCanSetup(input.authorization);
+    await new AuthorizationService(this.database).assertCanSetup(input.authorization);
     return this.database.$transaction(async (transaction) => {
       const guilds = new GuildRepository(transaction);
       const existing = await guilds.getByDiscordGuildId(input.authorization.discordGuildId);
@@ -158,7 +158,7 @@ export class GuildSetupService {
   }
 
   public async setupRoles(input: SetupRolesInput): Promise<GuildSetupResult> {
-    new AuthorizationService(this.database).assertCanSetup(input.authorization);
+    await new AuthorizationService(this.database).assertCanSetup(input.authorization);
     return this.database.$transaction(async (transaction) => {
       const guilds = new GuildRepository(transaction);
       const existing = await guilds.getByDiscordGuildId(input.authorization.discordGuildId);
@@ -171,7 +171,7 @@ export class GuildSetupService {
       });
       const previousSettings = await guilds.getSettings(guild.id);
       const settings = await guilds.upsertSettings(guild.id, {
-        adminRoleId: input.adminRoleId,
+        botPermissionsRoleId: input.botPermissionsRoleId,
         teamManagerRoleId: input.teamManagerRoleId,
         assistantManagerRoleId: input.assistantManagerRoleId,
         playerManagerRoleId: input.playerManagerRoleId,
@@ -186,13 +186,13 @@ export class GuildSetupService {
           previousSettings === null
             ? {}
             : {
-                adminRoleId: previousSettings.adminRoleId,
+                botPermissionsRoleId: previousSettings.botPermissionsRoleId,
                 teamManagerRoleId: previousSettings.teamManagerRoleId,
                 assistantManagerRoleId: previousSettings.assistantManagerRoleId,
                 playerManagerRoleId: previousSettings.playerManagerRoleId,
               },
         afterState: {
-          adminRoleId: settings.adminRoleId,
+          botPermissionsRoleId: settings.botPermissionsRoleId,
           teamManagerRoleId: settings.teamManagerRoleId,
           assistantManagerRoleId: settings.assistantManagerRoleId,
           playerManagerRoleId: settings.playerManagerRoleId,
@@ -203,7 +203,7 @@ export class GuildSetupService {
   }
 
   public async setup(input: SetupGuildInput): Promise<GuildSetupResult> {
-    new AuthorizationService(this.database).assertCanSetup(input.authorization);
+    await new AuthorizationService(this.database).assertCanSetup(input.authorization);
     return this.database.$transaction(async (transaction) => {
       const guilds = new GuildRepository(transaction);
       const existing = await guilds.getByDiscordGuildId(input.authorization.discordGuildId);
@@ -224,7 +224,9 @@ export class GuildSetupService {
           ? { transferChannelId: input.transferChannelId }
           : {}),
         ...(input.auditChannelId !== undefined ? { auditChannelId: input.auditChannelId } : {}),
-        ...(input.adminRoleId !== undefined ? { adminRoleId: input.adminRoleId } : {}),
+        ...(input.botPermissionsRoleId !== undefined
+          ? { botPermissionsRoleId: input.botPermissionsRoleId }
+          : {}),
         ...(input.teamManagerRoleId !== undefined
           ? { teamManagerRoleId: input.teamManagerRoleId }
           : {}),
@@ -250,13 +252,13 @@ export class GuildSetupService {
             : {
                 transferChannelId: previousSettings.transferChannelId,
                 auditChannelId: previousSettings.auditChannelId,
-                adminRoleId: previousSettings.adminRoleId,
+                botPermissionsRoleId: previousSettings.botPermissionsRoleId,
               },
         afterState: {
           configured: true,
           transferChannelId: settings.transferChannelId,
           auditChannelId: settings.auditChannelId,
-          adminRoleId: settings.adminRoleId,
+          botPermissionsRoleId: settings.botPermissionsRoleId,
           offerTimeoutSeconds: settings.offerTimeoutSeconds,
         },
       });
@@ -268,7 +270,7 @@ export class GuildSetupService {
     const guilds = new GuildRepository(this.database);
     const guild = await guilds.getByDiscordGuildId(discordGuildId);
     if (guild === null) {
-      throw new ConfigurationError('guild has not been setup yet');
+      throw new ConfigurationError('league has not been setup yet');
     }
     const settings = await guilds.getSettings(guild.id);
     const missing: string[] = [];
@@ -277,7 +279,7 @@ export class GuildSetupService {
     if (!settings?.staffChannelId) missing.push('Staff Channel');
     if (!settings?.transferChannelId) missing.push('Transfer Channel');
     if (!settings?.auditChannelId) missing.push('Audit Channel');
-    if (!settings?.adminRoleId) missing.push('League Admin Role');
+    if (!settings?.botPermissionsRoleId) missing.push('Bot Permissions Role');
     if (!settings?.teamManagerRoleId) missing.push('Team Manager Role');
     if (!settings?.assistantManagerRoleId) missing.push('Assistant Manager Role');
     if (!settings?.playerManagerRoleId) missing.push('Player Manager Role');
@@ -291,7 +293,7 @@ export class GuildSetupService {
         auditChannelId: settings?.auditChannelId ?? null,
       },
       roles: {
-        adminRoleId: settings?.adminRoleId ?? null,
+        botPermissionsRoleId: settings?.botPermissionsRoleId ?? null,
         teamManagerRoleId: settings?.teamManagerRoleId ?? null,
         assistantManagerRoleId: settings?.assistantManagerRoleId ?? null,
         playerManagerRoleId: settings?.playerManagerRoleId ?? null,

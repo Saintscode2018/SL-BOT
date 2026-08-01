@@ -1,4 +1,8 @@
-import type { MessageFlags, RESTPostAPIChatInputApplicationCommandsJSONBody } from 'discord.js';
+import type {
+  EmbedBuilder,
+  MessageFlags,
+  RESTPostAPIChatInputApplicationCommandsJSONBody,
+} from 'discord.js';
 
 import type { Logger } from '../logging/logger.js';
 import type { ClubManagementService } from '../services/club-management-service.js';
@@ -13,7 +17,8 @@ import type { StaffManagementService } from '../services/staff-management-servic
 import type { OfferButtonHandler } from './offer-button-handler.js';
 
 export interface SafeInteractionResponse {
-  content: string;
+  content?: string;
+  embeds?: readonly EmbedBuilder[];
   flags?: MessageFlags.Ephemeral;
 }
 
@@ -22,7 +27,8 @@ export interface DeferredInteractionResponse {
 }
 
 export interface EditedInteractionResponse {
-  content: string;
+  content?: string;
+  embeds?: readonly EmbedBuilder[];
 }
 
 export interface CommandInteraction {
@@ -38,7 +44,7 @@ export interface CommandInteraction {
   readonly hasAdministratorPermission?: boolean | undefined;
   readonly options?: CommandInteractionOptions | undefined;
   reply(response: SafeInteractionResponse): Promise<void>;
-  deferReply(response: DeferredInteractionResponse): Promise<void>;
+  deferReply(response?: DeferredInteractionResponse): Promise<void>;
   editReply(response: EditedInteractionResponse): Promise<void>;
   followUp(response: SafeInteractionResponse): Promise<void>;
 }

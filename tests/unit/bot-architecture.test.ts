@@ -191,12 +191,9 @@ describe('interaction handler', () => {
     const interaction = new FakeInteraction('alpha');
     await handleInteractionCreate(interaction, registry, context(logger), logger);
     expect(logger.entries.some(({ level }) => level === 'error')).toBe(true);
-    expect(interaction.replies).toEqual([
-      {
-        content: 'The command could not be completed. Please try again later.',
-        flags: MessageFlags.Ephemeral,
-      },
-    ]);
+    expect(interaction.replies).toHaveLength(1);
+    expect(interaction.replies[0]?.flags).toBe(MessageFlags.Ephemeral);
+    expect(interaction.replies[0]?.embeds?.[0]?.data?.title).toBe('Command failed');
     expect(JSON.stringify(interaction.replies)).not.toContain('private database detail');
   });
 
@@ -208,11 +205,11 @@ describe('interaction handler', () => {
         vi.fn(() => Promise.reject(new Error('private detail'))),
       ),
     ]);
-    const interaction = new FakeInteraction('alpha', false, true);
+    const interaction = new FakeInteraction('alpha');
+    interaction.deferred = true;
     await handleInteractionCreate(interaction, registry, context(logger), logger);
-    expect(interaction.replies).toEqual([]);
     expect(interaction.edits).toHaveLength(1);
-    expect(interaction.followUps).toEqual([]);
+    expect(interaction.edits[0]?.embeds?.[0]?.data?.title).toBe('Command failed');
     expect(JSON.stringify(interaction.edits)).not.toContain('private detail');
   });
 });

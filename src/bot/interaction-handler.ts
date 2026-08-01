@@ -111,7 +111,7 @@ class DiscordCommandInteraction implements CommandInteraction {
     await this.interaction.reply(response);
   }
 
-  public async deferReply(response: DeferredInteractionResponse): Promise<void> {
+  public async deferReply(response?: DeferredInteractionResponse): Promise<void> {
     await this.interaction.deferReply(response);
   }
 
@@ -141,13 +141,14 @@ export async function handleInteractionCreate(
     await command.execute(interaction, context);
   } catch (error: unknown) {
     logger.error('command execution failed', error, { commandName: interaction.commandName });
-    const response = {
-      content: mapDiscordError(error),
+    const mapped = mapDiscordError(error);
+    const response: SafeInteractionResponse = {
+      embeds: [mapped.embed],
       flags: MessageFlags.Ephemeral,
-    } as const;
+    };
     try {
       if (interaction.deferred && !interaction.replied) {
-        await interaction.editReply({ content: response.content });
+        await interaction.editReply({ embeds: [mapped.embed] });
       } else if (interaction.replied) {
         await interaction.followUp(response);
       } else {
@@ -217,7 +218,7 @@ class DiscordOfferButton implements OfferButtonInteraction {
     await this.interaction.reply(response);
   }
 
-  public async deferReply(response: DeferredInteractionResponse): Promise<void> {
+  public async deferReply(response?: DeferredInteractionResponse): Promise<void> {
     await this.interaction.deferReply(response);
   }
 
@@ -266,12 +267,13 @@ export function createInteractionCreateHandler(
         await context.offerButtonHandler.handle(adapted);
       } catch (error: unknown) {
         logger.error('button interaction failed', error, { customId: adapted.customId });
+        const mapped = mapDiscordError(error);
         const response = {
-          content: mapDiscordError(error),
+          embeds: [mapped.embed],
           flags: MessageFlags.Ephemeral,
         } as const;
         if (adapted.deferred && !adapted.replied) {
-          await adapted.editReply({ content: response.content });
+          await adapted.editReply({ embeds: [mapped.embed] });
         } else if (adapted.replied) {
           await adapted.followUp(response);
         } else {

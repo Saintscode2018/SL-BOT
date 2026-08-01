@@ -23,10 +23,25 @@ export interface AuthorizationResult {
 export class AuthorizationService {
   public constructor(private readonly database: DatabaseClient) {}
 
-  public assertCanSetup(input: AuthorizationInput): void {
-    if (input.discordUserId !== input.guildOwnerId && !input.hasAdministratorPermission) {
-      throw new AuthorizationError('guild setup requires the server owner or administrator');
+  public async assertCanSetup(input: AuthorizationInput): Promise<void> {
+    if (input.discordUserId === input.guildOwnerId || input.hasAdministratorPermission) {
+      return;
     }
+    const guilds = new GuildRepository(this.database);
+    const guild = await guilds.getByDiscordGuildId(input.discordGuildId);
+    if (guild !== null) {
+      const settings = await guilds.getSettings(guild.id);
+      if (
+        settings?.botPermissionsRoleId !== null &&
+        settings?.botPermissionsRoleId !== undefined &&
+        input.memberRoleIds.includes(settings.botPermissionsRoleId)
+      ) {
+        return;
+      }
+    }
+    throw new AuthorizationError(
+      'You need the configured bot permissions role to use this command.',
+    );
   }
 
   public async authorizeLeagueAdministration(
@@ -40,12 +55,14 @@ export class AuthorizationService {
       return { ...configuration, kind: 'administrator' };
     }
     if (
-      configuration.settings.adminRoleId !== null &&
-      input.memberRoleIds.includes(configuration.settings.adminRoleId)
+      configuration.settings.botPermissionsRoleId !== null &&
+      input.memberRoleIds.includes(configuration.settings.botPermissionsRoleId)
     ) {
       return { ...configuration, kind: 'league_admin' };
     }
-    throw new AuthorizationError('league administration permission is required');
+    throw new AuthorizationError(
+      'You need the configured bot permissions role to use this command.',
+    );
   }
 
   public async authorizeClubAction(
@@ -60,8 +77,8 @@ export class AuthorizationService {
       return { ...configuration, kind: 'administrator' };
     }
     if (
-      configuration.settings.adminRoleId !== null &&
-      input.memberRoleIds.includes(configuration.settings.adminRoleId)
+      configuration.settings.botPermissionsRoleId !== null &&
+      input.memberRoleIds.includes(configuration.settings.botPermissionsRoleId)
     ) {
       return { ...configuration, kind: 'league_admin' };
     }

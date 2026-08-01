@@ -72,13 +72,13 @@ describe('Stage 4A Services and Policies', () => {
       const result = await setupService.setupRoles({
         authorization: ownerAuth(),
         guildName: 'Test Guild',
-        adminRoleId: '555555555555555555',
+        botPermissionsRoleId: '555555555555555555',
         teamManagerRoleId: '666666666666666666',
         assistantManagerRoleId: '777777777777777777',
         playerManagerRoleId: '888888888888888888',
       });
 
-      expect(result.settings.adminRoleId).toBe('555555555555555555');
+      expect(result.settings.botPermissionsRoleId).toBe('555555555555555555');
       expect(result.settings.teamManagerRoleId).toBe('666666666666666666');
       expect(result.settings.assistantManagerRoleId).toBe('777777777777777777');
       expect(result.settings.playerManagerRoleId).toBe('888888888888888888');
@@ -96,7 +96,7 @@ describe('Stage 4A Services and Policies', () => {
       expect(view.defaultSquadLimit).toBe(17);
       expect(view.missingConfigurations).toContain('Bot Commands Channel');
       expect(view.missingConfigurations).toContain('Staff Channel');
-      expect(view.missingConfigurations).toContain('League Admin Role');
+      expect(view.missingConfigurations).toContain('Bot Permissions Role');
     });
   });
 
@@ -137,20 +137,29 @@ describe('Stage 4A Services and Policies', () => {
 
       const policyService = new CommandChannelPolicyService(context.client);
 
-      // Wrong channel
+      // Wrong channel (neither bot commands nor staff)
       await expect(
         policyService.validateChannelPolicy({
           discordGuildId: '100000000000000001',
-          channelId: '222222222222222222', // staff channel
+          channelId: '999999999999999999', // arbitrary channel
           commandName: 'roster',
         }),
       ).rejects.toThrow(ConfigurationError);
 
-      // Correct channel
+      // Correct bot commands channel
       await expect(
         policyService.validateChannelPolicy({
           discordGuildId: '100000000000000001',
           channelId: '111111111111111111', // bot commands channel
+          commandName: 'roster',
+        }),
+      ).resolves.toBeUndefined();
+
+      // Correct staff channel
+      await expect(
+        policyService.validateChannelPolicy({
+          discordGuildId: '100000000000000001',
+          channelId: '222222222222222222', // staff channel
           commandName: 'roster',
         }),
       ).resolves.toBeUndefined();

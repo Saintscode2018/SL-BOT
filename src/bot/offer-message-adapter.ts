@@ -18,6 +18,7 @@ import type {
 } from '../services/offer-delivery-service.js';
 import type { OfferCreationResult } from '../services/offer-creation-service.js';
 import { createOfferCustomId } from './offer-custom-id.js';
+import { getTeamThumbnail } from './emoji-helper.js';
 
 const neutralColor = 0x5865f2;
 
@@ -58,8 +59,9 @@ function offerEmbed(result: OfferCreationResult): EmbedBuilder {
       { name: 'Current Club', value: result.sourceClub?.name ?? 'Free agent', inline: true },
       { name: 'Expires', value: `<t:${expiresAt}:F>\n<t:${expiresAt}:R>` },
     );
-  if (result.destinationClub.logoUrl !== null) {
-    embed.setThumbnail(result.destinationClub.logoUrl);
+  const thumbnail = getTeamThumbnail(result.destinationClub.emoji, result.destinationClub.logoUrl);
+  if (thumbnail !== null) {
+    embed.setThumbnail(thumbnail);
   }
   return embed;
 }

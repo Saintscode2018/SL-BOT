@@ -1,45 +1,61 @@
 # SL Bot
 
-SL Bot is a TypeScript Discord administration bot for the SL League. Stage 4A provides focused command subcommands, channel policy enforcement, squad limit management, public informational responses, and structured project brain documentation while retaining legacy Python implementation files and `superleague.db` as untouched references.
+SL Bot is a TypeScript Discord administration bot for the SL League. Stage 4A (with Stage 4A Hotfix updates) provides focused command subcommands, channel policy enforcement, squad limit management, public informational responses, custom Discord emoji team branding, embed-only responses, and structured project documentation while retaining legacy Python implementation files and `superleague.db` as untouched references.
 
 The database is authoritative. Discord roles are linked presentation and authorization objects; this stage never assigns or removes them automatically.
 
 ## Command tree
 
 - `/setup`
-  - `guild`: Set offer timeout for the server. (Ephemeral)
-  - `channels`: Configure bot-commands, staff, transfer, and audit channels. (Ephemeral)
-  - `roles`: Configure league admin, team manager, assistant manager, and player manager roles. (Ephemeral)
-  - `view`: Display current server configuration and missing settings. (Ephemeral)
+  - `league`: Set default offer timeout for the league. (Public embed in staff channel)
+  - `channels`: Configure bot-commands, staff, transfer, and audit channels. (Public embed in staff channel)
+  - `roles`: Configure bot_permissions, team_manager, assistant_manager, and player_manager roles. (Public embed in staff channel)
+  - `view`: Display current league configuration and missing settings. (Public embed in staff channel)
 - `/team`
-  - `add`: Register a new team linked to an existing role (inherits default squad limit). (Ephemeral)
-  - `edit`: Update team name, short name, role, logo URL, or emoji. (Ephemeral)
-  - `list`: List active teams, role mentions, player counts, effective limit, and remaining spaces. (**Public in bot-commands channel**)
+  - `add`: Register a new team linked to an existing role with optional custom Discord emoji branding. (Public embed in staff channel)
+  - `edit`: Update team name, short name, role, custom emoji, or logo URL. (Public embed in staff channel)
+  - `remove`: Safe soft deactivation of an active team while preserving all historical records (memberships, staff appointments, offers, transactions, and audit events). Full franchise shutdown is reserved for the future `/disband` workflow. (Public embed in staff channel)
+  - `list`: List active teams with role mentions, custom emojis, player counts, effective limit, and remaining spaces. (Public embed in bot-commands or staff)
 - `/limit`
-  - `default`: Set guild-wide default squad limit (1–100, default 17). (Ephemeral)
-  - `team`: Set squad limit override for a specific club (1–100). (Ephemeral)
-  - `reset`: Clear squad limit override for a specific club. (Ephemeral)
-  - `view`: Display guild default and per-club overrides. (**Public in bot-commands channel**)
+  - `default`: Set guild-wide default squad limit (1–100, default 17). (Public embed in staff channel)
+  - `team`: Set squad limit override for a specific club (1–100). (Public embed in staff channel)
+  - `reset`: Clear squad limit override for a specific club. (Public embed in staff channel)
+  - `view`: Display guild default and per-club overrides. (Public embed in bot-commands or staff)
 - `/staff`
-  - `appoint`: Appoint a Team Manager, Assistant Manager, or Player Manager. (Ephemeral)
-  - `remove`: Remove active holder of a staff position. (Ephemeral)
-  - `list`: List active team staff (single team or all teams). (**Public in bot-commands channel**)
-- `/roster`: Display team roster with active players, player count, effective limit, and remaining spaces. (**Public in bot-commands channel**)
-- `/offer create`: Send a private DM contract offer card with persistent Sign Contract and Decline Offer buttons. (Ephemeral DM delivery)
-- `/health`: Report bot and database status ephemerally in any channel. (Ephemeral)
+  - `appoint`: Appoint a Team Manager, Assistant Manager, or Player Manager. (Public embed in staff channel)
+  - `remove`: Remove active holder of a staff position. (Public embed in staff channel)
+  - `list`: List active team staff with custom team emojis. (Public embed in bot-commands or staff)
+- `/roster`: Display team roster with active players, player count, effective limit, custom emoji thumbnail, and remaining spaces. (Public embed in bot-commands or staff)
+- `/offer create`: Send a private DM contract offer card with persistent Sign Contract and Decline Offer buttons, and output a public embed acknowledgement in channel.
+- `/health`: Report bot and database status ephemerally. (Ephemeral embed in bot-commands or staff)
 
 Team inputs use database-backed autocomplete. Inactive teams are excluded and every selected internal club ID is revalidated during execution.
+
+## Authorization and Global Bot Permissions
+
+Global bot administrative access requires either:
+
+- holding the configured `bot_permissions` role (`botPermissionsRoleId`), or
+- having the Discord **Administrator** permission.
+
+Discord Administrator permission provides a recovery path and enables bootstrap setup before the `bot_permissions` role or system channels are configured. Club staff roles (Team Manager, Assistant Manager, Player Manager) grant authority over their specific club operations (such as creating offers), but DO NOT grant global bot permissions or setup access.
 
 ## Channel policy and response visibility
 
 Commands are enforced via `CommandChannelPolicyService`:
 
-- Public informational commands (`/team list`, `/staff list`, `/roster`, `/limit view`) execute only in the configured **Bot Commands Channel** and produce public responses.
-- Administrative and mutation commands (`/setup *`, `/team add/edit`, `/limit default/team/reset`, `/offer create`, `/staff appoint/remove`) execute only in the configured **Staff Channel** and produce ephemeral responses.
-- Ephemeral error messages guide users to the correct channel if triggered in an unauthorized channel.
-- Channel policies apply strictly to all users; administrators cannot bypass channel policies.
-- `/setup` subcommands can be bootstrapped in any channel prior to staff channel configuration.
-- `/health` functions in any channel.
+- **Dual-Channel Commands** (`/health`, `/team list`, `/staff list`, `/roster`, `/limit view`, `/offer create`): Can be used in either the configured **Bot Commands Channel** or **Staff Channel**.
+- **Staff-Only Commands** (`/setup *`, `/team add|edit|remove`, `/limit default|team|reset`, `/staff appoint|remove`): Must be used strictly in the configured **Staff Channel**.
+- **Bootstrap Exception**: Before the staff channel or `bot_permissions` role is configured, a Discord Administrator may execute `/setup` commands in the current channel.
+- **Embed-Only Responses**: Every response generated by the bot is a Discord embed (public successes, ephemeral errors, setup outputs, list views, and offer acknowledgements). Plain-text replies are prohibited for command output.
+- **Ephemeral Errors**: All handled errors produce visible ephemeral error embeds detailing the issue without exposing stack traces to end users.
+
+## Team branding with custom emojis
+
+- Teams support custom Discord emojis (`<:name:emojiId>` or `<a:name:emojiId>`).
+- Custom emojis are validated and converted to Discord CDN URLs (`https://cdn.discordapp.com/emojis/EMOJI_ID.png` or `.gif`).
+- Single-team embeds (team add/edit confirmations, roster views, offer cards) use the derived CDN URL as their embed thumbnail.
+- Multi-team list embeds display custom emoji mentions inline beside team names.
 
 ## Squad limit model
 
@@ -48,76 +64,6 @@ Commands are enforced via `CommandChannelPolicyService`:
 - Effective limit = `squadLimitOverride ?? defaultSquadLimit`.
 - Derived dynamically via domain helper `getEffectiveSquadLimit(club, settings)`.
 - Staff appointments do not count toward player squad limits; staff members count as players only if they hold an active `PLAYER` membership.
-
-## Architecture
-
-The dependency direction is `bot -> services -> repositories -> Prisma`. Application construction creates one Prisma client, one Discord client, explicit services, static command/event registries, and typed interaction context. Command handlers contain no raw Prisma queries. Services and repositories do not import discord.js.
-
-Every multi-write guild, team, staff, roster, offer, decline, and recovery workflow uses a Prisma transaction with an audit record. Squad capacity is derived from active `PLAYER` memberships and effective squad limits. Existing migration-level partial indexes, checks, and cross-guild foreign keys remain authoritative.
-
-Offer buttons use deterministic IDs such as `offer:accept:<offer uuid>`. They contain no user, guild, or secret data and are dispatched globally through `interactionCreate`, so they continue working after a bot restart without in-memory collectors.
-
-See [docs/architecture.md](docs/architecture.md) for transaction and failure semantics.
-
-## Environment
-
-Use Node.js 22.5 or newer within the Node.js 22 line. Copy `.env.example` to `.env`:
-
-```dotenv
-NODE_ENV=development
-DATABASE_URL=file:./dev.db
-LOG_LEVEL=info
-DISCORD_TOKEN=
-DISCORD_APPLICATION_ID=
-DISCORD_DEVELOPMENT_GUILD_ID=
-```
-
-`DISCORD_TOKEN` is required only for bot startup, command deployment, or other Discord network work. Database tests and maintenance do not require a token. Application and development guild IDs are required only for guild command deployment. No league roles, channels, teams, or legacy snowflakes belong in the environment; `/setup` stores them in SQLite.
-
-Normal application startup loads `.env` before validating runtime configuration. Values already supplied by the process environment take precedence. Tokens and complete environment objects are never written to application logs.
-
-## First development startup
-
-1. Install dependencies and generate Prisma:
-
-   ```sh
-   npm install
-   npm run prisma:generate
-   ```
-
-2. Apply committed migrations to the development database:
-
-   ```sh
-   npm run prisma:migrate:deploy
-   ```
-
-3. Deploy the exact static registry to the development guild:
-
-   ```sh
-   npm run commands:deploy:guild
-   ```
-
-4. Start the bot:
-
-   ```sh
-   npm run dev
-   ```
-
-Command deployment is explicit and guild-scoped. Normal startup never deploys commands and the deployment script never starts the gateway client.
-
-## Discord Developer Portal setup & Gateway Intents
-
-Create or select an application, add its bot user, and reset/copy the bot token into `.env`. Copy the Application ID from General Information and the target server ID from Discord developer mode.
-
-The bot requires only the non-privileged **`Guilds`** gateway intent (`GatewayIntentBits.Guilds`).
-Leave **Server Members Intent** (`GuildMembers`) and **Message Content Intent** disabled.
-
-In OAuth2 URL Generator select:
-
-- scopes: `bot` and `applications.commands`
-- bot permissions: View Channels, Send Messages, Embed Links, and Read Message History
-
-Invite the bot to the development guild.
 
 ## Quality commands
 
@@ -131,7 +77,3 @@ npm test
 ```
 
 Prisma migrations are the schema authority; do not substitute `prisma db push`.
-
-## Current limitations
-
-Stage 4A provides server configuration, command channel policies, and squad limit administration. It does not mutate Discord roles, announce transfers publicly in `transferChannelId`, publish live logs to `auditChannelId`, synchronize rosters from roles, import CSV files, schedule recurring expiration, manage fixtures/results/pickups/applications/lineups, provide monetization, or expose a web dashboard. Global command deployment is intentionally not included.

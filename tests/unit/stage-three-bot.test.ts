@@ -324,9 +324,8 @@ describe('stage three command registry and deployment', () => {
       interaction,
       commandContext(new MemoryLogger(), () => Promise.reject(new Error('database secret'))),
     );
-    expect(interaction.replies).toEqual([
-      { content: 'SL Bot is online.\nDatabase: unavailable', flags: MessageFlags.Ephemeral },
-    ]);
+    expect(interaction.replies).toHaveLength(1);
+    expect(interaction.replies[0]?.embeds?.[0]?.data?.title).toBe('SL Bot System Health');
     expect(JSON.stringify(interaction.replies)).not.toContain('database secret');
   });
 
@@ -373,7 +372,7 @@ describe('stage three command registry and deployment', () => {
             staffChannelId: null,
             transferChannelId: null,
             auditChannelId: null,
-            adminRoleId: null,
+            botPermissionsRoleId: null,
             teamManagerRoleId: null,
             assistantManagerRoleId: null,
             playerManagerRoleId: null,
@@ -386,7 +385,7 @@ describe('stage three command registry and deployment', () => {
         }),
     };
     await command?.execute(interaction, context);
-    expect(interaction.replies[0]?.content).toContain('Arsenal — 0/22 (22 spaces remaining)');
+    expect(interaction.replies[0]?.embeds?.[0]?.data?.title).toBe('Team Roster — Arsenal (ARS)');
   });
 
   it('defers offer creation before delivery and edits the successful response', async () => {
@@ -401,11 +400,8 @@ describe('stage three command registry and deployment', () => {
     expect(interaction.order).toEqual(['defer', 'delivery', 'edit']);
     expect(interaction.replies).toEqual([]);
     expect(interaction.followUps).toEqual([]);
-    expect(interaction.edits).toEqual([
-      {
-        content: 'Offer sent privately to <@100000000000000003>.',
-      },
-    ]);
+    expect(interaction.edits).toHaveLength(1);
+    expect(interaction.edits[0]?.embeds?.[0]?.data?.title).toBe('Contract Offer Sent');
   });
 
   it('edits a deferred command with a safe failure and never sends a second initial reply', async () => {
@@ -532,12 +528,12 @@ describe('stage three command registry and deployment', () => {
   });
 
   it('maps a DM send failure to a safe manager response', () => {
-    expect(mapDiscordError(new OfferDeliveryError('offer message could not be delivered'))).toBe(
+    const mapped1 = mapDiscordError(new OfferDeliveryError('offer message could not be delivered'));
+    expect(mapped1.description).toBe(
       'The player could not be contacted privately, so the offer was cancelled.',
     );
-    expect(mapDiscordError(new OfferDeliveryError('discord raw detail'))).not.toContain(
-      'discord raw detail',
-    );
+    const mapped2 = mapDiscordError(new OfferDeliveryError('discord raw detail'));
+    expect(mapped2.description).not.toContain('discord raw detail');
   });
 });
 
@@ -743,15 +739,17 @@ describe('persistent offer buttons', () => {
 
 describe('discord error mapping', () => {
   it('maps expected errors and keeps unknown internal text private', () => {
-    expect(mapDiscordError(new AuthorizationError('private authorization detail'))).toBe(
-      'You are not authorized to do that.',
-    );
-    expect(mapDiscordError(new Error('raw database password'))).toBe(
-      'The command could not be completed. Please try again later.',
-    );
-    expect(mapDiscordError(new Error('raw database password'))).not.toContain('password');
-    expect(mapDiscordError(new InvalidOfferMessageError('private message ids'))).toBe(
-      'This offer interaction is not valid.',
-    );
+    const authMapped = mapDiscordError(new AuthorizationError('private authorization detail'));
+    expect(authMapped.title).toBe('Permission denied');
+    expect(authMapped.description).toBe('private authorization detail');
+
+    const unknownMapped = mapDiscordError(new Error('raw database password'));
+    expect(unknownMapped.title).toBe('Command failed');
+    expect(unknownMapped.description).toBe('An unexpected error occurred. Please try again later.');
+    expect(unknownMapped.description).not.toContain('password');
+
+    const invalidOfferMapped = mapDiscordError(new InvalidOfferMessageError('private message ids'));
+    expect(invalidOfferMapped.title).toBe('Invalid offer interaction');
+    expect(invalidOfferMapped.description).toBe('This offer interaction is no longer valid.');
   });
 });

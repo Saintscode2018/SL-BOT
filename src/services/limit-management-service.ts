@@ -37,6 +37,8 @@ export interface LimitViewResult {
     clubId: string;
     name: string;
     shortName: string;
+    emoji: string | null;
+    logoUrl: string | null;
     override: number;
     effectiveLimit: number;
   }>;
@@ -45,6 +47,8 @@ export interface LimitViewResult {
         clubId: string;
         name: string;
         shortName: string;
+        emoji: string | null;
+        logoUrl: string | null;
         override: number | null;
         effectiveLimit: number;
       }
@@ -192,6 +196,8 @@ export class LimitManagementService {
         clubId: c.id,
         name: c.name,
         shortName: c.shortName,
+        emoji: c.emoji,
+        logoUrl: c.logoUrl,
         override: c.squadLimitOverride!,
         effectiveLimit: getEffectiveSquadLimit(c, settings),
       }));
@@ -204,6 +210,8 @@ export class LimitManagementService {
           clubId: found.id,
           name: found.name,
           shortName: found.shortName,
+          emoji: found.emoji,
+          logoUrl: found.logoUrl,
           override: found.squadLimitOverride,
           effectiveLimit: getEffectiveSquadLimit(found, settings),
         };
