@@ -12,9 +12,6 @@ import type {
 } from '../../src/bot/types.js';
 import {
   ClubInactiveError,
-  DuplicateTeamNameError,
-  DuplicateTeamRoleError,
-  DuplicateTeamShortNameError,
   StaffAlreadyAppointedError,
   TeamPositionOccupiedError,
 } from '../../src/domain/errors.js';
@@ -42,7 +39,10 @@ class MockCommandInteraction implements CommandInteraction {
   public followUps: SafeInteractionResponse[] = [];
   public replied = false;
   public deferred = false;
-  public availableEmojiIds = new Set<string>(['123456789012345678', '987654321098765432']);
+  public guildEmojis = [
+    { id: '123456789012345678', name: 'arsenal', animated: false },
+    { id: '987654321098765432', name: 'chelsea_fire', animated: true },
+  ];
 
   public constructor(
     public readonly commandName: string,
@@ -75,8 +75,8 @@ class MockCommandInteraction implements CommandInteraction {
     return this.authorization.hasAdministratorPermission;
   }
 
-  public hasGuildEmoji(emojiId: string): boolean {
-    return this.availableEmojiIds.has(emojiId);
+  public getGuildEmojis(): typeof this.guildEmojis {
+    return this.guildEmojis;
   }
 
   public get options(): CommandInteractionOptions {
@@ -126,6 +126,10 @@ class MockCommandInteraction implements CommandInteraction {
 
   public followUp(response: SafeInteractionResponse): Promise<void> {
     this.followUps.push(response);
+    return Promise.resolve();
+  }
+
+  public deleteReply(): Promise<void> {
     return Promise.resolve();
   }
 }
@@ -242,6 +246,7 @@ describe('Stage 4A Polish Verification', () => {
         ),
       },
       offerButtonHandler: { handle: vi.fn() },
+      setupAuditService: { publish: vi.fn(() => Promise.resolve(true)) },
     };
 
     await guildSetupService.setupGuildOnly({
@@ -278,7 +283,7 @@ describe('Stage 4A Polish Verification', () => {
           discordRoleId: '300000000000000001',
           emoji: '🔴',
         }),
-      ).rejects.toBeInstanceOf(DuplicateTeamRoleError);
+      ).rejects.toThrow('⚽ Chelsea (CHE)');
     });
 
     it('detects duplicate team name and short name', async () => {
@@ -299,7 +304,7 @@ describe('Stage 4A Polish Verification', () => {
           discordRoleId: '300000000000000002',
           emoji: '🔵',
         }),
-      ).rejects.toBeInstanceOf(DuplicateTeamNameError);
+      ).rejects.toThrow('⚽ Chelsea (CHE)');
 
       await expect(
         clubService.create({
@@ -309,7 +314,7 @@ describe('Stage 4A Polish Verification', () => {
           discordRoleId: '300000000000000003',
           emoji: '🔵',
         }),
-      ).rejects.toBeInstanceOf(DuplicateTeamShortNameError);
+      ).rejects.toThrow('⚽ Chelsea (CHE)');
     });
   });
 
@@ -448,7 +453,7 @@ describe('Stage 4A Polish Verification', () => {
 
       const response = interaction.edits[0] ?? interaction.replies[0];
       expect(response).toBeDefined();
-      expect(response?.embeds?.[0]?.data?.title).toBe('❌ Invalid team emoji');
+      expect(response?.embeds?.[0]?.data?.title).toBe('❌ Invalid Team Emoji');
     });
   });
 
@@ -501,7 +506,7 @@ describe('Stage 4A Polish Verification', () => {
       expect(commandContext.offerDeliveryService.createAndDeliver).toHaveBeenCalledWith(
         expect.objectContaining({ destinationClubId: club.id }),
       );
-      expect(interaction.edits[0]?.embeds?.[0]?.data.title).toBe('✅ Contract Offer Sent');
+      expect(interaction.followUps[0]?.embeds?.[0]?.data.title).toBe('✅ Contract Offer Sent');
     });
 
     it('rejects global bot permission without an active staff appointment', async () => {
@@ -536,7 +541,7 @@ describe('Stage 4A Polish Verification', () => {
 
       const response = interaction.edits[0] ?? interaction.replies[0];
       expect(response).toBeDefined();
-      expect(response?.embeds?.[0]?.data?.title).toBe('❌ Staff appointment required');
+      expect(response?.embeds?.[0]?.data?.title).toBe('❌ Staff Appointment Required');
     });
 
     it('reports the specific inactive team error for an inactive source club', async () => {
@@ -644,20 +649,20 @@ describe('Stage 4A Polish Verification', () => {
             });
 
       expect(embedData.author?.name).toBe('Development League');
-      expect(embedData.title).toBe('⚽ Chelsea FC Roster');
+      expect(embedData.title).toBe('⚽ Chelsea FC (CHE) Roster');
       expect(embedData.footer?.text).toContain('Roster for Development League');
 
       const fields = embedData.fields ?? [];
       const fieldNames = fields.map((f) => f.name);
 
       expect(fieldNames).toContain('📊 Roster Count');
-      expect(fieldNames).toContain('👑 Franchise Owner(s)');
-      expect(fieldNames).toContain('👔 General Manager(s)');
-      expect(fieldNames).toContain('🧠 Head Coach(es)');
-      expect(fieldNames).toContain('📋 Assistant Coach(es)');
-      expect(fields.find((field) => field.name === '📋 Assistant Coach(es)')?.value).toBe(
-        'Future Role — Not Available Yet',
-      );
+      expect(fieldNames).toContain('👑 Team Manager');
+      expect(fieldNames).toContain('👔 Assistant Team Manager');
+      expect(fieldNames).toContain('🧠 Player Manager');
+      expect(fieldNames).not.toContain('👑 Franchise Owner(s)');
+      expect(fieldNames).not.toContain('👔 General Manager(s)');
+      expect(fieldNames).not.toContain('🧠 Head Coach(es)');
+      expect(fieldNames).not.toContain('📋 Assistant Coach(es)');
       expect(fieldNames).toContain('──────── Players ────────');
       expect(fieldNames).toContain('🏃 Players');
     });

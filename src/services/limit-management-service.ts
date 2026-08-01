@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { Club, PrismaClient } from '@prisma/client';
 
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { ValidationError } from '../domain/errors.js';
@@ -93,6 +93,7 @@ export class LimitManagementService {
   }
 
   public async setTeamLimit(input: SetTeamLimitInput): Promise<{
+    club: Club;
     clubName: string;
     override: number;
     effectiveLimit: number;
@@ -130,6 +131,7 @@ export class LimitManagementService {
       });
 
       return {
+        club: updatedClub,
         clubName: updatedClub.name,
         override: input.amount,
         effectiveLimit,
@@ -138,6 +140,7 @@ export class LimitManagementService {
   }
 
   public async resetTeamLimit(input: ResetTeamLimitInput): Promise<{
+    club: Club;
     clubName: string;
     effectiveLimit: number;
   }> {
@@ -173,6 +176,7 @@ export class LimitManagementService {
       });
 
       return {
+        club: updatedClub,
         clubName: updatedClub.name,
         effectiveLimit,
       };

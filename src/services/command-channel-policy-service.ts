@@ -1,108 +1,117 @@
 import type { PrismaClient } from '@prisma/client';
 
-import { AuthorizationError, ConfigurationError } from '../domain/errors.js';
+import {
+  AdministrativePermissionDeniedError,
+  AdministrativeWrongChannelError,
+  BotCommandsChannelNotConfiguredError,
+  DebugAdministratorPermissionRequiredError,
+  LeagueSetupRequiredError,
+  StaffChannelNotConfiguredError,
+  WrongCommandChannelError,
+} from '../domain/errors.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
+import type { AuthorizationInput } from './authorization-service.js';
+import { AuthorizationService } from './authorization-service.js';
 
-export type CommandChannelCategory = 'DUAL' | 'STAFF_ONLY';
+export type CommandChannelCategory = 'ADMINISTRATIVE' | 'DEBUG' | 'INFORMATIONAL' | 'TEAM_STAFF';
 
 export interface ValidateChannelPolicyInput {
-  discordGuildId: string;
+  authorization: AuthorizationInput;
   channelId: string;
   commandName: string;
   subcommand?: string | null | undefined;
-  hasAdministratorPermission?: boolean;
 }
 
 export class CommandChannelPolicyService {
   public constructor(private readonly database: PrismaClient) {}
 
   public getCategory(commandName: string, subcommand?: string | null): CommandChannelCategory {
+    if (commandName === 'debugreset') return 'DEBUG';
+    if (commandName === 'offer') return 'TEAM_STAFF';
     if (
       commandName === 'health' ||
       commandName === 'roster' ||
-      commandName === 'offer' ||
       (commandName === 'team' && subcommand === 'list') ||
       (commandName === 'staff' && subcommand === 'list') ||
       (commandName === 'limit' && subcommand === 'view')
     ) {
-      return 'DUAL';
+      return 'INFORMATIONAL';
     }
-
-    return 'STAFF_ONLY';
+    return 'ADMINISTRATIVE';
   }
 
   public async validateChannelPolicy(input: ValidateChannelPolicyInput): Promise<void> {
     const category = this.getCategory(input.commandName, input.subcommand);
-    const guild = await new GuildRepository(this.database).getByDiscordGuildId(
-      input.discordGuildId,
+    const guilds = new GuildRepository(this.database);
+    const guild = await guilds.getByDiscordGuildId(input.authorization.discordGuildId);
+    const settings = guild === null ? null : await guilds.getSettings(guild.id);
+    const globalKind = await new AuthorizationService(this.database).getGlobalAuthorizationKind(
+      input.authorization,
     );
+    const globallyAuthorized = globalKind !== null;
 
-    const settings =
-      guild === null ? null : await new GuildRepository(this.database).getSettings(guild.id);
-
-    if (input.commandName === 'health') {
-      if (guild === null || settings === null) {
-        return;
+    if (category === 'DEBUG') {
+      if (!input.authorization.hasAdministratorPermission) {
+        throw new DebugAdministratorPermissionRequiredError();
       }
-      const allowedChannels: string[] = [];
-      if (settings.botCommandsChannelId) allowedChannels.push(settings.botCommandsChannelId);
-      if (settings.staffChannelId) allowedChannels.push(settings.staffChannelId);
-      if (allowedChannels.length === 0 || allowedChannels.includes(input.channelId)) {
-        return;
+      if (!settings?.staffChannelId) return;
+      if (input.channelId !== settings.staffChannelId) {
+        throw new AdministrativeWrongChannelError(settings.staffChannelId);
       }
-      const channelMentionStr = allowedChannels.map((id) => `<#${id}>`).join(' or ');
-      throw new ConfigurationError(`This command can only be used in ${channelMentionStr}.`);
+      return;
     }
 
-    if (input.commandName === 'setup') {
-      const staffChannelId = settings?.staffChannelId;
-      if (!staffChannelId) {
-        // Bootstrap exception: before staff channel exists, Discord Administrator can bootstrap setup
-        if (input.hasAdministratorPermission ?? true) {
-          return;
+    if (category === 'ADMINISTRATIVE') {
+      if (!globallyAuthorized) throw new AdministrativePermissionDeniedError();
+
+      if (input.commandName === 'setup' && !settings?.staffChannelId) {
+        if (!input.authorization.hasAdministratorPermission) {
+          throw new AdministrativePermissionDeniedError();
         }
-        throw new AuthorizationError(
-          'You need the configured bot permissions role to use this command.',
-        );
+        return;
       }
-      if (input.channelId !== staffChannelId) {
-        throw new ConfigurationError(`This command can only be used in <#${staffChannelId}>.`);
-      }
-      return;
-    }
 
-    if (guild === null || settings === null) {
-      throw new ConfigurationError('A user with bot permissions must run /setup league first.');
-    }
-
-    if (category === 'STAFF_ONLY') {
-      const staffChannelId = settings.staffChannelId;
-      if (!staffChannelId) {
-        throw new ConfigurationError(
-          'The staff channel has not been configured yet. Please ask an admin to configure it using /setup channels.',
-        );
-      }
-      if (input.channelId !== staffChannelId) {
-        throw new ConfigurationError(`This command can only be used in <#${staffChannelId}>.`);
+      if (guild === null || settings === null) throw new LeagueSetupRequiredError();
+      if (!settings.staffChannelId) throw new StaffChannelNotConfiguredError();
+      if (input.channelId !== settings.staffChannelId) {
+        throw new AdministrativeWrongChannelError(settings.staffChannelId);
       }
       return;
     }
 
-    if (category === 'DUAL') {
-      const allowedChannels: string[] = [];
-      if (settings.botCommandsChannelId) allowedChannels.push(settings.botCommandsChannelId);
-      if (settings.staffChannelId) allowedChannels.push(settings.staffChannelId);
+    const botCommandsChannelId = settings?.botCommandsChannelId ?? null;
+    const staffChannelId = settings?.staffChannelId ?? null;
 
-      if (allowedChannels.length === 0) {
-        throw new ConfigurationError(
-          'The bot commands channel has not been configured yet. Please ask an admin to configure it using /setup channels.',
-        );
+    if (category === 'INFORMATIONAL') {
+      if (!globallyAuthorized) {
+        if (!botCommandsChannelId) throw new BotCommandsChannelNotConfiguredError();
+        if (input.channelId !== botCommandsChannelId) {
+          throw new WrongCommandChannelError([botCommandsChannelId], 'bot_commands');
+        }
+        return;
       }
 
+      const allowedChannels = [botCommandsChannelId, staffChannelId].filter(
+        (channelId): channelId is string => channelId !== null,
+      );
+      if (allowedChannels.length === 0) throw new BotCommandsChannelNotConfiguredError();
       if (!allowedChannels.includes(input.channelId)) {
-        const channelMentionStr = allowedChannels.map((id) => `<#${id}>`).join(' or ');
-        throw new ConfigurationError(`This command can only be used in ${channelMentionStr}.`);
+        throw new WrongCommandChannelError(allowedChannels, 'global');
       }
+      return;
     }
+
+    const allowedTeamStaffChannels = [botCommandsChannelId, staffChannelId].filter(
+      (channelId): channelId is string => channelId !== null,
+    );
+    if (allowedTeamStaffChannels.includes(input.channelId)) return;
+
+    if (globallyAuthorized && allowedTeamStaffChannels.length > 0) {
+      throw new WrongCommandChannelError(allowedTeamStaffChannels, 'global');
+    }
+    if (botCommandsChannelId) {
+      throw new WrongCommandChannelError([botCommandsChannelId], 'bot_commands');
+    }
+    throw new BotCommandsChannelNotConfiguredError();
   }
 }

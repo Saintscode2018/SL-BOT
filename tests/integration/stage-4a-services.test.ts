@@ -101,22 +101,22 @@ describe('Stage 4A Services and Policies', () => {
   });
 
   describe('CommandChannelPolicyService', () => {
-    it('allows /health anywhere', async () => {
+    it('requires configured command channels for health', async () => {
       const policyService = new CommandChannelPolicyService(context.client);
       await expect(
         policyService.validateChannelPolicy({
-          discordGuildId: '100000000000000001',
+          authorization: ownerAuth(),
           channelId: '999999999999999999',
           commandName: 'health',
         }),
-      ).resolves.toBeUndefined();
+      ).rejects.toThrow(ConfigurationError);
     });
 
     it('allows /setup bootstrap when staff channel is not yet configured', async () => {
       const policyService = new CommandChannelPolicyService(context.client);
       await expect(
         policyService.validateChannelPolicy({
-          discordGuildId: '100000000000000001',
+          authorization: ownerAuth(),
           channelId: '999999999999999999',
           commandName: 'setup',
           subcommand: 'channels',
@@ -137,28 +137,28 @@ describe('Stage 4A Services and Policies', () => {
 
       const policyService = new CommandChannelPolicyService(context.client);
 
-      // Wrong channel (neither bot commands nor staff)
+      // wrong command channel
       await expect(
         policyService.validateChannelPolicy({
-          discordGuildId: '100000000000000001',
+          authorization: ownerAuth(),
           channelId: '999999999999999999', // arbitrary channel
           commandName: 'roster',
         }),
       ).rejects.toThrow(ConfigurationError);
 
-      // Correct bot commands channel
+      // bot commands channel
       await expect(
         policyService.validateChannelPolicy({
-          discordGuildId: '100000000000000001',
+          authorization: ownerAuth(),
           channelId: '111111111111111111', // bot commands channel
           commandName: 'roster',
         }),
       ).resolves.toBeUndefined();
 
-      // Correct staff channel
+      // staff channel
       await expect(
         policyService.validateChannelPolicy({
-          discordGuildId: '100000000000000001',
+          authorization: ownerAuth(),
           channelId: '222222222222222222', // staff channel
           commandName: 'roster',
         }),
@@ -178,20 +178,20 @@ describe('Stage 4A Services and Policies', () => {
 
       const policyService = new CommandChannelPolicyService(context.client);
 
-      // Wrong channel (admin attempt)
+      // wrong administrator channel
       await expect(
         policyService.validateChannelPolicy({
-          discordGuildId: '100000000000000001',
+          authorization: ownerAuth(),
           channelId: '111111111111111111', // bot commands channel
           commandName: 'team',
           subcommand: 'add',
         }),
       ).rejects.toThrow(ConfigurationError);
 
-      // Correct staff channel
+      // staff channel
       await expect(
         policyService.validateChannelPolicy({
-          discordGuildId: '100000000000000001',
+          authorization: ownerAuth(),
           channelId: '222222222222222222', // staff channel
           commandName: 'team',
           subcommand: 'add',
@@ -218,17 +218,17 @@ describe('Stage 4A Services and Policies', () => {
 
       const limitService = new LimitManagementService(context.client);
 
-      // Default limit initial
+      // initial default limit
       const view1 = await limitService.viewLimit('100000000000000001');
       expect(view1.defaultSquadLimit).toBe(17);
       expect(view1.clubsWithOverrides).toHaveLength(0);
 
-      // Set default limit to 20
+      // set default limit
       await limitService.setDefaultLimit({ authorization: ownerAuth(), amount: 20 });
       const view2 = await limitService.viewLimit('100000000000000001');
       expect(view2.defaultSquadLimit).toBe(20);
 
-      // Set team override to 15
+      // set team override
       const overrideResult = await limitService.setTeamLimit({
         authorization: ownerAuth(),
         clubId: club.id,
@@ -241,12 +241,12 @@ describe('Stage 4A Services and Policies', () => {
       expect(view3.clubsWithOverrides).toHaveLength(1);
       expect(view3.selectedClub?.effectiveLimit).toBe(15);
 
-      // Reset team limit
+      // reset team limit
       const resetResult = await limitService.resetTeamLimit({
         authorization: ownerAuth(),
         clubId: club.id,
       });
-      expect(resetResult.effectiveLimit).toBe(20); // inherits default 20
+      expect(resetResult.effectiveLimit).toBe(20); // inherits default
     });
 
     it('rejects invalid limit values', async () => {

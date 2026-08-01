@@ -105,6 +105,7 @@ describe('administration services', () => {
     name = 'Istanbul Lions',
     shortName = 'il',
     squadLimit = 5,
+    emoji?: string,
   ): Promise<Club> {
     return new ClubManagementService(database.client).create({
       authorization: authorization(),
@@ -112,6 +113,7 @@ describe('administration services', () => {
       shortName,
       discordRoleId: roleId,
       squadLimit,
+      ...(emoji === undefined ? {} : { emoji }),
     });
   }
 
@@ -196,13 +198,23 @@ describe('administration services', () => {
 
   it('filters autocomplete by name and short name and caps results', async () => {
     const service = new ClubManagementService(database.client);
-    await createClub('930000000000000001', 'Istanbul Lions', 'IL');
-    await createClub('930000000000000002', 'Ankara United', 'ANK');
+    const unicodeClub = await createClub('930000000000000001', 'Istanbul Lions', 'IL', 5, '🦁');
+    const customClub = await createClub(
+      '930000000000000002',
+      'Ankara United',
+      'ANK',
+      5,
+      '<:ankara:123456789012345678>',
+    );
+    const legacyClub = await createClub('930000000000000003', 'Bursa City', 'BUR');
     await expect(service.autocomplete(guildId, 'lion')).resolves.toEqual([
-      expect.objectContaining({ name: 'Istanbul Lions (IL)' }),
+      { name: '🦁 Istanbul Lions (IL)', value: unicodeClub.id },
     ]);
     await expect(service.autocomplete(guildId, 'ank')).resolves.toEqual([
-      expect.objectContaining({ name: 'Ankara United (ANK)' }),
+      { name: ':ankara: Ankara United (ANK)', value: customClub.id },
+    ]);
+    await expect(service.autocomplete(guildId, 'bursa')).resolves.toEqual([
+      { name: 'Bursa City (BUR)', value: legacyClub.id },
     ]);
     await expect(service.autocomplete(guildId, '', 1)).resolves.toHaveLength(1);
     await expect(service.autocomplete('999999999999999999', '')).resolves.toEqual([]);

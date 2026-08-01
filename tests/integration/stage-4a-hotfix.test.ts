@@ -115,6 +115,10 @@ class MockCommandInteraction implements CommandInteraction {
     this.followUps.push(response);
     return Promise.resolve();
   }
+
+  public deleteReply(): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
 describe('Stage 4A Hotfix Verification', () => {
@@ -243,6 +247,7 @@ describe('Stage 4A Hotfix Verification', () => {
         ),
       },
       offerButtonHandler: { handle: vi.fn() },
+      setupAuditService: { publish: vi.fn(() => Promise.resolve(true)) },
     };
   });
 
@@ -320,7 +325,7 @@ describe('Stage 4A Hotfix Verification', () => {
 
       await expect(
         policyService.validateChannelPolicy({
-          discordGuildId: guildId,
+          authorization: adminAuth,
           channelId: botCmdChannel,
           commandName: 'health',
         }),
@@ -328,7 +333,7 @@ describe('Stage 4A Hotfix Verification', () => {
 
       await expect(
         policyService.validateChannelPolicy({
-          discordGuildId: guildId,
+          authorization: adminAuth,
           channelId: staffChannel,
           commandName: 'health',
         }),
@@ -336,7 +341,7 @@ describe('Stage 4A Hotfix Verification', () => {
 
       await expect(
         policyService.validateChannelPolicy({
-          discordGuildId: guildId,
+          authorization: adminAuth,
           channelId: '999999999999999999',
           commandName: 'health',
         }),
@@ -349,7 +354,7 @@ describe('Stage 4A Hotfix Verification', () => {
 
       await expect(
         policyService.validateChannelPolicy({
-          discordGuildId: guildId,
+          authorization: adminAuth,
           channelId: botCmdChannel,
           commandName: 'team',
           subcommand: 'add',
@@ -358,7 +363,7 @@ describe('Stage 4A Hotfix Verification', () => {
 
       await expect(
         policyService.validateChannelPolicy({
-          discordGuildId: guildId,
+          authorization: adminAuth,
           channelId: staffChannel,
           commandName: 'team',
           subcommand: 'add',
@@ -372,22 +377,26 @@ describe('Stage 4A Hotfix Verification', () => {
       // administrator bootstrap in any channel
       await expect(
         policyService.validateChannelPolicy({
-          discordGuildId: '990000000000000099',
+          authorization: {
+            ...adminAuth,
+            discordGuildId: '990000000000000099',
+          },
           channelId: '990000000000000088',
           commandName: 'setup',
           subcommand: 'channels',
-          hasAdministratorPermission: true,
         }),
       ).resolves.toBeUndefined();
 
       // non administrator bootstrap attempt
       await expect(
         policyService.validateChannelPolicy({
-          discordGuildId: '990000000000000099',
+          authorization: {
+            ...normalUserAuth,
+            discordGuildId: '990000000000000099',
+          },
           channelId: '990000000000000088',
           commandName: 'setup',
           subcommand: 'channels',
-          hasAdministratorPermission: false,
         }),
       ).rejects.toThrow(AuthorizationError);
     });
@@ -451,7 +460,7 @@ describe('Stage 4A Hotfix Verification', () => {
       const reply = interaction.replies[0];
       expect(reply?.flags).toBe(64); // ephemeral message flag
       expect(reply?.embeds).toBeDefined();
-      expect(reply?.embeds?.[0]?.data.title).toBe('❌ Command unavailable here');
+      expect(reply?.embeds?.[0]?.data.title).toBe('❌ Wrong Command Channel');
     });
 
     it('returns public embeds for successful mutation commands in staff channel', async () => {

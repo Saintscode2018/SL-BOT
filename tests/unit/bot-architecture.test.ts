@@ -47,6 +47,10 @@ class FakeInteraction implements CommandInteraction {
     this.followUps.push(response);
     return Promise.resolve();
   }
+
+  public deleteReply(): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
 function command(name: string, execute = vi.fn(() => Promise.resolve())): CommandDefinition {
@@ -106,6 +110,7 @@ function context(logger: MemoryLogger): CommandContext {
       createAndDeliver: () => Promise.reject(new Error('not used')),
     },
     offerButtonHandler: { handle: () => Promise.reject(new Error('not used')) },
+    setupAuditService: { publish: () => Promise.resolve(true) },
   };
 }
 
@@ -196,7 +201,7 @@ describe('interaction handler', () => {
     expect(logger.entries.some(({ level }) => level === 'error')).toBe(true);
     expect(interaction.replies).toHaveLength(1);
     expect(interaction.replies[0]?.flags).toBe(MessageFlags.Ephemeral);
-    expect(interaction.replies[0]?.embeds?.[0]?.data?.title).toBe('❌ Command failed');
+    expect(interaction.replies[0]?.embeds?.[0]?.data?.title).toBe('❌ Command Failed');
     expect(JSON.stringify(interaction.replies)).not.toContain('private database detail');
   });
 
@@ -212,7 +217,7 @@ describe('interaction handler', () => {
     interaction.deferred = true;
     await handleInteractionCreate(interaction, registry, context(logger), logger);
     expect(interaction.edits).toHaveLength(1);
-    expect(interaction.edits[0]?.embeds?.[0]?.data?.title).toBe('❌ Command failed');
+    expect(interaction.edits[0]?.embeds?.[0]?.data?.title).toBe('❌ Command Failed');
     expect(JSON.stringify(interaction.edits)).not.toContain('private detail');
   });
 });

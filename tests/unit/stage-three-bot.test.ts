@@ -154,11 +154,27 @@ function commandContext(
     },
     offerDeliveryService: { createAndDeliver: () => Promise.reject(new Error('unused')) },
     offerButtonHandler: { handle: () => Promise.resolve(false) },
+    setupAuditService: { publish: () => Promise.resolve(true) },
   };
 }
 
 class ReplyInteraction implements CommandInteraction {
   public readonly commandName = 'health';
+  public readonly guildId = '100000000000000001';
+  public readonly guildName = 'Test Guild';
+  public readonly guildOwnerId = '100000000000000002';
+  public readonly userId = '100000000000000002';
+  public readonly channelId = '100000000000000003';
+  public readonly memberRoleIds: readonly string[] = [];
+  public readonly hasAdministratorPermission = true;
+  public readonly options: CommandInteractionOptions = {
+    getSubcommand: () => null,
+    getString: () => null,
+    getInteger: () => null,
+    getUser: () => null,
+    getRole: () => null,
+    getChannel: () => null,
+  };
   public replied = false;
   public deferred = false;
   public readonly replies: SafeInteractionResponse[] = [];
@@ -185,6 +201,10 @@ class ReplyInteraction implements CommandInteraction {
     this.replies.push(response);
     return Promise.resolve();
   }
+
+  public deleteReply(): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
 class OfferCommandInteraction implements CommandInteraction {
@@ -195,6 +215,7 @@ class OfferCommandInteraction implements CommandInteraction {
   public readonly userId = '100000000000000002';
   public readonly memberRoleIds: readonly string[] = [];
   public readonly hasAdministratorPermission = true;
+  public readonly channelId = '100000000000000003';
   public replied = false;
   public deferred = false;
   public readonly replies: SafeInteractionResponse[] = [];
@@ -235,6 +256,11 @@ class OfferCommandInteraction implements CommandInteraction {
     this.followUps.push(response);
     return Promise.resolve();
   }
+
+  public deleteReply(): Promise<void> {
+    this.order.push('delete_reply');
+    return Promise.resolve();
+  }
 }
 
 class RosterCommandInteraction implements CommandInteraction {
@@ -245,6 +271,7 @@ class RosterCommandInteraction implements CommandInteraction {
   public readonly userId = '100000000000000002';
   public readonly memberRoleIds: readonly string[] = [];
   public readonly hasAdministratorPermission = true;
+  public readonly channelId = '100000000000000003';
   public replied = false;
   public deferred = false;
   public readonly replies: SafeInteractionResponse[] = [];
@@ -280,20 +307,18 @@ class RosterCommandInteraction implements CommandInteraction {
     this.followUps.push(response);
     return Promise.resolve();
   }
+
+  public deleteReply(): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
 describe('stage three command registry and deployment', () => {
   it('exports every visible command as exact deployment JSON', () => {
     const registry = loadCommands(commandDefinitions);
-    expect(registry.toJSON().map(({ name }) => name)).toEqual([
-      'health',
-      'setup',
-      'team',
-      'limit',
-      'staff',
-      'roster',
-      'offer',
-    ]);
+    const expectedNames = ['health', 'setup', 'team', 'limit', 'staff', 'roster', 'offer'];
+    if (process.env['SLBOT_ENABLE_DEBUG_COMMANDS'] === 'true') expectedNames.push('debugreset');
+    expect(registry.toJSON().map(({ name }) => name)).toEqual(expectedNames);
     expect(registry.toJSON().find(({ name }) => name === 'offer')).toMatchObject({
       options: [expect.objectContaining({ name: 'player' })],
     });
@@ -395,10 +420,10 @@ describe('stage three command registry and deployment', () => {
         }),
     };
     await command?.execute(interaction, context);
-    expect(interaction.replies[0]?.embeds?.[0]?.data?.title).toBe('Arsenal Roster');
+    expect(interaction.replies[0]?.embeds?.[0]?.data?.title).toBe('Arsenal (ARS) Roster');
   });
 
-  it('defers offer creation before delivery and edits the successful response', async () => {
+  it('defers offer creation privately before a public successful response', async () => {
     const interaction = new OfferCommandInteraction();
     const context = commandContext(new MemoryLogger());
     const delivery = vi.fn(() => {
@@ -407,11 +432,11 @@ describe('stage three command registry and deployment', () => {
     });
     context.offerDeliveryService = { createAndDeliver: delivery };
     await loadCommands(commandDefinitions).resolve('offer')?.execute(interaction, context);
-    expect(interaction.order).toEqual(['defer', 'delivery', 'edit']);
+    expect(interaction.order).toEqual(['defer', 'delivery', 'delete_reply', 'follow_up']);
     expect(interaction.replies).toEqual([]);
-    expect(interaction.followUps).toEqual([]);
-    expect(interaction.edits).toHaveLength(1);
-    expect(interaction.edits[0]?.embeds?.[0]?.data?.title).toBe('✅ Contract Offer Sent');
+    expect(interaction.followUps).toHaveLength(1);
+    expect(interaction.edits).toHaveLength(0);
+    expect(interaction.followUps[0]?.embeds?.[0]?.data?.title).toBe('✅ Contract Offer Sent');
   });
 
   it('edits a deferred command with a safe failure and never sends a second initial reply', async () => {
@@ -467,7 +492,7 @@ describe('stage three command registry and deployment', () => {
         serialized.embeds[0]?.fields.map(({ name, value }) => [name, value]) ?? [],
       ),
     ).toMatchObject({
-      'Destination Club': 'Team',
+      'Destination Club': 'Team (TM)',
       'Offered Player': '<@100000000000000003>',
       'Offering Manager': '<@100000000000000004>',
       Squad: '4/10',
@@ -750,16 +775,16 @@ describe('persistent offer buttons', () => {
 describe('discord error mapping', () => {
   it('maps expected errors and keeps unknown internal text private', () => {
     const authMapped = mapDiscordError(new AuthorizationError('private authorization detail'));
-    expect(authMapped.title).toBe('❌ Permission denied');
+    expect(authMapped.title).toBe('❌ Permission Denied');
     expect(authMapped.description).toBe('private authorization detail');
 
     const unknownMapped = mapDiscordError(new Error('raw database password'));
-    expect(unknownMapped.title).toBe('❌ Command failed');
+    expect(unknownMapped.title).toBe('❌ Command Failed');
     expect(unknownMapped.description).toBe('An unexpected error occurred. Please try again later.');
     expect(unknownMapped.description).not.toContain('password');
 
     const invalidOfferMapped = mapDiscordError(new InvalidOfferMessageError('private message ids'));
-    expect(invalidOfferMapped.title).toBe('❌ Invalid offer interaction');
+    expect(invalidOfferMapped.title).toBe('❌ Invalid Offer Interaction');
     expect(invalidOfferMapped.description).toBe('This offer interaction is no longer valid.');
   });
 });

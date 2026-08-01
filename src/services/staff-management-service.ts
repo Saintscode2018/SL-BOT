@@ -10,6 +10,7 @@ import {
 } from '../domain/errors.js';
 
 import type { MembershipType } from '../domain/enums.js';
+import { formatTeamLabel } from '../domain/team-label.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { ClubRepository } from '../repositories/club-repository.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
@@ -78,7 +79,7 @@ export class StaffManagementService {
         throw new StaffAlreadyAppointedError(
           input.staffDiscordUserId,
           posName,
-          existingUserStaff.club.name,
+          formatTeamLabel(existingUserStaff.club),
         );
       }
 
@@ -94,7 +95,7 @@ export class StaffManagementService {
         const posName = getFriendlyPositionName(input.staffType);
         throw new TeamPositionOccupiedError(
           posName,
-          club.name,
+          formatTeamLabel(club),
           holderUser?.discordUserId ?? existingPositionStaff.userId,
         );
       }

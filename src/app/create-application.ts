@@ -8,6 +8,7 @@ import { registerEvents } from '../bot/event-loader.js';
 import { createEventDefinitions } from '../bot/events.js';
 import { OfferButtonHandler } from '../bot/offer-button-handler.js';
 import { DiscordOfferMessageAdapter } from '../bot/offer-message-adapter.js';
+import { DiscordSetupAuditMessageAdapter } from '../bot/setup-audit-message-adapter.js';
 import type { CommandContext } from '../bot/types.js';
 import {
   loadRuntimeEnvironment,
@@ -31,6 +32,7 @@ import { OfferDeliveryService } from '../services/offer-delivery-service.js';
 import { OfferResponseService } from '../services/offer-response-service.js';
 import { RosterManagementService } from '../services/roster-management-service.js';
 import { StaffManagementService } from '../services/staff-management-service.js';
+import { SetupAuditService } from '../services/setup-audit-service.js';
 import { Application, type DatabaseLifecycle } from './application.js';
 
 export interface ApplicationBundle {
@@ -63,6 +65,10 @@ export function createApplication(
   const offerAcceptanceService = new OfferAcceptanceService(prisma);
   const offerDeclineService = new OfferDeclineService(prisma);
   const offerMessages = new DiscordOfferMessageAdapter(discord);
+  const setupAuditService = new SetupAuditService(
+    new DiscordSetupAuditMessageAdapter(discord),
+    logger,
+  );
   const offerDeliveryService = new OfferDeliveryService(
     prisma,
     offerMessages,
@@ -90,6 +96,7 @@ export function createApplication(
     commandChannelPolicyService: new CommandChannelPolicyService(prisma),
     offerDeliveryService,
     offerButtonHandler,
+    setupAuditService,
   };
   const events = new EventRegistry(createEventDefinitions(commands, context, logger));
   const database: DatabaseLifecycle = {

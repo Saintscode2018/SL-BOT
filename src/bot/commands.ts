@@ -2,15 +2,11 @@ import { ChannelType, MessageFlags, SlashCommandBuilder } from 'discord.js';
 
 import { ConfigurationError, ValidationError } from '../domain/errors.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
+import { formatTeamLabel } from '../domain/team-label.js';
 import type { AuthorizationInput } from '../services/authorization-service.js';
 import { getFriendlyPositionName, type StaffType } from '../services/staff-management-service.js';
 import { createActorField, createInfoEmbed, createSuccessEmbed } from './embeds.js';
-import {
-  formatTeamNameWithEmoji,
-  getTeamThumbnail,
-  parseCustomEmoji,
-  validateTeamEmoji,
-} from './emoji-helper.js';
+import { getTeamThumbnail, validateTeamEmoji } from './emoji-helper.js';
 import type {
   CommandAutocompleteInteraction,
   CommandContext,
@@ -52,18 +48,46 @@ function requireExecution(interaction: CommandInteraction): {
 async function enforceChannelPolicy(
   interaction: CommandInteraction,
   context: CommandContext,
-): Promise<void> {
-  const { guildId, channelId } = interaction;
-  if (guildId !== undefined && channelId !== undefined) {
-    const subcommand = interaction.options?.getSubcommand();
-    await context.commandChannelPolicyService.validateChannelPolicy({
-      discordGuildId: guildId,
-      channelId,
-      commandName: interaction.commandName,
-      subcommand,
-      hasAdministratorPermission: interaction.hasAdministratorPermission ?? false,
-    });
+): Promise<ReturnType<typeof requireExecution>> {
+  const execution = requireExecution(interaction);
+  if (interaction.channelId === undefined) {
+    throw new ConfigurationError('this command must be used in a Discord channel');
   }
+  await context.commandChannelPolicyService.validateChannelPolicy({
+    authorization: execution.authorization,
+    channelId: interaction.channelId,
+    commandName: interaction.commandName,
+    subcommand: execution.options.getSubcommand(),
+  });
+  return execution;
+}
+
+const auditDeliveryWarning =
+  '⚠️ Configuration was saved, but the audit message could not be delivered.';
+
+async function publishSetupAudit(
+  context: CommandContext,
+  input: {
+    channelId: string | null;
+    title: string;
+    description: string;
+    fields: Array<{ name: string; value: string; inline?: boolean }>;
+    actorDiscordUserId: string;
+  },
+): Promise<boolean> {
+  if (input.channelId === null) return true;
+  return context.setupAuditService.publish({
+    channelId: input.channelId,
+    title: input.title,
+    description: input.description,
+    fields: input.fields,
+    actorDiscordUserId: input.actorDiscordUserId,
+    timestamp: new Date(),
+  });
+}
+
+function withAuditWarning(description: string, auditPublished: boolean): string {
+  return auditPublished ? description : `${description}\n\n${auditDeliveryWarning}`;
 }
 
 function requiredString(options: CommandInteractionOptions, name: string): string {
@@ -226,27 +250,38 @@ const setupCommand: CommandDefinition = {
       subcommand.setName('view').setDescription('View current league configuration'),
     ),
   async execute(interaction, context) {
-    await enforceChannelPolicy(interaction, context);
-    const execution = requireExecution(interaction);
+    const execution = await enforceChannelPolicy(interaction, context);
     const subcommand = execution.options.getSubcommand();
 
     if (subcommand === 'league') {
       const timeoutMinutes = execution.options.getInteger('offer_timeout_minutes');
-      await interaction.deferReply();
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.guildSetupService.setupGuildOnly({
         authorization: execution.authorization,
         guildName: execution.guildName,
         ...(timeoutMinutes === null ? {} : { offerTimeoutSeconds: timeoutMinutes * 60 }),
       });
+      const title = '✅ League Settings Updated';
+      const description = `League configuration ${result.created ? 'initialized' : 'updated'} for **${result.guild.name}**.`;
+      const auditFields = [
+        {
+          name: '⏰ Offer Timeout',
+          value: `${Math.round(result.settings.offerTimeoutSeconds / 60)} minutes`,
+          inline: false,
+        },
+      ];
+      const auditPublished = await publishSetupAudit(context, {
+        channelId: result.settings.auditChannelId,
+        title,
+        description,
+        fields: auditFields,
+        actorDiscordUserId: execution.authorization.discordUserId,
+      });
       const embed = createSuccessEmbed({
-        title: '✅ League Settings Updated',
-        description: `League configuration ${result.created ? 'initialized' : 'updated'} for **${result.guild.name}**.`,
+        title,
+        description: withAuditWarning(description, auditPublished),
         fields: [
-          {
-            name: '⏰ Offer Timeout',
-            value: `${Math.round(result.settings.offerTimeoutSeconds / 60)} minutes`,
-            inline: false,
-          },
+          ...auditFields,
           createActorField('Configured', execution.authorization.discordUserId),
         ],
       });
@@ -265,8 +300,8 @@ const setupCommand: CommandDefinition = {
       validateTextChannel(transfer, 'transfer');
       validateTextChannel(audit, 'audit');
 
-      await interaction.deferReply();
-      await context.guildSetupService.setupChannels({
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      const result = await context.guildSetupService.setupChannels({
         authorization: execution.authorization,
         guildName: execution.guildName,
         botCommandsChannelId: botCmds.id,
@@ -282,11 +317,21 @@ const setupCommand: CommandDefinition = {
         `📋 Audit Logs: <#${audit.id}>`,
       ].join('\n');
 
+      const title = '✅ System Channels Configured';
+      const description = 'Successfully updated channel configuration for the league.';
+      const auditFields = [{ name: 'Channels', value: channelBlock, inline: false }];
+      const auditPublished = await publishSetupAudit(context, {
+        channelId: result.settings.auditChannelId,
+        title,
+        description,
+        fields: auditFields,
+        actorDiscordUserId: execution.authorization.discordUserId,
+      });
       const embed = createSuccessEmbed({
-        title: '✅ System Channels Configured',
-        description: 'Successfully updated channel configuration for the league.',
+        title,
+        description: withAuditWarning(description, auditPublished),
         fields: [
-          { name: 'Channels', value: channelBlock, inline: false },
+          ...auditFields,
           createActorField('Configured', execution.authorization.discordUserId),
         ],
       });
@@ -300,8 +345,8 @@ const setupCommand: CommandDefinition = {
       const atm = requiredRole(execution.options, 'assistant_manager');
       const pm = requiredRole(execution.options, 'player_manager');
 
-      await interaction.deferReply();
-      await context.guildSetupService.setupRoles({
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      const result = await context.guildSetupService.setupRoles({
         authorization: execution.authorization,
         guildName: execution.guildName,
         botPermissionsRoleId: botPerms.id,
@@ -317,11 +362,21 @@ const setupCommand: CommandDefinition = {
         `👤 Player Manager: <@&${pm.id}>`,
       ].join('\n');
 
+      const title = '✅ League Roles Configured';
+      const description = 'Successfully updated role configuration for the league.';
+      const auditFields = [{ name: 'Roles', value: roleBlock, inline: false }];
+      const auditPublished = await publishSetupAudit(context, {
+        channelId: result.settings.auditChannelId,
+        title,
+        description,
+        fields: auditFields,
+        actorDiscordUserId: execution.authorization.discordUserId,
+      });
       const embed = createSuccessEmbed({
-        title: '✅ League Roles Configured',
-        description: 'Successfully updated role configuration for the league.',
+        title,
+        description: withAuditWarning(description, auditPublished),
         fields: [
-          { name: 'Roles', value: roleBlock, inline: false },
+          ...auditFields,
           createActorField('Configured', execution.authorization.discordUserId),
         ],
       });
@@ -330,7 +385,7 @@ const setupCommand: CommandDefinition = {
     }
 
     if (subcommand === 'view') {
-      await interaction.deferReply();
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const view = await context.guildSetupService.getView(execution.guildId);
 
       const channelLines = [
@@ -352,8 +407,8 @@ const setupCommand: CommandDefinition = {
           ? 'None (Complete)'
           : view.missingConfigurations.join(', ');
 
-      const embed = createInfoEmbed({
-        title: `League Configuration — ${view.guildName}`,
+      const embed = createSuccessEmbed({
+        title: `✅ League Configuration — ${view.guildName}`,
         fields: [
           { name: 'Channels', value: channelLines, inline: false },
           { name: 'Roles', value: roleLines, inline: false },
@@ -427,18 +482,14 @@ const teamCommand: CommandDefinition = {
     )
     .addSubcommand((subcommand) => subcommand.setName('list').setDescription('List active teams')),
   async execute(interaction, context) {
-    await enforceChannelPolicy(interaction, context);
-    const execution = requireExecution(interaction);
+    const execution = await enforceChannelPolicy(interaction, context);
     const subcommand = execution.options.getSubcommand();
-
-    const isGuildEmojiAvailable = interaction.hasGuildEmoji
-      ? (id: string) => interaction.hasGuildEmoji!(id)
-      : undefined;
+    const guildEmojis = interaction.getGuildEmojis?.() ?? [];
 
     if (subcommand === 'add') {
-      await interaction.deferReply();
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const rawEmoji = requiredString(execution.options, 'emoji');
-      const validatedEmoji = validateTeamEmoji(rawEmoji, isGuildEmojiAvailable);
+      const validatedEmoji = validateTeamEmoji(rawEmoji, guildEmojis);
 
       const club = await context.clubManagementService.create({
         authorization: execution.authorization,
@@ -451,7 +502,7 @@ const teamCommand: CommandDefinition = {
       const thumbnail = getTeamThumbnail(club.emoji, club.logoUrl);
       const embed = createSuccessEmbed({
         title: '✅ Team Added',
-        description: `Successfully created team ${formatTeamNameWithEmoji(club.name, club.emoji)} (${club.shortName}).`,
+        description: `Successfully created team ${formatTeamLabel(club)}.`,
         fields: [
           { name: 'Role', value: `<@&${club.discordRoleId}>`, inline: true },
           { name: 'Squad Limit', value: 'Guild Default', inline: true },
@@ -465,7 +516,7 @@ const teamCommand: CommandDefinition = {
     }
 
     if (subcommand === 'edit') {
-      await interaction.deferReply();
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const teamId = requiredString(execution.options, 'team');
       const name = execution.options.getString('name') ?? undefined;
       const shortName = execution.options.getString('short_name') ?? undefined;
@@ -474,7 +525,7 @@ const teamCommand: CommandDefinition = {
 
       let emojiToUpdate: string | undefined = undefined;
       if (rawEmoji !== null && rawEmoji !== undefined) {
-        const validatedEmoji = validateTeamEmoji(rawEmoji, isGuildEmojiAvailable);
+        const validatedEmoji = validateTeamEmoji(rawEmoji, guildEmojis);
         emojiToUpdate = validatedEmoji.display;
       }
 
@@ -490,7 +541,7 @@ const teamCommand: CommandDefinition = {
       const thumbnail = getTeamThumbnail(club.emoji, club.logoUrl);
       const embed = createSuccessEmbed({
         title: '✅ Team Updated',
-        description: `Successfully updated ${formatTeamNameWithEmoji(club.name, club.emoji)} (${club.shortName}).`,
+        description: `Successfully updated ${formatTeamLabel(club)}.`,
         fields: [
           { name: 'Role', value: `<@&${club.discordRoleId}>`, inline: true },
           createActorField('Edited', execution.authorization.discordUserId),
@@ -503,14 +554,14 @@ const teamCommand: CommandDefinition = {
     }
 
     if (subcommand === 'remove') {
-      await interaction.deferReply();
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const teamId = requiredString(execution.options, 'team');
       const club = await context.clubManagementService.deactivate(execution.authorization, teamId);
 
       const thumbnail = getTeamThumbnail(club.emoji, club.logoUrl);
       const embed = createSuccessEmbed({
         title: '✅ Team Removed',
-        description: `Successfully deactivated ${formatTeamNameWithEmoji(club.name, club.emoji)} (${club.shortName}). The team is now inactive.`,
+        description: `Successfully deactivated ${formatTeamLabel(club)}. The team is now inactive.`,
         fields: [
           { name: 'Status', value: 'Inactive', inline: true },
           {
@@ -540,9 +591,7 @@ const teamCommand: CommandDefinition = {
     }
 
     const teamLines = teams.map(({ club, activePlayerCount, effectiveLimit, remainingSpaces }) => {
-      const parsed = parseCustomEmoji(club.emoji);
-      const prefix = parsed ? `${parsed.mention} ` : club.emoji ? `${club.emoji} ` : '';
-      return `${prefix}**${club.name} (${club.shortName})** <@&${club.discordRoleId}> — ${activePlayerCount}/${effectiveLimit} (${remainingSpaces} spaces remaining)`;
+      return `${formatTeamLabel(club)} <@&${club.discordRoleId}> — ${activePlayerCount}/${effectiveLimit} (${remainingSpaces} spaces remaining)`;
     });
 
     const embed = createInfoEmbed({
@@ -605,13 +654,12 @@ const limitCommand: CommandDefinition = {
         ),
     ),
   async execute(interaction, context) {
-    await enforceChannelPolicy(interaction, context);
-    const execution = requireExecution(interaction);
+    const execution = await enforceChannelPolicy(interaction, context);
     const subcommand = execution.options.getSubcommand();
 
     if (subcommand === 'default') {
       const amount = requiredInteger(execution.options, 'amount');
-      await interaction.deferReply();
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.limitManagementService.setDefaultLimit({
         authorization: execution.authorization,
         amount,
@@ -630,7 +678,7 @@ const limitCommand: CommandDefinition = {
     if (subcommand === 'team') {
       const teamId = requiredString(execution.options, 'team');
       const amount = requiredInteger(execution.options, 'amount');
-      await interaction.deferReply();
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.limitManagementService.setTeamLimit({
         authorization: execution.authorization,
         clubId: teamId,
@@ -639,7 +687,7 @@ const limitCommand: CommandDefinition = {
 
       const embed = createSuccessEmbed({
         title: '✅ Team Squad Limit Updated',
-        description: `Squad limit override for **${result.clubName}** set to **${result.override}** (effective limit: **${result.effectiveLimit}**).`,
+        description: `Squad limit override for ${formatTeamLabel(result.club)} set to **${result.override}** (effective limit: **${result.effectiveLimit}**).`,
         fields: [createActorField('Updated', execution.authorization.discordUserId)],
       });
 
@@ -649,7 +697,7 @@ const limitCommand: CommandDefinition = {
 
     if (subcommand === 'reset') {
       const teamId = requiredString(execution.options, 'team');
-      await interaction.deferReply();
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.limitManagementService.resetTeamLimit({
         authorization: execution.authorization,
         clubId: teamId,
@@ -657,7 +705,7 @@ const limitCommand: CommandDefinition = {
 
       const embed = createSuccessEmbed({
         title: '✅ Team Squad Limit Reset',
-        description: `Squad limit override for **${result.clubName}** cleared (effective limit: **${result.effectiveLimit}**).`,
+        description: `Squad limit override for ${formatTeamLabel(result.club)} cleared (effective limit: **${result.effectiveLimit}**).`,
         fields: [createActorField('Reset', execution.authorization.discordUserId)],
       });
 
@@ -672,7 +720,7 @@ const limitCommand: CommandDefinition = {
     if (view.selectedClub !== undefined) {
       const thumbnail = getTeamThumbnail(view.selectedClub.emoji, view.selectedClub.logoUrl);
       const embed = createInfoEmbed({
-        title: `Squad Limit — ${view.selectedClub.name} (${view.selectedClub.shortName})`,
+        title: `Squad Limit — ${formatTeamLabel(view.selectedClub)}`,
         fields: [
           { name: 'Guild Default', value: `${view.defaultSquadLimit}`, inline: true },
           {
@@ -692,11 +740,7 @@ const limitCommand: CommandDefinition = {
       view.clubsWithOverrides.length === 0
         ? 'None'
         : view.clubsWithOverrides
-            .map((c) => {
-              const parsed = parseCustomEmoji(c.emoji);
-              const prefix = parsed ? `${parsed.mention} ` : c.emoji ? `${c.emoji} ` : '';
-              return `- ${prefix}**${c.name} (${c.shortName})**: ${c.override}`;
-            })
+            .map((club) => `- ${formatTeamLabel(club)}: ${club.override}`)
             .join('\n');
 
     const embed = createInfoEmbed({
@@ -766,15 +810,14 @@ const staffCommand: CommandDefinition = {
         ),
     ),
   async execute(interaction, context) {
-    await enforceChannelPolicy(interaction, context);
-    const execution = requireExecution(interaction);
+    const execution = await enforceChannelPolicy(interaction, context);
     const subcommand = execution.options.getSubcommand();
 
     if (subcommand === 'appoint') {
       const teamId = requiredString(execution.options, 'team');
       const user = requiredUser(execution.options, 'user');
       const staffType = requiredString(execution.options, 'staff_type') as StaffType;
-      await interaction.deferReply();
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.staffManagementService.appoint({
         authorization: execution.authorization,
         clubId: teamId,
@@ -797,7 +840,7 @@ const staffCommand: CommandDefinition = {
     if (subcommand === 'remove') {
       const teamId = requiredString(execution.options, 'team');
       const staffType = requiredString(execution.options, 'staff_type') as StaffType;
-      await interaction.deferReply();
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       await context.staffManagementService.remove(execution.authorization, teamId, staffType);
 
       const positionName = getFriendlyPositionName(staffType);
@@ -832,7 +875,9 @@ const staffCommand: CommandDefinition = {
         }),
       );
 
-      const title = selectedClubItem ? `Team Staff — ${selectedClubItem.club.name}` : 'Team Staff';
+      const title = selectedClubItem
+        ? `Team Staff — ${formatTeamLabel(selectedClubItem.club)}`
+        : 'Team Staff';
 
       const embed = createInfoEmbed({
         title,
@@ -865,9 +910,8 @@ const staffCommand: CommandDefinition = {
           )
           .join(' | ');
 
-        const nameWithEmoji = formatTeamNameWithEmoji(club.name, club.emoji);
         return {
-          name: `${nameWithEmoji} (${club.shortName})`,
+          name: formatTeamLabel(club),
           value: staffText,
           inline: false,
         };
@@ -892,8 +936,7 @@ const rosterCommand: CommandDefinition = {
       option.setName('team').setDescription('Team').setAutocomplete(true).setRequired(true),
     ),
   async execute(interaction, context) {
-    await enforceChannelPolicy(interaction, context);
-    const execution = requireExecution(interaction);
+    const execution = await enforceChannelPolicy(interaction, context);
     const teamId = requiredString(execution.options, 'team');
 
     // roster view matches the visual specification
@@ -920,26 +963,20 @@ const rosterCommand: CommandDefinition = {
         ? 'None'
         : result.players.map(({ user }) => `• <@${user.discordUserId}>`).join('\n');
 
-    const teamEmojiPrefix = result.club.emoji ? `${result.club.emoji} ` : '';
     const leagueName = settings?.guild?.name ?? execution.guildName;
 
     const embed = createInfoEmbed({
       author: { name: leagueName },
-      title: `${teamEmojiPrefix}${result.club.name} Roster`,
+      title: `${formatTeamLabel(result.club)} Roster`,
       fields: [
         {
           name: '📊 Roster Count',
           value: `${result.players.length}/${effectiveLimit}`,
           inline: false,
         },
-        { name: '👑 Franchise Owner(s)', value: tmLine, inline: false },
-        { name: '👔 General Manager(s)', value: atmLine, inline: false },
-        { name: '🧠 Head Coach(es)', value: pmLine, inline: false },
-        {
-          name: '📋 Assistant Coach(es)',
-          value: 'Future Role — Not Available Yet',
-          inline: false,
-        },
+        { name: '👑 Team Manager', value: tmLine, inline: false },
+        { name: '👔 Assistant Team Manager', value: atmLine, inline: false },
+        { name: '🧠 Player Manager', value: pmLine, inline: false },
         { name: '──────── Players ────────', value: '\u200b', inline: false },
         { name: '🏃 Players', value: playerLines.slice(0, 1024), inline: false },
       ],
@@ -960,11 +997,10 @@ const offerCommand: CommandDefinition = {
       option.setName('player').setDescription('Offered player').setRequired(true),
     ),
   async execute(interaction, context) {
-    await enforceChannelPolicy(interaction, context);
-    const execution = requireExecution(interaction);
+    const execution = await enforceChannelPolicy(interaction, context);
     const player = requiredUser(execution.options, 'player');
 
-    await interaction.deferReply();
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     // derive the team from the staff appointment
     const destinationClub = await context.staffManagementService.getCallerActiveStaffClub(
@@ -983,23 +1019,24 @@ const offerCommand: CommandDefinition = {
     const thumbnail = getTeamThumbnail(club?.emoji, club?.logoUrl);
     const embed = createSuccessEmbed({
       title: '✅ Contract Offer Sent',
-      description: `A private contract offer has been sent to <@${result.player.discordUserId}> on behalf of **${club?.name ?? destinationClub.name}**.`,
+      description: `A private contract offer has been sent to <@${result.player.discordUserId}> on behalf of ${formatTeamLabel(club ?? destinationClub)}.`,
       fields: [
         { name: 'Target Player', value: `<@${result.player.discordUserId}>`, inline: true },
         {
           name: 'Destination Team',
-          value: `${formatTeamNameWithEmoji(club?.name ?? destinationClub.name, club?.emoji)}`,
+          value: formatTeamLabel(club ?? destinationClub),
           inline: true,
         },
       ],
       thumbnail,
     });
 
-    await interaction.editReply({ embeds: [embed] });
+    await interaction.deleteReply();
+    await interaction.followUp({ embeds: [embed] });
   },
 };
 
-const debugResetCommand: CommandDefinition = {
+export const debugResetCommand: CommandDefinition = {
   data: new SlashCommandBuilder()
     .setName('debugreset')
     .setDescription('Development-only: Reset all SL Bot database data for this server'),

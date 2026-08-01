@@ -31,7 +31,7 @@ SL Bot strictly separates Discord interface concerns from domain rules and datab
 [Prisma Client & SQLite Engine]
 ```
 
-- **Bot Layer (`src/bot/`)**: Dispatches slash commands, autocomplete, debug reset buttons, and persistent offer button interactions. Builds standard Discord embeds with `✅`/`❌` title prefixes using `embeds.ts` and handles server custom & Unicode emojis via `emoji-helper.ts`. Ensures ephemeral embed responses for all errors.
+- **Bot Layer (`src/bot/`)**: Dispatches slash commands, autocomplete, debug reset buttons, and persistent offer button interactions. It exposes bounded guild emoji records, builds standard Discord embeds, and owns the Discord setup-audit adapter. All errors and administrative successes are ephemeral; informational output and the successful offer acknowledgement retain their documented visibility.
 - **Service Layer (`src/services/`)**: Enforces business logic, global bot permissions authorization, global staff uniqueness rules, pre-flight conflict resolution, squad capacity calculations, and Prisma transaction boundaries.
 - **Repository Layer (`src/repositories/`)**: Encapsulates database queries and maps Prisma exceptions into standard domain errors (`DuplicateTeamRoleError`, `DuplicateTeamNameError`, `DuplicateTeamShortNameError`, `StaffAlreadyAppointedError`, `TeamPositionOccupiedError`, `EntityNotFoundError`, `SquadFullError`, `ValidationError`).
 - **Domain Layer (`src/domain/`)**: Contains shared domain types, errors, validation schemas, and effective limit calculations.
@@ -64,11 +64,20 @@ SL Bot strictly separates Discord interface concerns from domain rules and datab
 
 ## Channel Policy Architecture
 
-`CommandChannelPolicyService` categorizes commands into two access levels:
+`CommandChannelPolicyService` categorizes commands while accounting for caller authorization:
 
-1. **Dual-Channel Commands**: `/health`, `/team list`, `/staff list`, `/roster`, `/limit view`, `/offer` (Allowed in Bot Commands OR Staff channel).
-2. **Staff Channel Commands**: `/setup league`, `/setup channels`, `/setup roles`, `/setup view`, `/team add`, `/team edit`, `/team remove`, `/limit default`, `/limit team`, `/limit reset`, `/staff appoint`, `/staff remove`, `/debugreset` (Restricted to Staff channel).
+1. **Informational Commands**: `/health`, `/team list`, `/staff list`, `/roster`, and `/limit view`. Ordinary callers use Bot Commands; globally authorized callers may use Bot Commands or Staff.
+2. **Team-Staff Command**: `/offer` accepts Bot Commands or Staff, checks channel guidance before active appointment resolution, and does not reveal Staff guidance to non-global callers in unrelated channels.
+3. **Staff Channel Commands**: `/setup league`, `/setup channels`, `/setup roles`, `/setup view`, `/team add`, `/team edit`, `/team remove`, `/limit default`, `/limit team`, `/limit reset`, `/staff appoint`, `/staff remove`, `/debugreset`.
 
 Bootstrap Exception: Before staff channel or `bot_permissions` role is configured, Discord Administrators may execute setup commands in the current channel.
+
+## Branding, roster, visibility, and setup audit
+
+- Custom team emoji input accepts full static/animated mentions, `:name:`, plain `name`, and composed Unicode sequences. Names require one exact case-insensitive match in the bounded guild emoji records; Discord IDs, names, and animation flags are canonicalized from the guild cache.
+- Team display uses `<emoji> Name (SHORT)` everywhere, with a legacy `Name (SHORT)` fallback. Autocomplete uses `:name:` for custom emoji and stores the club ID.
+- Roster sections use Team Manager, Assistant Team Manager, and Player Manager directly. The former Franchise Owner, General Manager, Head Coach, and Assistant Coach sections are absent.
+- Successful setup, team, limit, staff, and debug-reset administrative responses are ephemeral. Setup view is ephemeral, informational lists and roster remain public, health remains ephemeral, and offer acknowledgement remains public.
+- Successful setup league/channels/roles mutations publish a timestamped, actor-attributed embed through `SetupAuditService` when an audit channel exists. Channel setup publishes only after saving and uses the new channel. Delivery failure is logged without rollback. Other mutation publishing is deferred.
 
 Related notes: [[Commands]], [[Product Decisions]], [[Testing and Deployment]]

@@ -7,6 +7,7 @@ export interface EmbedOptions {
   thumbnail?: string | null;
   footer?: string;
   author?: { name: string; iconURL?: string } | null;
+  timestamp?: Date;
 }
 
 export const EMBED_COLORS = {
@@ -40,6 +41,7 @@ export function createSuccessEmbed(options: EmbedOptions): EmbedBuilder {
   if (options.fields && options.fields.length > 0) embed.addFields(options.fields);
   if (options.thumbnail) embed.setThumbnail(options.thumbnail);
   if (options.footer) embed.setFooter({ text: options.footer });
+  if (options.timestamp) embed.setTimestamp(options.timestamp);
 
   return embed;
 }
@@ -57,6 +59,7 @@ export function createInfoEmbed(options: EmbedOptions): EmbedBuilder {
   if (options.fields && options.fields.length > 0) embed.addFields(options.fields);
   if (options.thumbnail) embed.setThumbnail(options.thumbnail);
   if (options.footer) embed.setFooter({ text: options.footer });
+  if (options.timestamp) embed.setTimestamp(options.timestamp);
 
   return embed;
 }
@@ -74,6 +77,7 @@ export function createWarningEmbed(options: EmbedOptions): EmbedBuilder {
   if (options.fields && options.fields.length > 0) embed.addFields(options.fields);
   if (options.thumbnail) embed.setThumbnail(options.thumbnail);
   if (options.footer) embed.setFooter({ text: options.footer });
+  if (options.timestamp) embed.setTimestamp(options.timestamp);
 
   return embed;
 }
@@ -91,6 +95,7 @@ export function createErrorEmbed(options: EmbedOptions): EmbedBuilder {
   if (options.fields && options.fields.length > 0) embed.addFields(options.fields);
   if (options.thumbnail) embed.setThumbnail(options.thumbnail);
   if (options.footer) embed.setFooter({ text: options.footer });
+  if (options.timestamp) embed.setTimestamp(options.timestamp);
 
   return embed;
 }

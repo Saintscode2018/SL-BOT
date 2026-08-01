@@ -12,6 +12,7 @@ import type { CommandRegistry } from './command-registry.js';
 import { mapDiscordError } from './error-mapper.js';
 import type { OfferButtonInteraction } from './offer-button-handler.js';
 import { sendDebugResetPrompt } from './debug-reset-handler.js';
+import type { GuildEmoji } from './emoji-helper.js';
 import type {
   CommandAutocompleteInteraction,
   CommandContext,
@@ -108,8 +109,12 @@ class DiscordCommandInteraction implements CommandInteraction {
     return new DiscordCommandOptions(this.interaction);
   }
 
-  public hasGuildEmoji(emojiId: string): boolean {
-    return this.interaction.guild?.emojis.cache.has(emojiId) ?? false;
+  public getGuildEmojis(): readonly GuildEmoji[] {
+    const emojis = this.interaction.guild?.emojis.cache.values();
+    if (emojis === undefined) return [];
+    return [...emojis]
+      .filter((emoji): emoji is typeof emoji & { name: string } => emoji.name !== null)
+      .map((emoji) => ({ id: emoji.id, name: emoji.name, animated: emoji.animated ?? false }));
   }
 
   public async executeDebugReset(database: CommandContext['database']): Promise<void> {
@@ -130,6 +135,10 @@ class DiscordCommandInteraction implements CommandInteraction {
 
   public async followUp(response: SafeInteractionResponse): Promise<void> {
     await this.interaction.followUp(response);
+  }
+
+  public async deleteReply(): Promise<void> {
+    await this.interaction.deleteReply();
   }
 }
 

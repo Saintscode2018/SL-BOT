@@ -1,97 +1,138 @@
 import { describe, expect, it } from 'vitest';
-import { InvalidTeamEmojiError } from '../../src/domain/errors.js';
+
 import {
-  formatTeamNameWithEmoji,
   getTeamThumbnail,
   getTwemojiUrl,
   isUnicodeEmoji,
   parseCustomEmoji,
   validateTeamEmoji,
+  type GuildEmoji,
 } from '../../src/bot/emoji-helper.js';
+import { InvalidTeamEmojiError } from '../../src/domain/errors.js';
+import { formatTeamAutocompleteLabel, formatTeamLabel } from '../../src/domain/team-label.js';
 
-describe('emoji-helper', () => {
-  it('parses static custom Discord emoji', () => {
-    const parsed = parseCustomEmoji('<:arsenal:123456789012345678>');
-    expect(parsed).not.toBeNull();
-    expect(parsed?.id).toBe('123456789012345678');
-    expect(parsed?.name).toBe('arsenal');
-    expect(parsed?.animated).toBe(false);
-    expect(parsed?.mention).toBe('<:arsenal:123456789012345678>');
-    expect(parsed?.cdnUrl).toBe('https://cdn.discordapp.com/emojis/123456789012345678.png');
-  });
+const guildEmojis: readonly GuildEmoji[] = [
+  { id: '123456789012345678', name: 'chelsea', animated: false },
+  { id: '987654321098765432', name: 'chelsea_fire', animated: true },
+];
 
-  it('parses animated custom Discord emoji', () => {
-    const parsed = parseCustomEmoji('<a:chelsea_fire:987654321098765432>');
-    expect(parsed).not.toBeNull();
-    expect(parsed?.id).toBe('987654321098765432');
-    expect(parsed?.name).toBe('chelsea_fire');
-    expect(parsed?.animated).toBe(true);
-    expect(parsed?.mention).toBe('<a:chelsea_fire:987654321098765432>');
-    expect(parsed?.cdnUrl).toBe('https://cdn.discordapp.com/emojis/987654321098765432.gif');
-  });
-
-  it('validates unicode emojis accurately', () => {
-    expect(isUnicodeEmoji('⚽')).toBe(true);
-    expect(isUnicodeEmoji('🦁')).toBe(true);
-    expect(isUnicodeEmoji('🔵')).toBe(true);
-    expect(isUnicodeEmoji('👨‍👩‍👧')).toBe(true);
-    expect(isUnicodeEmoji('word')).toBe(false);
-    expect(isUnicodeEmoji('hello ⚽')).toBe(false);
-    expect(isUnicodeEmoji('123')).toBe(false);
-  });
-
-  it('validates team emojis with guild custom emoji filter', () => {
-    const serverEmojis = new Set(['123456789012345678', '987654321098765432']);
-    const isGuildEmojiAvailable = (id: string) => serverEmojis.has(id);
-
-    // server custom emoji
-    const validCustom = validateTeamEmoji('<:arsenal:123456789012345678>', isGuildEmojiAvailable);
-    expect(validCustom.type).toBe('custom');
-    expect(validCustom.customEmojiId).toBe('123456789012345678');
-
-    // server animated custom emoji
-    const validAnimated = validateTeamEmoji(
-      '<a:chelsea_fire:987654321098765432>',
-      isGuildEmojiAvailable,
+describe('emoji helper', () => {
+  it('parses static and animated custom mentions', () => {
+    expect(parseCustomEmoji('<:chelsea:123456789012345678>')).toEqual({
+      id: '123456789012345678',
+      name: 'chelsea',
+      animated: false,
+      mention: '<:chelsea:123456789012345678>',
+      cdnUrl: 'https://cdn.discordapp.com/emojis/123456789012345678.png',
+    });
+    expect(parseCustomEmoji('<a:chelsea_fire:987654321098765432>')?.cdnUrl).toBe(
+      'https://cdn.discordapp.com/emojis/987654321098765432.gif',
     );
-    expect(validAnimated.type).toBe('custom');
+  });
 
-    // unicode emoji
-    const validUnicode = validateTeamEmoji('⚽', isGuildEmojiAvailable);
-    expect(validUnicode.type).toBe('unicode');
-    expect(validUnicode.display).toBe('⚽');
+  it('resolves a full static mention from the guild record', () => {
+    expect(validateTeamEmoji('<:typed_name:123456789012345678>', guildEmojis)).toEqual({
+      type: 'custom',
+      display: '<:chelsea:123456789012345678>',
+      canonicalMention: '<:chelsea:123456789012345678>',
+      customEmojiId: '123456789012345678',
+      customEmojiName: 'chelsea',
+      animated: false,
+      thumbnailUrl: 'https://cdn.discordapp.com/emojis/123456789012345678.png',
+    });
+  });
 
-    // custom emoji from another server
-    expect(() => validateTeamEmoji('<:other:111122223333444455>', isGuildEmojiAvailable)).toThrow(
+  it('resolves a full animated mention from the guild record', () => {
+    const result = validateTeamEmoji('<a:typed_name:987654321098765432>', guildEmojis);
+    expect(result.display).toBe('<a:chelsea_fire:987654321098765432>');
+    expect(result.animated).toBe(true);
+    expect(result.thumbnailUrl).toBe('https://cdn.discordapp.com/emojis/987654321098765432.gif');
+  });
+
+  it('resolves wrapped plain and case insensitive names', () => {
+    expect(validateTeamEmoji(':chelsea:', guildEmojis).display).toBe(
+      '<:chelsea:123456789012345678>',
+    );
+    expect(validateTeamEmoji('chelsea', guildEmojis).display).toBe('<:chelsea:123456789012345678>');
+    expect(validateTeamEmoji('ChElSeA', guildEmojis).display).toBe('<:chelsea:123456789012345678>');
+  });
+
+  it('rejects missing cross server and deleted custom emojis', () => {
+    expect(() => validateTeamEmoji('missing', guildEmojis)).toThrow(InvalidTeamEmojiError);
+    expect(() => validateTeamEmoji('<:foreign:111122223333444455>', guildEmojis)).toThrow(
       InvalidTeamEmojiError,
     );
-
-    // malformed emoji string
-    expect(() => validateTeamEmoji('invalid_text', isGuildEmojiAvailable)).toThrow(
+    expect(() => validateTeamEmoji('<:deleted:123456789012345678>', [])).toThrow(
       InvalidTeamEmojiError,
     );
   });
 
-  it('derives team thumbnail correctly for custom and unicode emojis', () => {
-    expect(getTeamThumbnail('<:fc:123456789012345678>')).toBe(
+  it('rejects duplicate case insensitive names with full mention guidance', () => {
+    const duplicates: readonly GuildEmoji[] = [
+      { id: '111111111111111111', name: 'Chelsea', animated: false },
+      { id: '222222222222222222', name: 'chelsea', animated: true },
+    ];
+    expect(() => validateTeamEmoji('CHELSEA', duplicates)).toThrow(
+      'Paste the full custom emoji mention',
+    );
+  });
+
+  it('preserves unicode emoji sequences', () => {
+    for (const emoji of ['⚽', '🔵', '🦁', '🇹🇷', '👍🏽', '👨‍👩‍👧']) {
+      expect(isUnicodeEmoji(emoji)).toBe(true);
+      expect(validateTeamEmoji(emoji, guildEmojis)).toMatchObject({
+        type: 'unicode',
+        display: emoji,
+      });
+    }
+  });
+
+  it('rejects malformed text and image urls', () => {
+    for (const value of ['invalid text', 'abc', ':bad name:', 'https://example.com/team.png']) {
+      expect(() => validateTeamEmoji(value, guildEmojis)).toThrow(InvalidTeamEmojiError);
+    }
+  });
+
+  it('derives custom and unicode thumbnails', () => {
+    expect(getTeamThumbnail('<:chelsea:123456789012345678>')).toBe(
       'https://cdn.discordapp.com/emojis/123456789012345678.png',
     );
-
     const twemojiUrl = getTwemojiUrl('⚽');
     expect(twemojiUrl).not.toBeNull();
     expect(getTeamThumbnail('⚽')).toBe(twemojiUrl);
+  });
+});
 
-    expect(getTeamThumbnail(null, 'https://example.com/logo.png')).toBe(
-      'https://example.com/logo.png',
+describe('team labels', () => {
+  it('formats unicode custom and legacy labels', () => {
+    expect(formatTeamLabel({ name: 'Chelsea', shortName: 'CHE', emoji: '🔵' })).toBe(
+      '🔵 Chelsea (CHE)',
     );
-    expect(getTeamThumbnail(null, null)).toBeNull();
+    expect(
+      formatTeamLabel({
+        name: 'Chelsea',
+        shortName: 'CHE',
+        emoji: '<:chelsea:123456789012345678>',
+      }),
+    ).toBe('<:chelsea:123456789012345678> Chelsea (CHE)');
+    expect(formatTeamLabel({ name: 'Chelsea', shortName: 'CHE', emoji: null })).toBe(
+      'Chelsea (CHE)',
+    );
   });
 
-  it('formats team name with emoji mention or unicode emoji', () => {
-    expect(formatTeamNameWithEmoji('Arsenal FC', '<:ars:123456789012345678>')).toBe(
-      '<:ars:123456789012345678> **Arsenal FC**',
+  it('uses a custom emoji name fallback for autocomplete', () => {
+    expect(
+      formatTeamAutocompleteLabel({
+        name: 'Chelsea',
+        shortName: 'CHE',
+        emoji: '<a:chelsea:123456789012345678>',
+      }),
+    ).toBe(':chelsea: Chelsea (CHE)');
+    expect(formatTeamAutocompleteLabel({ name: 'Chelsea', shortName: 'CHE', emoji: '🔵' })).toBe(
+      '🔵 Chelsea (CHE)',
     );
-    expect(formatTeamNameWithEmoji('Chelsea FC', '⚽')).toBe('⚽ **Chelsea FC**');
-    expect(formatTeamNameWithEmoji('Arsenal FC', null)).toBe('**Arsenal FC**');
+    expect(formatTeamAutocompleteLabel({ name: 'Chelsea', shortName: 'CHE' })).toBe(
+      'Chelsea (CHE)',
+    );
   });
 });

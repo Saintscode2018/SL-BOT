@@ -12,6 +12,21 @@ tags:
 
 Index: [[SLBot]] | Roadmap: [[Roadmap]]
 
+## Stage 4A Live-Test Corrections
+
+**Date**: August 1, 2026
+**Branch**: `stage4a-polish/errors-branding-command-ui`
+
+This section supersedes the older Stage 4A Polish presentation and visibility claims below while preserving them as session history.
+
+- Custom emoji input now accepts full static or animated mentions, `:name:`, and plain `name`. Guild `{id, name, animated}` records are authoritative; duplicate names require a full mention, and deleted or cross-server emojis fail safely. Composed Unicode sequences remain supported.
+- Team display is centralized as `<emoji> Name (SHORT)` with custom emoji autocomplete rendered as `:name:` and club IDs retained as values.
+- Roster headings now use Team Manager, Assistant Team Manager, and Player Manager. Franchise Owner, General Manager, Head Coach, and Assistant Coach headings were removed.
+- Setup, team, limit, staff, and debug-reset administrative successes are ephemeral; setup view is ephemeral; informational lists/roster and the successful offer acknowledgement remain public; health and every error remain ephemeral.
+- Channel policy now checks administrative permission before staff-channel guidance, gives ordinary informational users bot-only guidance, gives globally authorized users configured bot/staff guidance, and checks `/offer` channels before active staff appointment.
+- Setup league/channels/roles publish timestamped actor-attributed audit embeds when configured. Channel setup uses the newly saved audit channel. Delivery failure is nonfatal. Setup view and non-setup mutations do not publish in this stage.
+- Automated coverage includes emoji resolution, labels, roster headings, visibility matrix, policy non-disclosure, setup audit order/content/failure, and live debug flag registry determinism.
+
 ## Stage 4A Polish Session — Errors, Branding, & Command UX
 
 **Date**: August 1, 2026

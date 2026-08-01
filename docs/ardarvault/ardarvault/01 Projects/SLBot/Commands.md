@@ -40,7 +40,7 @@ Index: [[SLBot]] | Architecture: [[Architecture]]
   ├── remove          (Inputs: team, staff_type)
   └── list            (Inputs: [team])
 
-/roster               (Inputs: team) - Reference layout matching Franchise Owner, GM, Head Coach, future unavailable Assistant Coach, Players
+/roster               (Inputs: team) - Team Manager, Assistant Team Manager, Player Manager, divider, Players
 
 /offer                (Inputs: player) - Automatically derives source team from caller's active TM/ATM/PM appointment
 
@@ -53,23 +53,23 @@ Index: [[SLBot]] | Architecture: [[Architecture]]
 
 | Command           | Allowed Channels                               | Authorization                 | Response Visibility                        |
 | :---------------- | :--------------------------------------------- | :---------------------------- | :----------------------------------------- |
-| `/health`         | Bot Commands OR Staff                          | Normal bot user               | **Ephemeral Embed**                        |
-| `/setup league`   | Staff channel only (Bootstrap exception below) | Global bot permission         | **Public Embed**                           |
-| `/setup channels` | Staff channel only (Bootstrap exception below) | Global bot permission         | **Public Embed**                           |
-| `/setup roles`    | Staff channel only (Bootstrap exception below) | Global bot permission         | **Public Embed**                           |
-| `/setup view`     | Staff channel only (Bootstrap exception below) | Global bot permission         | **Public Embed**                           |
-| `/team add`       | Staff channel only                             | Global bot permission         | **Public Embed**                           |
-| `/team edit`      | Staff channel only                             | Global bot permission         | **Public Embed**                           |
-| `/team remove`    | Staff channel only                             | Global bot permission         | **Public Embed**                           |
-| `/team list`      | Bot Commands OR Staff                          | Normal bot user               | **Public Embed**                           |
-| `/limit default`  | Staff channel only                             | Global bot permission         | **Public Embed**                           |
-| `/limit team`     | Staff channel only                             | Global bot permission         | **Public Embed**                           |
-| `/limit reset`    | Staff channel only                             | Global bot permission         | **Public Embed**                           |
-| `/limit view`     | Bot Commands OR Staff                          | Normal bot user               | **Public Embed**                           |
-| `/staff appoint`  | Staff channel only                             | Global bot permission         | **Public Embed**                           |
-| `/staff remove`   | Staff channel only                             | Global bot permission         | **Public Embed**                           |
-| `/staff list`     | Bot Commands OR Staff                          | Normal bot user               | **Public Embed**                           |
-| `/roster`         | Bot Commands OR Staff                          | Normal bot user               | **Public Embed**                           |
+| `/health`         | Bot Commands; Staff for global callers         | Normal bot user               | **Ephemeral Embed**                        |
+| `/setup league`   | Staff channel only (Bootstrap exception below) | Global bot permission         | **Ephemeral Embed**                        |
+| `/setup channels` | Staff channel only (Bootstrap exception below) | Global bot permission         | **Ephemeral Embed**                        |
+| `/setup roles`    | Staff channel only (Bootstrap exception below) | Global bot permission         | **Ephemeral Embed**                        |
+| `/setup view`     | Staff channel only (Bootstrap exception below) | Global bot permission         | **Ephemeral Embed**                        |
+| `/team add`       | Staff channel only                             | Global bot permission         | **Ephemeral Embed**                        |
+| `/team edit`      | Staff channel only                             | Global bot permission         | **Ephemeral Embed**                        |
+| `/team remove`    | Staff channel only                             | Global bot permission         | **Ephemeral Embed**                        |
+| `/team list`      | Bot Commands; Staff for global callers         | Normal bot user               | **Public Embed**                           |
+| `/limit default`  | Staff channel only                             | Global bot permission         | **Ephemeral Embed**                        |
+| `/limit team`     | Staff channel only                             | Global bot permission         | **Ephemeral Embed**                        |
+| `/limit reset`    | Staff channel only                             | Global bot permission         | **Ephemeral Embed**                        |
+| `/limit view`     | Bot Commands; Staff for global callers         | Normal bot user               | **Public Embed**                           |
+| `/staff appoint`  | Staff channel only                             | Global bot permission         | **Ephemeral Embed**                        |
+| `/staff remove`   | Staff channel only                             | Global bot permission         | **Ephemeral Embed**                        |
+| `/staff list`     | Bot Commands; Staff for global callers         | Normal bot user               | **Public Embed**                           |
+| `/roster`         | Bot Commands; Staff for global callers         | Normal bot user               | **Public Embed**                           |
 | `/offer`          | Bot Commands OR Staff                          | Active Club Staff (TM/ATM/PM) | **Public Embed Ack** (DM to target player) |
 | `/debugreset`     | Staff channel only                             | Discord Administrator ONLY    | **Ephemeral Confirmation Embed & Buttons** |
 
@@ -80,5 +80,9 @@ Index: [[SLBot]] | Architecture: [[Architecture]]
 - Ordinary users never receive bootstrap access.
 
 All error responses and channel policy violations produce **ephemeral red error embeds** (`❌`).
+
+Ordinary informational callers are directed only to Bot Commands. Globally authorized callers may receive Bot Commands and Staff guidance when both are configured. Administrative permission is checked before Staff details are revealed. `/offer` validates Bot Commands or Staff before resolving the caller's active TM/ATM/PM appointment.
+
+Team labels use `<emoji> Name (SHORT)`; custom emoji autocomplete labels use `:name: Name (SHORT)` while the choice value remains the club ID. Successful setup league/channels/roles mutations mirror to the configured audit channel; setup view and all other administrative mutations do not publish Discord audit messages in this stage.
 
 Related notes: [[Product Decisions]], [[Roadmap]], [[Testing and Deployment]]

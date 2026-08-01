@@ -1,11 +1,15 @@
 import type { EmbedBuilder } from 'discord.js';
 import {
+  AdministrativePermissionDeniedError,
+  AdministrativeWrongChannelError,
   AlreadyMemberOfClubError,
   AuthorizationError,
+  BotCommandsChannelNotConfiguredError,
   BotUserNotAllowedError,
   ClubInactiveError,
   ConfigurationError,
   ConflictError,
+  DebugAdministratorPermissionRequiredError,
   DuplicateOfferError,
   DuplicateTeamNameError,
   DuplicateTeamRoleError,
@@ -16,14 +20,17 @@ import {
   InvalidOfferMessageError,
   InvalidStateTransitionError,
   InvalidTeamEmojiError,
+  LeagueSetupRequiredError,
   NoStaffAppointmentError,
   OfferDeliveryError,
   OfferExpiredError,
   SquadFullError,
   StaffAlreadyAppointedError,
+  StaffChannelNotConfiguredError,
   TeamPositionOccupiedError,
   UnauthorizedOfferAcceptanceError,
   ValidationError,
+  WrongCommandChannelError,
 } from '../domain/errors.js';
 import { createErrorEmbed } from './embeds.js';
 
@@ -34,92 +41,121 @@ export interface MappedErrorResponse {
 }
 
 export function mapDiscordError(error: unknown): MappedErrorResponse {
-  let title = '❌ Command failed';
+  let title = '❌ Command Failed';
   let description = 'An unexpected error occurred. Please try again later.';
 
-  if (error instanceof DuplicateTeamRoleError) {
-    title = '❌ Team role already in use';
+  if (error instanceof AdministrativePermissionDeniedError) {
+    title = '❌ Permission Denied';
+    description = error.message;
+  } else if (error instanceof DebugAdministratorPermissionRequiredError) {
+    title = '❌ Permission Denied';
+    description = error.message;
+  } else if (error instanceof AdministrativeWrongChannelError) {
+    title = '❌ Wrong Command Channel';
+    description = `Administrative commands must be used in <#${error.staffChannelId}>.\n\nUse the configured staff commands channel and try again.`;
+  } else if (error instanceof WrongCommandChannelError) {
+    title = '❌ Wrong Command Channel';
+    if (error.guidance === 'bot_commands') {
+      description = `Please use <#${error.allowedChannelIds[0]}> for bot commands.`;
+    } else if (error.allowedChannelIds.length > 1) {
+      description = `Use either <#${error.allowedChannelIds[0]}> or <#${error.allowedChannelIds[1]}> for this command.`;
+    } else {
+      description = `Please use <#${error.allowedChannelIds[0]}> for this command.`;
+    }
+  } else if (error instanceof StaffChannelNotConfiguredError) {
+    title = '❌ Staff Channel Not Configured';
+    description =
+      'A Discord Administrator must configure the staff channel with `/setup channels` before this command can be used.';
+  } else if (error instanceof BotCommandsChannelNotConfiguredError) {
+    title = '❌ Bot Commands Channel Not Configured';
+    description =
+      'A Discord Administrator must configure the league channels with `/setup channels`.';
+  } else if (error instanceof LeagueSetupRequiredError) {
+    title = '❌ League Setup Required';
+    description = 'A Discord Administrator must run `/setup league` first.';
+  } else if (error instanceof DuplicateTeamRoleError) {
+    title = '❌ Team Role Already In Use';
     description = `The role <@&${error.roleId}> is already assigned to ${error.teamName}.\n\nChoose a different Discord role for this team.`;
   } else if (error instanceof DuplicateTeamNameError) {
-    title = '❌ Team name already in use';
+    title = '❌ Team Name Already In Use';
     description = `A team named ${error.teamName} already exists.`;
   } else if (error instanceof DuplicateTeamShortNameError) {
-    title = '❌ Team abbreviation already in use';
+    title = '❌ Team Abbreviation Already In Use';
     description = `The abbreviation ${error.shortName} is already assigned to ${error.teamName}.`;
   } else if (error instanceof StaffAlreadyAppointedError) {
-    title = '❌ Staff member already appointed';
+    title = '❌ Staff Member Already Appointed';
     description = error.message;
   } else if (error instanceof TeamPositionOccupiedError) {
-    title = '❌ Position already occupied';
+    title = '❌ Position Already Occupied';
     description = error.message;
   } else if (error instanceof InvalidTeamEmojiError) {
-    title = '❌ Invalid team emoji';
+    title = '❌ Invalid Team Emoji';
     description = error.message;
   } else if (error instanceof NoStaffAppointmentError) {
-    title = '❌ Staff appointment required';
+    title = '❌ Staff Appointment Required';
     description = error.message;
   } else if (error instanceof AuthorizationError) {
-    title = '❌ Permission denied';
+    title = '❌ Permission Denied';
     description =
       error.message || 'You need the configured bot permissions role to use this command.';
   } else if (
     error instanceof GuildNotConfiguredError ||
     error instanceof GuildConfigurationNotFoundError
   ) {
-    title = '❌ League setup required';
+    title = '❌ League Setup Required';
     description = 'A user with bot permissions must run /setup league first.';
   } else if (error instanceof ConfigurationError) {
     if (error.message.includes('can only be used in')) {
-      title = '❌ Command unavailable here';
+      title = '❌ Command Unavailable Here';
       description = error.message;
     } else if (error.message.toLowerCase().includes('setup')) {
-      title = '❌ League setup required';
+      title = '❌ League Setup Required';
       description = error.message;
     } else {
-      title = '❌ Configuration error';
+      title = '❌ Configuration Error';
       description = error.message;
     }
   } else if (error instanceof ValidationError) {
     if (error.message.toLowerCase().includes('emoji')) {
-      title = '❌ Invalid team emoji';
+      title = '❌ Invalid Team Emoji';
       description =
-        'Choose either a standard Discord emoji or a custom emoji from this server.\n\nExamples: ⚽ or <:chelsea:123456789012345678>';
+        'Choose either a standard Discord emoji or a custom emoji from this server.\n\nExamples: ⚽ or `<:chelsea:123456789012345678>`';
     } else {
-      title = '❌ Invalid command options';
+      title = '❌ Invalid Command Options';
       description = error.message;
     }
   } else if (error instanceof ClubInactiveError) {
-    title = '❌ Team inactive';
+    title = '❌ Team Inactive';
     description = 'That team is inactive.';
   } else if (error instanceof SquadFullError) {
-    title = '❌ Squad limit reached';
+    title = '❌ Squad Limit Reached';
     description = 'That team has reached its squad limit.';
   } else if (error instanceof AlreadyMemberOfClubError) {
-    title = '❌ Roster conflict';
+    title = '❌ Roster Conflict';
     description = 'That player already has an active roster membership.';
   } else if (error instanceof DuplicateOfferError) {
-    title = '❌ Duplicate offer';
+    title = '❌ Duplicate Offer';
     description = 'That team already has a pending offer for this player.';
   } else if (error instanceof OfferExpiredError) {
-    title = '❌ Offer expired';
+    title = '❌ Offer Expired';
     description = 'This offer has expired.';
   } else if (error instanceof UnauthorizedOfferAcceptanceError) {
     title = '❌ Unauthorized';
     description = 'Only the player who received this offer can respond.';
   } else if (error instanceof InvalidOfferMessageError) {
-    title = '❌ Invalid offer interaction';
+    title = '❌ Invalid Offer Interaction';
     description = 'This offer interaction is no longer valid.';
   } else if (error instanceof BotUserNotAllowedError) {
-    title = '❌ Invalid target';
+    title = '❌ Invalid Target';
     description = 'Bot accounts cannot be selected.';
   } else if (error instanceof OfferDeliveryError) {
-    title = '❌ Offer delivery failed';
+    title = '❌ Offer Delivery Failed';
     description =
       error.message === 'offer message could not be delivered'
         ? 'The player could not be contacted privately, so the offer was cancelled.'
         : 'The private offer could not be completed safely. Please contact a league administrator.';
   } else if (error instanceof EntityNotFoundError) {
-    title = '❌ Record not found';
+    title = '❌ Record Not Found';
     description = 'The requested record could not be found.';
   } else if (error instanceof InvalidStateTransitionError || error instanceof ConflictError) {
     title = '❌ Conflict';

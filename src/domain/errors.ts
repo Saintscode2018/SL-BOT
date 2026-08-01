@@ -39,6 +39,53 @@ export class AlreadyMemberOfClubError extends DomainError {}
 
 export class AuthorizationError extends DomainError {}
 
+export class AdministrativePermissionDeniedError extends AuthorizationError {
+  public constructor() {
+    super(
+      'You do not have permission to use this administrative command.\n\nAsk a league administrator if you believe you should have access.',
+    );
+  }
+}
+
+export class DebugAdministratorPermissionRequiredError extends AuthorizationError {
+  public constructor() {
+    super('Discord Administrator permission is required to use /debugreset.');
+  }
+}
+
+export class AdministrativeWrongChannelError extends ConfigurationError {
+  public constructor(public readonly staffChannelId: string) {
+    super(`administrative command used outside staff channel ${staffChannelId}`);
+  }
+}
+
+export class WrongCommandChannelError extends ConfigurationError {
+  public constructor(
+    public readonly allowedChannelIds: readonly string[],
+    public readonly guidance: 'bot_commands' | 'global',
+  ) {
+    super('command used outside its permitted channels');
+  }
+}
+
+export class StaffChannelNotConfiguredError extends ConfigurationError {
+  public constructor() {
+    super('staff channel is not configured');
+  }
+}
+
+export class BotCommandsChannelNotConfiguredError extends ConfigurationError {
+  public constructor() {
+    super('bot commands channel is not configured');
+  }
+}
+
+export class LeagueSetupRequiredError extends ConfigurationError {
+  public constructor() {
+    super('league setup is required');
+  }
+}
+
 export class GuildNotConfiguredError extends DomainError {}
 
 export class ClubInactiveError extends DomainError {}
@@ -100,9 +147,10 @@ export class TeamPositionOccupiedError extends ConflictError {
 }
 
 export class InvalidTeamEmojiError extends DomainError {
-  public constructor() {
+  public constructor(message?: string) {
     super(
-      'Choose either a standard Discord emoji or a custom emoji from this server.\n\nExamples: ⚽ or <:chelsea:123456789012345678>',
+      message ??
+        'Choose either a standard Discord emoji or a custom emoji from this server.\n\nExamples: ⚽ or `<:chelsea:123456789012345678>`',
     );
   }
 }

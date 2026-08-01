@@ -10,6 +10,7 @@ import {
   ValidationError,
 } from '../domain/errors.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
+import { formatTeamAutocompleteLabel, formatTeamLabel } from '../domain/team-label.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { ClubRepository } from '../repositories/club-repository.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
@@ -76,15 +77,15 @@ export class ClubManagementService {
         input.discordRoleId,
       );
       if (existingRoleClub !== null) {
-        throw new DuplicateTeamRoleError(input.discordRoleId, existingRoleClub.name);
+        throw new DuplicateTeamRoleError(input.discordRoleId, formatTeamLabel(existingRoleClub));
       }
       const existingNameClub = await clubs.getByName(authorization.guild.id, name);
       if (existingNameClub !== null) {
-        throw new DuplicateTeamNameError(existingNameClub.name);
+        throw new DuplicateTeamNameError(formatTeamLabel(existingNameClub));
       }
       const existingShortNameClub = await clubs.getByShortName(authorization.guild.id, shortName);
       if (existingShortNameClub !== null) {
-        throw new DuplicateTeamShortNameError(shortName, existingShortNameClub.name);
+        throw new DuplicateTeamShortNameError(shortName, formatTeamLabel(existingShortNameClub));
       }
 
       const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
@@ -144,7 +145,7 @@ export class ClubManagementService {
           input.discordRoleId,
         );
         if (existingRoleClub !== null && existingRoleClub.id !== club.id) {
-          throw new DuplicateTeamRoleError(input.discordRoleId, existingRoleClub.name);
+          throw new DuplicateTeamRoleError(input.discordRoleId, formatTeamLabel(existingRoleClub));
         }
       }
       if (input.name !== undefined) {
@@ -152,7 +153,7 @@ export class ClubManagementService {
         if (parsedName !== club.name) {
           const existingNameClub = await clubs.getByName(authorization.guild.id, parsedName);
           if (existingNameClub !== null && existingNameClub.id !== club.id) {
-            throw new DuplicateTeamNameError(existingNameClub.name);
+            throw new DuplicateTeamNameError(formatTeamLabel(existingNameClub));
           }
         }
       }
@@ -164,7 +165,10 @@ export class ClubManagementService {
             parsedShortName,
           );
           if (existingShortNameClub !== null && existingShortNameClub.id !== club.id) {
-            throw new DuplicateTeamShortNameError(parsedShortName, existingShortNameClub.name);
+            throw new DuplicateTeamShortNameError(
+              parsedShortName,
+              formatTeamLabel(existingShortNameClub),
+            );
           }
         }
       }
@@ -280,6 +284,6 @@ export class ClubManagementService {
           club.shortName.toLowerCase().includes(normalized),
       )
       .slice(0, Math.min(limit, 25))
-      .map(({ club }) => ({ name: `${club.name} (${club.shortName})`, value: club.id }));
+      .map(({ club }) => ({ name: formatTeamAutocompleteLabel(club), value: club.id }));
   }
 }

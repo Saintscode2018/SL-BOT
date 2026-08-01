@@ -20,25 +20,33 @@ export interface AuthorizationResult {
   kind: 'owner' | 'administrator' | 'league_admin' | 'club_staff';
 }
 
+export type GlobalAuthorizationKind = 'owner' | 'administrator' | 'league_admin';
+
 export class AuthorizationService {
   public constructor(private readonly database: DatabaseClient) {}
 
-  public async assertCanSetup(input: AuthorizationInput): Promise<void> {
-    if (input.discordUserId === input.guildOwnerId || input.hasAdministratorPermission) {
-      return;
-    }
+  public async getGlobalAuthorizationKind(
+    input: AuthorizationInput,
+  ): Promise<GlobalAuthorizationKind | null> {
+    if (input.discordUserId === input.guildOwnerId) return 'owner';
+    if (input.hasAdministratorPermission) return 'administrator';
+
     const guilds = new GuildRepository(this.database);
     const guild = await guilds.getByDiscordGuildId(input.discordGuildId);
-    if (guild !== null) {
-      const settings = await guilds.getSettings(guild.id);
-      if (
-        settings?.botPermissionsRoleId !== null &&
-        settings?.botPermissionsRoleId !== undefined &&
-        input.memberRoleIds.includes(settings.botPermissionsRoleId)
-      ) {
-        return;
-      }
+    if (guild === null) return null;
+    const settings = await guilds.getSettings(guild.id);
+    if (
+      settings?.botPermissionsRoleId !== null &&
+      settings?.botPermissionsRoleId !== undefined &&
+      input.memberRoleIds.includes(settings.botPermissionsRoleId)
+    ) {
+      return 'league_admin';
     }
+    return null;
+  }
+
+  public async assertCanSetup(input: AuthorizationInput): Promise<void> {
+    if ((await this.getGlobalAuthorizationKind(input)) !== null) return;
     throw new AuthorizationError(
       'You need the configured bot permissions role to use this command.',
     );
@@ -48,18 +56,8 @@ export class AuthorizationService {
     input: AuthorizationInput,
   ): Promise<AuthorizationResult> {
     const configuration = await this.loadConfiguration(input.discordGuildId);
-    if (input.discordUserId === input.guildOwnerId) {
-      return { ...configuration, kind: 'owner' };
-    }
-    if (input.hasAdministratorPermission) {
-      return { ...configuration, kind: 'administrator' };
-    }
-    if (
-      configuration.settings.botPermissionsRoleId !== null &&
-      input.memberRoleIds.includes(configuration.settings.botPermissionsRoleId)
-    ) {
-      return { ...configuration, kind: 'league_admin' };
-    }
+    const kind = await this.getGlobalAuthorizationKind(input);
+    if (kind !== null) return { ...configuration, kind };
     throw new AuthorizationError(
       'You need the configured bot permissions role to use this command.',
     );

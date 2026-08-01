@@ -15,7 +15,9 @@ import type { OfferAcceptanceService } from '../services/offer-acceptance-servic
 import type { OfferDeliveryService } from '../services/offer-delivery-service.js';
 import type { RosterManagementService } from '../services/roster-management-service.js';
 import type { StaffManagementService } from '../services/staff-management-service.js';
+import type { SetupAuditService } from '../services/setup-audit-service.js';
 import type { OfferButtonHandler } from './offer-button-handler.js';
+import type { GuildEmoji } from './emoji-helper.js';
 
 export interface SafeInteractionResponse {
   content?: string;
@@ -44,13 +46,14 @@ export interface CommandInteraction {
   readonly memberRoleIds?: readonly string[] | undefined;
   readonly hasAdministratorPermission?: boolean | undefined;
   readonly options?: CommandInteractionOptions | undefined;
-  hasGuildEmoji?(emojiId: string): boolean;
+  getGuildEmojis?(): readonly GuildEmoji[];
   executeDebugReset?(database: PrismaClient): Promise<void>;
   reply(response: SafeInteractionResponse): Promise<void>;
 
   deferReply(response?: DeferredInteractionResponse): Promise<void>;
   editReply(response: EditedInteractionResponse): Promise<void>;
   followUp(response: SafeInteractionResponse): Promise<void>;
+  deleteReply(): Promise<void>;
 }
 
 export interface CommandInteractionOptions {
@@ -97,6 +100,7 @@ export interface CommandContext {
   commandChannelPolicyService: Pick<CommandChannelPolicyService, 'validateChannelPolicy'>;
   offerDeliveryService: Pick<OfferDeliveryService, 'createAndDeliver'>;
   offerButtonHandler: Pick<OfferButtonHandler, 'handle'>;
+  setupAuditService: Pick<SetupAuditService, 'publish'>;
 }
 
 export interface CommandDefinition {

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaClient } from '@prisma/client';
-import type { ButtonInteraction, ChatInputCommandInteraction } from 'discord.js';
+import { MessageFlags, type ButtonInteraction, type ChatInputCommandInteraction } from 'discord.js';
 
 import {
   DEBUG_RESET_CANCEL_CUSTOM_ID_PREFIX,
@@ -207,6 +207,9 @@ describe('debug reset', () => {
 
     await sendDebugResetPrompt(reset.interaction, context.client);
 
+    expect(reset.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ flags: MessageFlags.Ephemeral }),
+    );
     expect(accepted).toEqual([originalConfirm.interaction]);
     expect(otherConfirm.reply).not.toHaveBeenCalled();
     expect(otherCancel.reply).not.toHaveBeenCalled();
@@ -220,12 +223,13 @@ describe('debug reset', () => {
       `${DEBUG_RESET_CANCEL_CUSTOM_ID_PREFIX}${initiatingUserId}`,
       initiatingUserId,
     );
+    const reset = resetInteraction({ candidates: [cancel.interaction] });
 
-    await sendDebugResetPrompt(
-      resetInteraction({ candidates: [cancel.interaction] }).interaction,
-      context.client,
+    await sendDebugResetPrompt(reset.interaction, context.client);
+
+    expect(reset.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ flags: MessageFlags.Ephemeral }),
     );
-
     expect(await context.client.guild.count()).toBe(1);
     expect(await context.client.offer.count()).toBe(1);
     expect(cancel.update).toHaveBeenCalledOnce();

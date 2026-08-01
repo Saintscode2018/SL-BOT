@@ -21,7 +21,7 @@ Repositories and services store only strings, UUIDs, dates, domain values, and p
 
 ## Lifecycle and registration
 
-`createApplication` loads `.env`, preserves values already injected into the process environment, validates runtime configuration, and constructs one logger, Prisma client, Discord client, message adapter, services, static command registry, and static event registry. `Application.start` connects Prisma, registers the interaction event, and logs in. Partial startup failure destroys Discord and disconnects Prisma. `Application.stop` is idempotent and process signal handling shares one shutdown promise.
+`createApplication` loads `.env`, preserves values already injected into the process environment, validates runtime configuration, and constructs one logger, Prisma client, Discord client, offer-message adapter, setup-audit adapter, services, static command registry, and static event registry. `Application.start` connects Prisma, registers the interaction event, and logs in. Partial startup failure destroys Discord and disconnects Prisma. `Application.stop` is idempotent and process signal handling shares one shutdown promise.
 
 The client requests only `GatewayIntentBits.Guilds`. `interactionCreate` dispatches chat-input commands, autocomplete, and offer buttons separately. Known errors pass through one safe error mapper; unexpected errors are logged internally and produce a visible ephemeral error embed.
 
@@ -31,15 +31,18 @@ Command deployment is an explicit REST operation through `scripts/deploy-command
 
 `CommandChannelPolicyService` classifies commands prior to execution:
 
-- **Dual-Channel Commands** (Bot Commands Channel or Staff Channel): `/health`, `/team list`, `/staff list`, `/roster`, `/limit view`, `/offer`.
+- **Informational Commands**: Ordinary callers use Bot Commands; globally authorized callers may use Bot Commands or Staff. This category contains `/health`, `/team list`, `/staff list`, `/roster`, and `/limit view`.
+- **Team-Staff Command**: `/offer` accepts Bot Commands or Staff, evaluates wrong-channel guidance before the caller's active staff appointment, and reveals the staff-channel option only to globally authorized callers on an unrelated channel.
 - **Staff Channel Only**: `/setup league`, `/setup channels`, `/setup roles`, `/setup view`, `/team add`, `/team edit`, `/team remove`, `/limit default`, `/limit team`, `/limit reset`, `/staff appoint`, `/staff remove`, `/debugreset`.
 
 Validation rules:
 
-1. Rejects execution in unauthorized channels before invoking domain mutations.
-2. Formats ephemeral error embeds specifying the exact allowed target channel(s).
-3. Allows `/setup` bootstrapping in any channel when `staffChannelId` is not yet configured, strictly for users with Discord Administrator permissions.
-4. Once `staffChannelId` is configured, `/setup` commands must be executed in the staff channel.
+1. For administrative commands, verifies global permission before evaluating or revealing staff-channel guidance.
+2. For informational commands, resolves global authorization before choosing bot-only or bot-and-staff guidance.
+3. For `/offer`, validates the channel before the active TM/ATM/PM appointment is resolved.
+4. Emits structured policy errors that the central mapper converts into exact ephemeral embeds.
+5. Allows `/setup` bootstrapping in any channel when `staffChannelId` is not yet configured, strictly for users with Discord Administrator permissions.
+6. Once `staffChannelId` is configured, `/setup` commands must be executed in the staff channel.
 
 ## Authorization and Global Bot Permissions
 
@@ -64,12 +67,14 @@ Role IDs come from `GuildSettings`; staff authority comes from active database m
 - Reusable embed builders (`createSuccessEmbed`, `createInfoEmbed`, `createWarningEmbed`, `createErrorEmbed`) enforce standard styling and color codes.
 - Mutation embeds conclude with a full-width actor line (`Configured by`, `Added by`, `Appointed by`, `Removed by`).
 - Handled errors produce visible ephemeral red embeds in Discord detailing specific domain conflicts without exposing database IDs or stack traces.
+- Successful administrative setup, team, limit, staff, and debug-reset output is ephemeral; `/setup view` is ephemeral as administrative configuration output. Informational list/roster output stays public, health stays ephemeral, and the offer acknowledgement stays public after its private work defer is removed.
 
 ## Team Branding, Custom & Unicode Emojis
 
 - `/team add` requires a team emoji; `/team edit` permits optional emoji updates.
-- Supports server custom emojis (`<:name:emojiId>` or `<a:name:emojiId>`) and standard Unicode emojis (`⚽`, `🦁`).
-- Custom emojis are validated against the current guild's emoji collection via `CommandInteraction.hasGuildEmoji`.
+- Supports full custom mentions, wrapped names (`:name:`), plain names, and composed Unicode emoji sequences.
+- `CommandInteraction.getGuildEmojis()` exposes only `{id, name, animated}` records. Full mentions resolve by guild ID and names resolve by one exact case-insensitive guild-cache match; the guild record determines the canonical mention and PNG/GIF CDN URL.
+- Team labels are centralized as `<emoji> Name (SHORT)` with a legacy no-emoji fallback. Autocomplete uses `:name:` for custom emoji labels and always stores the club ID as the choice value.
 - Single-team embeds (team add/edit confirmations, roster views, offer cards) use derived custom emoji CDN or Twemoji URLs as thumbnails.
 - Multi-team list embeds display team emojis inline beside team names.
 
@@ -87,7 +92,9 @@ Staff members do not count toward player squad limits unless they also hold an a
 
 ## Administration transactions
 
-`GuildSetupService` manages `/setup` subcommands (`league`, `channels`, `roles`, `view`) and appends audit events. `ClubManagementService` creates, edits, or deactivates clubs (`/team remove` performs a safe soft deactivation while preserving historical memberships, staff appointments, offers, transactions, and audit records). `StaffManagementService` creates and ends staff memberships with pre-flight uniqueness checks.
+`GuildSetupService` manages `/setup` subcommands (`league`, `channels`, `roles`, `view`) and appends database audit events. After successful setup mutations, `SetupAuditService` calls one Discord adapter to publish a timestamped embed to the configured audit channel. Channel setup saves before publishing and uses the newly saved audit channel. Delivery failure is logged and does not roll back persistence. Setup view never publishes, and Discord publishing for team, limit, staff, and debug-reset mutations remains deferred.
+
+`ClubManagementService` creates, edits, or deactivates clubs (`/team remove` performs a safe soft deactivation while preserving historical memberships, staff appointments, offers, transactions, and audit records). `StaffManagementService` creates and ends staff memberships with pre-flight uniqueness checks. Roster presentation uses the actual Team Manager, Assistant Team Manager, and Player Manager names and does not synthesize an Assistant Coach section.
 
 `RosterManagementService` performs player registration and removal atomically. Registration checks the guild-wide active player membership and derived destination capacity against the effective squad limit, creating the membership, `SIGNING`, and audit.
 

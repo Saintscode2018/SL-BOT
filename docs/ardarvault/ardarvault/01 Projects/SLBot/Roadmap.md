@@ -26,11 +26,17 @@ Index: [[SLBot]]
 - **Stage 4A Polish — Errors, Branding, & Command UX**:
   - Specific domain conflict errors (duplicate role, name, short name, staff appointed, position occupied).
   - Global staff uniqueness rule (1 active staff position per user league-wide).
-  - Option A custom emoji validation (checked against current guild emojis via `hasGuildEmoji`) + Unicode emoji support.
+  - Guild-record custom emoji validation and composed Unicode emoji support.
   - Flattened `/offer player:<user>` command (auto-derives destination team from caller's active staff appointment).
   - Visual embed overhaul (`✅`/`❌` title prefixes, actor lines, vertical block fields for channels/roles).
-  - Reference roster layout (author, title, thumbnail, roster count, Franchise Owner, GM, Head Coach, Assistant Coach, Players).
+  - Roster layout with author, standard team-label title, thumbnail, count, actual TM/ATM/PM names, divider, and players.
   - Development-only `/debugreset` command with confirmation flow.
+- **Stage 4A Live-Test Corrections**:
+  - Guild custom emoji resolution from full mentions, wrapped names, or plain names, plus composed Unicode regression coverage.
+  - Standard `<emoji> Name (SHORT)` labels and custom-emoji autocomplete fallback.
+  - Correct TM/ATM/PM roster sections with no Assistant Coach placeholder.
+  - Ephemeral administrative success matrix and authorization-aware channel guidance.
+  - Setup-only Discord audit publishing for league, channels, and roles with nonfatal delivery failure.
 
 ## Explicitly Excluded / Future Stages (Stage 4B+)
 
@@ -41,7 +47,7 @@ The following features are **explicitly excluded** from Stage 4A Polish and must
 - Retry tables & background scheduling engine
 - `/admin roster-add` and `/admin roster-remove`
 - Public transfer announcements in `transferChannelId`
-- Live audit-channel publishing in `auditChannelId`
+- Discord audit publishing for team, limit, staff, and debug-reset mutations
 - `/demand`, `/release`, `/staff promote`, `/staff demote`
 - Full `/team disband` workflow, `/team swap`, `/teamhealth`
 - Match management (`/schedule`, `/gameresult`)
