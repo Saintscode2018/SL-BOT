@@ -72,7 +72,7 @@ function offerCreationResult(): OfferCreationResult {
       discordRoleId: '100000000000000007',
       logoUrl: null,
       emoji: null,
-      squadLimit: 10,
+      squadLimitOverride: 10,
       active: true,
       createdAt: now,
       updatedAt: now,
@@ -96,6 +96,7 @@ function offerCreationResult(): OfferCreationResult {
     },
     leagueName: 'Test League',
     activePlayerCount: 4,
+    effectiveSquadLimit: 10,
   };
 }
 
@@ -108,9 +109,16 @@ function commandContext(
     databaseHealth: { check: databaseHealth },
     guildConfigurationService: { load: () => Promise.reject(new Error('unused')) },
     offerAcceptanceService: { acceptOffer: () => Promise.reject(new Error('unused')) },
-    guildSetupService: { setup: () => Promise.reject(new Error('unused')) },
+    guildSetupService: {
+      setup: () => Promise.reject(new Error('unused')),
+      setupGuildOnly: () => Promise.reject(new Error('unused')),
+      setupChannels: () => Promise.reject(new Error('unused')),
+      setupRoles: () => Promise.reject(new Error('unused')),
+      getView: () => Promise.reject(new Error('unused')),
+    },
     clubManagementService: {
       create: () => Promise.reject(new Error('unused')),
+      edit: () => Promise.reject(new Error('unused')),
       deactivate: () => Promise.reject(new Error('unused')),
       listActive: () => Promise.reject(new Error('unused')),
       autocomplete: () => Promise.resolve([]),
@@ -124,6 +132,15 @@ function commandContext(
       add: () => Promise.reject(new Error('unused')),
       remove: () => Promise.reject(new Error('unused')),
       list: () => Promise.reject(new Error('unused')),
+    },
+    limitManagementService: {
+      setDefaultLimit: () => Promise.reject(new Error('unused')),
+      setTeamLimit: () => Promise.reject(new Error('unused')),
+      resetTeamLimit: () => Promise.reject(new Error('unused')),
+      viewLimit: () => Promise.reject(new Error('unused')),
+    },
+    commandChannelPolicyService: {
+      validateChannelPolicy: () => Promise.resolve(),
     },
     offerDeliveryService: { createAndDeliver: () => Promise.reject(new Error('unused')) },
     offerButtonHandler: { handle: () => Promise.resolve(false) },
@@ -210,6 +227,51 @@ class OfferCommandInteraction implements CommandInteraction {
   }
 }
 
+class RosterCommandInteraction implements CommandInteraction {
+  public readonly commandName = 'roster';
+  public readonly guildId = '100000000000000001';
+  public readonly guildName = 'Test Guild';
+  public readonly guildOwnerId = '100000000000000002';
+  public readonly userId = '100000000000000002';
+  public readonly memberRoleIds: readonly string[] = [];
+  public readonly hasAdministratorPermission = true;
+  public replied = false;
+  public deferred = false;
+  public readonly replies: SafeInteractionResponse[] = [];
+  public readonly followUps: SafeInteractionResponse[] = [];
+  public readonly edits: EditedInteractionResponse[] = [];
+  public readonly options: CommandInteractionOptions = {
+    getSubcommand: () => null,
+    getString: (name) => (name === 'team' ? 'club-1' : null),
+    getInteger: () => null,
+    getUser: () => null,
+    getRole: () => null,
+    getChannel: () => null,
+  };
+
+  public reply(response: SafeInteractionResponse): Promise<void> {
+    this.replies.push(response);
+    this.replied = true;
+    return Promise.resolve();
+  }
+
+  public deferReply(): Promise<void> {
+    this.deferred = true;
+    return Promise.resolve();
+  }
+
+  public editReply(response: EditedInteractionResponse): Promise<void> {
+    this.edits.push(response);
+    this.replied = true;
+    return Promise.resolve();
+  }
+
+  public followUp(response: SafeInteractionResponse): Promise<void> {
+    this.followUps.push(response);
+    return Promise.resolve();
+  }
+}
+
 describe('stage three command registry and deployment', () => {
   it('exports every visible command as exact deployment JSON', () => {
     const registry = loadCommands(commandDefinitions);
@@ -217,6 +279,7 @@ describe('stage three command registry and deployment', () => {
       'health',
       'setup',
       'team',
+      'limit',
       'staff',
       'roster',
       'offer',
@@ -265,6 +328,65 @@ describe('stage three command registry and deployment', () => {
       { content: 'SL Bot is online.\nDatabase: unavailable', flags: MessageFlags.Ephemeral },
     ]);
     expect(JSON.stringify(interaction.replies)).not.toContain('database secret');
+  });
+
+  it('formats roster using effective squad limit from guild settings', async () => {
+    const command = loadCommands(commandDefinitions).resolve('roster');
+    const interaction = new RosterCommandInteraction();
+    const logger = new MemoryLogger();
+    const context = commandContext(logger);
+    const now = new Date();
+    context.rosterManagementService = {
+      ...context.rosterManagementService,
+      list: () =>
+        Promise.resolve({
+          club: {
+            id: 'club-1',
+            guildId: '100000000000000001',
+            name: 'Arsenal',
+            shortName: 'ARS',
+            discordRoleId: 'role-1',
+            logoUrl: null,
+            emoji: null,
+            squadLimitOverride: null,
+            active: true,
+            createdAt: now,
+            updatedAt: now,
+          },
+          players: [],
+        }),
+    };
+    context.guildConfigurationService = {
+      load: () =>
+        Promise.resolve({
+          guild: {
+            id: 'g-1',
+            discordGuildId: '100000000000000001',
+            name: 'Test Guild',
+            createdAt: now,
+            updatedAt: now,
+          },
+          settings: {
+            id: 's-1',
+            guildId: 'g-1',
+            botCommandsChannelId: null,
+            staffChannelId: null,
+            transferChannelId: null,
+            auditChannelId: null,
+            adminRoleId: null,
+            teamManagerRoleId: null,
+            assistantManagerRoleId: null,
+            playerManagerRoleId: null,
+            defaultSquadLimit: 22,
+            offerTimeoutSeconds: 86400,
+            createdAt: now,
+            updatedAt: now,
+          },
+          activeClubs: [],
+        }),
+    };
+    await command?.execute(interaction, context);
+    expect(interaction.replies[0]?.content).toContain('Arsenal — 0/22 (22 spaces remaining)');
   });
 
   it('defers offer creation before delivery and edits the successful response', async () => {
@@ -469,7 +591,7 @@ describe('persistent offer buttons', () => {
         discordRoleId: '7',
         logoUrl: null,
         emoji: null,
-        squadLimit: 10,
+        squadLimitOverride: 10,
         active: true,
         createdAt: now,
         updatedAt: now,

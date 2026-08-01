@@ -19,9 +19,11 @@ import { ConsoleLogger, type Logger } from '../logging/logger.js';
 import { ClubRepository } from '../repositories/club-repository.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
 import { ClubManagementService } from '../services/club-management-service.js';
+import { CommandChannelPolicyService } from '../services/command-channel-policy-service.js';
 import { DatabaseHealthService } from '../services/database-health-service.js';
 import { GuildConfigurationService } from '../services/guild-configuration-service.js';
 import { GuildSetupService } from '../services/guild-setup-service.js';
+import { LimitManagementService } from '../services/limit-management-service.js';
 import { OfferAcceptanceService } from '../services/offer-acceptance-service.js';
 import { OfferCreationService } from '../services/offer-creation-service.js';
 import { OfferDeclineService } from '../services/offer-decline-service.js';
@@ -83,6 +85,8 @@ export function createApplication(
     clubManagementService: new ClubManagementService(prisma),
     staffManagementService: new StaffManagementService(prisma),
     rosterManagementService: new RosterManagementService(prisma),
+    limitManagementService: new LimitManagementService(prisma),
+    commandChannelPolicyService: new CommandChannelPolicyService(prisma),
     offerDeliveryService,
     offerButtonHandler,
   };

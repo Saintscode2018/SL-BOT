@@ -24,16 +24,19 @@ model Guild {
 model GuildSettings {
   id                     String   @id @default(uuid())
   guildId                String   @unique
+  botCommandsChannelId   String?
+  staffChannelId         String?
   transferChannelId      String?
   auditChannelId         String?
   adminRoleId            String?
   teamManagerRoleId      String?
   assistantManagerRoleId String?
   playerManagerRoleId    String?
+  defaultSquadLimit      Int      @default(17)
   offerTimeoutSeconds    Int      @default(86400)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
-  guild                   Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  guild                  Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 }
 
 model Club {
@@ -44,7 +47,7 @@ model Club {
   discordRoleId           String
   logoUrl                 String?
   emoji                   String?
-  squadLimit              Int
+  squadLimitOverride      Int?
   active                  Boolean             @default(true)
   createdAt               DateTime            @default(now())
   updatedAt               DateTime            @updatedAt

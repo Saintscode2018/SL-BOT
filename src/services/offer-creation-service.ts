@@ -9,6 +9,7 @@ import {
   SquadFullError,
 } from '../domain/errors.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
+import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { ClubRepository } from '../repositories/club-repository.js';
 import { MembershipRepository } from '../repositories/membership-repository.js';
 import { OfferRepository } from '../repositories/offer-repository.js';
@@ -34,6 +35,7 @@ export interface OfferCreationResult {
   offeredBy: LeagueUser;
   leagueName: string;
   activePlayerCount: number;
+  effectiveSquadLimit: number;
 }
 
 export class OfferCreationService {
@@ -65,7 +67,8 @@ export class OfferCreationService {
         throw new AlreadyMemberOfClubError('player is already active on the destination team');
       }
       const playerCount = await memberships.countActivePlayers(destinationClub.id);
-      if (playerCount >= destinationClub.squadLimit) {
+      const effectiveSquadLimit = getEffectiveSquadLimit(destinationClub, authorization.settings);
+      if (playerCount >= effectiveSquadLimit) {
         throw new SquadFullError('destination team roster is full');
       }
       const offers = new OfferRepository(transaction);
@@ -107,6 +110,7 @@ export class OfferCreationService {
         offeredBy,
         leagueName: authorization.guild.name,
         activePlayerCount: playerCount,
+        effectiveSquadLimit,
       };
     });
   }

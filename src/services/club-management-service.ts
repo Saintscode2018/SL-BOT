@@ -1,7 +1,8 @@
 import type { Club, PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 
-import { ClubInactiveError, EntityNotFoundError } from '../domain/errors.js';
+import { ClubInactiveError, EntityNotFoundError, ValidationError } from '../domain/errors.js';
+import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { ClubRepository } from '../repositories/club-repository.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
@@ -10,11 +11,11 @@ import type { AuthorizationInput } from './authorization-service.js';
 import { AuthorizationService } from './authorization-service.js';
 
 export const clubCreatedAuditEventType = 'club.created';
+export const clubEditedAuditEventType = 'club.edited';
 export const clubDeactivatedAuditEventType = 'club.deactivated';
 
 const clubNameSchema = z.string().trim().min(2).max(64);
 const clubShortNameSchema = z.string().trim().min(2).max(12);
-const squadLimitSchema = z.number().int().min(1).max(100);
 const optionalUrlSchema = z.string().url().max(2048).nullable();
 
 export interface CreateClubWorkflowInput {
@@ -22,7 +23,18 @@ export interface CreateClubWorkflowInput {
   name: string;
   shortName: string;
   discordRoleId: string;
-  squadLimit: number;
+  squadLimit?: number; // legacy support
+  squadLimitOverride?: number | null;
+  logoUrl?: string | null;
+  emoji?: string | null;
+}
+
+export interface EditClubWorkflowInput {
+  authorization: AuthorizationInput;
+  clubId: string;
+  name?: string;
+  shortName?: string;
+  discordRoleId?: string;
   logoUrl?: string | null;
   emoji?: string | null;
 }
@@ -30,6 +42,8 @@ export interface CreateClubWorkflowInput {
 export interface ClubListItem {
   club: Club;
   activePlayerCount: number;
+  effectiveLimit: number;
+  remainingSpaces: number;
 }
 
 export class ClubManagementService {
@@ -41,8 +55,13 @@ export class ClubManagementService {
     ).authorizeLeagueAdministration(input.authorization);
     const name = clubNameSchema.parse(input.name);
     const shortName = clubShortNameSchema.parse(input.shortName).toUpperCase();
-    const squadLimit = squadLimitSchema.parse(input.squadLimit);
     const logoUrl = optionalUrlSchema.parse(input.logoUrl ?? null);
+    const squadLimitOverride =
+      input.squadLimitOverride !== undefined
+        ? input.squadLimitOverride
+        : input.squadLimit !== undefined && input.squadLimit !== 17
+          ? input.squadLimit
+          : null;
     return this.database.$transaction(async (transaction) => {
       const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
         input.authorization.discordUserId,
@@ -52,7 +71,7 @@ export class ClubManagementService {
         name,
         shortName,
         discordRoleId: input.discordRoleId,
-        squadLimit,
+        squadLimitOverride,
         logoUrl,
         emoji: input.emoji?.trim() || null,
       });
@@ -66,11 +85,84 @@ export class ClubManagementService {
           name: club.name,
           shortName: club.shortName,
           discordRoleId: club.discordRoleId,
-          squadLimit: club.squadLimit,
+          squadLimitOverride: club.squadLimitOverride,
           active: club.active,
         },
       });
       return club;
+    });
+  }
+
+  public async edit(input: EditClubWorkflowInput): Promise<Club> {
+    const authorization = await new AuthorizationService(
+      this.database,
+    ).authorizeLeagueAdministration(input.authorization);
+
+    if (
+      input.name === undefined &&
+      input.shortName === undefined &&
+      input.discordRoleId === undefined &&
+      input.logoUrl === undefined &&
+      input.emoji === undefined
+    ) {
+      throw new ValidationError('at least one property must be edited');
+    }
+
+    return this.database.$transaction(async (transaction) => {
+      const clubs = new ClubRepository(transaction);
+      const club = await clubs.getByIdInGuild(input.clubId, authorization.guild.id);
+      if (club === null) throw new EntityNotFoundError('team was not found');
+      if (!club.active) throw new ClubInactiveError('team is inactive');
+
+      const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
+        input.authorization.discordUserId,
+      );
+
+      const updates: {
+        name?: string;
+        shortName?: string;
+        discordRoleId?: string;
+        logoUrl?: string | null;
+        emoji?: string | null;
+      } = {};
+
+      if (input.name !== undefined) updates.name = clubNameSchema.parse(input.name);
+      if (input.shortName !== undefined) {
+        updates.shortName = clubShortNameSchema.parse(input.shortName).toUpperCase();
+      }
+      if (input.discordRoleId !== undefined) updates.discordRoleId = input.discordRoleId;
+      if (input.logoUrl !== undefined) {
+        updates.logoUrl = optionalUrlSchema.parse(input.logoUrl);
+      }
+      if (input.emoji !== undefined) {
+        updates.emoji = input.emoji === null ? null : input.emoji.trim() || null;
+      }
+
+      const updatedClub = await clubs.update(club.id, updates);
+
+      await new AuditEventRepository(transaction).create({
+        guildId: authorization.guild.id,
+        actorUserId: actor.id,
+        eventType: clubEditedAuditEventType,
+        entityType: 'club',
+        entityId: club.id,
+        beforeState: {
+          name: club.name,
+          shortName: club.shortName,
+          discordRoleId: club.discordRoleId,
+          logoUrl: club.logoUrl,
+          emoji: club.emoji,
+        },
+        afterState: {
+          name: updatedClub.name,
+          shortName: updatedClub.shortName,
+          discordRoleId: updatedClub.discordRoleId,
+          logoUrl: updatedClub.logoUrl,
+          emoji: updatedClub.emoji,
+        },
+      });
+
+      return updatedClub;
     });
   }
 
@@ -101,10 +193,21 @@ export class ClubManagementService {
   }
 
   public async listActive(discordGuildId: string): Promise<ClubListItem[]> {
-    const guild = await new GuildRepository(this.database).getByDiscordGuildId(discordGuildId);
+    const guilds = new GuildRepository(this.database);
+    const guild = await guilds.getByDiscordGuildId(discordGuildId);
     if (guild === null) return [];
+    const settings = await guilds.getSettings(guild.id);
     const clubs = await new ClubRepository(this.database).listActiveWithPlayerCounts(guild.id);
-    return clubs.map(({ activePlayerCount, ...club }) => ({ club, activePlayerCount }));
+    return clubs.map(({ activePlayerCount, ...club }) => {
+      const effectiveLimit = getEffectiveSquadLimit(club, settings);
+      const remainingSpaces = Math.max(0, effectiveLimit - activePlayerCount);
+      return {
+        club,
+        activePlayerCount,
+        effectiveLimit,
+        remainingSpaces,
+      };
+    });
   }
 
   public async autocomplete(

@@ -13,6 +13,8 @@ export class InvalidStateTransitionError extends DomainError {}
 
 export class ConstraintViolationError extends DomainError {}
 
+export class ValidationError extends DomainError {}
+
 export class ConfigurationError extends DomainError {}
 
 export class ApplicationStartupError extends DomainError {}

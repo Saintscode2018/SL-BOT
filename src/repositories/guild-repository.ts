@@ -11,12 +11,15 @@ export interface CreateGuildInput {
 }
 
 export interface UpsertGuildSettingsInput {
+  botCommandsChannelId?: string | null;
+  staffChannelId?: string | null;
   transferChannelId?: string | null;
   auditChannelId?: string | null;
   adminRoleId?: string | null;
   teamManagerRoleId?: string | null;
   assistantManagerRoleId?: string | null;
   playerManagerRoleId?: string | null;
+  defaultSquadLimit?: number;
   offerTimeoutSeconds?: number;
 }
 
@@ -25,6 +28,8 @@ function settingsData(
 ): Omit<Prisma.GuildSettingsUncheckedCreateInput, 'guildId'> {
   const data: Omit<Prisma.GuildSettingsUncheckedCreateInput, 'guildId'> = {};
   const snowflakeFields = [
+    'botCommandsChannelId',
+    'staffChannelId',
     'transferChannelId',
     'auditChannelId',
     'adminRoleId',
@@ -37,6 +42,9 @@ function settingsData(
     if (value !== undefined) {
       data[field] = value === null ? null : discordSnowflakeSchema.parse(value);
     }
+  }
+  if (input.defaultSquadLimit !== undefined) {
+    data.defaultSquadLimit = input.defaultSquadLimit;
   }
   if (input.offerTimeoutSeconds !== undefined) {
     data.offerTimeoutSeconds = input.offerTimeoutSeconds;

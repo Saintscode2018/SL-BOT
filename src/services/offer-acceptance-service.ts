@@ -20,8 +20,10 @@ import {
 } from '../domain/errors.js';
 import type { DatabaseClient } from '../domain/types.js';
 import { discordSnowflakeSchema } from '../domain/validation.js';
+import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { ClubRepository } from '../repositories/club-repository.js';
+import { GuildRepository } from '../repositories/guild-repository.js';
 import { MembershipRepository } from '../repositories/membership-repository.js';
 import { OfferRepository } from '../repositories/offer-repository.js';
 import { LeagueTransactionRepository } from '../repositories/transaction-repository.js';
@@ -49,6 +51,7 @@ export interface OfferAcceptanceRepositories {
   offers: Pick<OfferRepository, 'getById' | 'transition'>;
   users: Pick<UserRepository, 'getById'>;
   clubs: Pick<ClubRepository, 'getById'>;
+  guilds: Pick<GuildRepository, 'getSettings'>;
   memberships: Pick<
     MembershipRepository,
     'getActivePlayerMembership' | 'countActivePlayers' | 'end' | 'createActive'
@@ -68,6 +71,7 @@ export function createOfferAcceptanceRepositories(
     offers: new OfferRepository(database),
     users: new UserRepository(database),
     clubs: new ClubRepository(database),
+    guilds: new GuildRepository(database),
     memberships: new MembershipRepository(database),
     transactions: new LeagueTransactionRepository(database),
     auditEvents: new AuditEventRepository(database),
@@ -165,7 +169,9 @@ export class OfferAcceptanceService {
       );
     }
     const activePlayerCount = await repositories.memberships.countActivePlayers(destinationClub.id);
-    if (activePlayerCount >= destinationClub.squadLimit) {
+    const settings = await repositories.guilds.getSettings(pendingOffer.guildId);
+    const effectiveLimit = getEffectiveSquadLimit(destinationClub, settings);
+    if (activePlayerCount >= effectiveLimit) {
       throw new SquadFullError(`club ${destinationClub.id} has reached its squad limit`);
     }
 

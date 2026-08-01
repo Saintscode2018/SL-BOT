@@ -40,7 +40,7 @@ function offerComponents(offerId: string, disabled = false): ActionRowBuilder<Bu
 
 function offerEmbed(result: OfferCreationResult): EmbedBuilder {
   const expiresAt = Math.floor(result.offer.expiresAt.getTime() / 1000);
-  const remainingSpots = Math.max(0, result.destinationClub.squadLimit - result.activePlayerCount);
+  const remainingSpots = Math.max(0, result.effectiveSquadLimit - result.activePlayerCount);
   const embed = new EmbedBuilder()
     .setColor(neutralColor)
     .setTitle(`${result.leagueName || 'SL League'} Contract Offer`)
@@ -51,7 +51,7 @@ function offerEmbed(result: OfferCreationResult): EmbedBuilder {
       { name: 'Offering Manager', value: `<@${result.offeredBy.discordUserId}>`, inline: true },
       {
         name: 'Squad',
-        value: `${result.activePlayerCount}/${result.destinationClub.squadLimit}`,
+        value: `${result.activePlayerCount}/${result.effectiveSquadLimit}`,
         inline: true,
       },
       { name: 'Remaining Spots', value: String(remainingSpots), inline: true },

@@ -24,8 +24,12 @@ import type {
 class DiscordCommandOptions implements CommandInteractionOptions {
   public constructor(private readonly interaction: ChatInputCommandInteraction) {}
 
-  public getSubcommand(): string {
-    return this.interaction.options.getSubcommand();
+  public getSubcommand(): string | null {
+    try {
+      return this.interaction.options.getSubcommand();
+    } catch {
+      return null;
+    }
   }
 
   public getString(name: string): string | null {
@@ -81,6 +85,10 @@ class DiscordCommandInteraction implements CommandInteraction {
 
   public get userId(): string {
     return this.interaction.user.id;
+  }
+
+  public get channelId(): string | undefined {
+    return this.interaction.channelId;
   }
 
   public get memberRoleIds(): readonly string[] {

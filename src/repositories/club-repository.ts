@@ -12,7 +12,8 @@ export interface CreateClubInput {
   discordRoleId: string;
   logoUrl?: string | null;
   emoji?: string | null;
-  squadLimit: number;
+  squadLimit?: number;
+  squadLimitOverride?: number | null;
 }
 
 export interface UpdateClubInput {
@@ -22,6 +23,7 @@ export interface UpdateClubInput {
   logoUrl?: string | null;
   emoji?: string | null;
   squadLimit?: number;
+  squadLimitOverride?: number | null;
   active?: boolean;
 }
 
@@ -30,6 +32,9 @@ export class ClubRepository {
 
   public async create(input: CreateClubInput): Promise<Club> {
     try {
+      const override =
+        input.squadLimitOverride ??
+        (input.squadLimit !== undefined && input.squadLimit !== 17 ? input.squadLimit : null);
       return await this.db.club.create({
         data: {
           guildId: input.guildId,
@@ -38,7 +43,7 @@ export class ClubRepository {
           discordRoleId: discordSnowflakeSchema.parse(input.discordRoleId),
           logoUrl: input.logoUrl ?? null,
           emoji: input.emoji ?? null,
-          squadLimit: input.squadLimit,
+          squadLimitOverride: override,
         },
       });
     } catch (error: unknown) {
@@ -55,7 +60,7 @@ export class ClubRepository {
     }
     if (input.logoUrl !== undefined) data.logoUrl = input.logoUrl;
     if (input.emoji !== undefined) data.emoji = input.emoji;
-    if (input.squadLimit !== undefined) data.squadLimit = input.squadLimit;
+    if (input.squadLimitOverride !== undefined) data.squadLimitOverride = input.squadLimitOverride;
     if (input.active !== undefined) data.active = input.active;
     try {
       return await this.db.club.update({ where: { id }, data });

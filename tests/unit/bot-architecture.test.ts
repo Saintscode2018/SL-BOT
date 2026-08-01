@@ -66,9 +66,16 @@ function context(logger: MemoryLogger): CommandContext {
     offerAcceptanceService: {
       acceptOffer: () => Promise.reject(new Error('not used')),
     },
-    guildSetupService: { setup: () => Promise.reject(new Error('not used')) },
+    guildSetupService: {
+      setup: () => Promise.reject(new Error('not used')),
+      setupGuildOnly: () => Promise.reject(new Error('not used')),
+      setupChannels: () => Promise.reject(new Error('not used')),
+      setupRoles: () => Promise.reject(new Error('not used')),
+      getView: () => Promise.reject(new Error('not used')),
+    },
     clubManagementService: {
       create: () => Promise.reject(new Error('not used')),
+      edit: () => Promise.reject(new Error('not used')),
       deactivate: () => Promise.reject(new Error('not used')),
       listActive: () => Promise.reject(new Error('not used')),
       autocomplete: () => Promise.reject(new Error('not used')),
@@ -82,6 +89,15 @@ function context(logger: MemoryLogger): CommandContext {
       add: () => Promise.reject(new Error('not used')),
       remove: () => Promise.reject(new Error('not used')),
       list: () => Promise.reject(new Error('not used')),
+    },
+    limitManagementService: {
+      setDefaultLimit: () => Promise.reject(new Error('not used')),
+      setTeamLimit: () => Promise.reject(new Error('not used')),
+      resetTeamLimit: () => Promise.reject(new Error('not used')),
+      viewLimit: () => Promise.reject(new Error('not used')),
+    },
+    commandChannelPolicyService: {
+      validateChannelPolicy: () => Promise.resolve(),
     },
     offerDeliveryService: {
       createAndDeliver: () => Promise.reject(new Error('not used')),

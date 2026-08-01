@@ -13,6 +13,7 @@ import {
   EntityNotFoundError,
   SquadFullError,
 } from '../domain/errors.js';
+import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { ClubRepository } from '../repositories/club-repository.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
@@ -76,7 +77,9 @@ export class RosterManagementService {
         throw new AlreadyMemberOfClubError('player already has an active roster membership');
       }
       const playerCount = await memberships.countActivePlayers(club.id);
-      if (playerCount >= club.squadLimit) throw new SquadFullError('team roster is full');
+      const settings = await new GuildRepository(transaction).getSettings(authorization.guild.id);
+      const effectiveLimit = getEffectiveSquadLimit(club, settings);
+      if (playerCount >= effectiveLimit) throw new SquadFullError('team roster is full');
       const addedAt = input.addedAt ?? new Date();
       const membership = await memberships.createActive({
         guildId: authorization.guild.id,
