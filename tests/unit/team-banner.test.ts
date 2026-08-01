@@ -32,8 +32,11 @@ function config(enabled: Array<keyof TeamBannerConfig>): TeamBannerConfig {
 }
 
 describe('team banner formatter', () => {
-  it('formats all components in the fixed order for embed and autocomplete modes', () => {
-    expect(formatTeamBanner(team)).toBe('🔵 Chelsea (CHE) <@&123456789012345678>');
+  it('uses emoji and role by default and preserves fixed order when all components are enabled', () => {
+    expect(formatTeamBanner(team)).toBe('🔵 <@&123456789012345678>');
+    expect(formatTeamBanner(team, config(allComponents))).toBe(
+      '🔵 Chelsea (CHE) <@&123456789012345678>',
+    );
     expect(formatTeamBanner(team, config(allComponents), 'autocomplete')).toBe(
       '🔵 Chelsea (CHE) @Chelsea',
     );
@@ -65,19 +68,20 @@ describe('team banner formatter', () => {
       discordRoleName: 'Newcastle',
     };
     expect(formatTeamBanner(customTeam)).toBe(
-      '<:Newcastle:987654321098765432> Newcastle (NEW) <@&876543210987654321>',
+      '<:Newcastle:987654321098765432> <@&876543210987654321>',
     );
     const autocomplete = formatTeamBanner(customTeam, config(allComponents), 'autocomplete');
-    expect(autocomplete).toBe(':Newcastle: Newcastle (NEW) @Newcastle');
+    expect(autocomplete).toBe('.Newcastle. Newcastle (NEW) @Newcastle');
     expect(autocomplete).not.toContain('987654321098765432');
     expect(autocomplete).not.toContain('876543210987654321');
     expect(autocomplete).not.toContain('<:');
+    expect(autocomplete).not.toContain(':Newcastle:');
   });
 
   it('omits unavailable legacy emoji and unresolved autocomplete roles safely', () => {
-    expect(formatTeamBanner({ ...team, emoji: null, discordRoleId: null })).toBe('Chelsea (CHE)');
+    expect(formatTeamBanner({ ...team, emoji: null, discordRoleId: null })).toBe('Chelsea');
     expect(formatTeamBanner({ ...team, discordRoleName: null }, undefined, 'autocomplete')).toBe(
-      '🔵 Chelsea (CHE)',
+      '🔵',
     );
     expect(formatTeamBanner({ ...team, emoji: null }, config(['bannerHasEmoji']))).toBe('Chelsea');
     expect(
@@ -98,12 +102,12 @@ describe('team banner formatter', () => {
         discordRoleId: '876543210987654321',
         discordRoleName: `Newcastle ${'Administration '.repeat(12)}`,
       },
-      undefined,
+      config(allComponents),
       'autocomplete',
     );
 
     expect(value.length).toBeLessThanOrEqual(autocompleteBannerMaxLength);
-    expect(value).toContain(':NewcastleUnitedBadgeLongName:');
+    expect(value).toContain('.NewcastleUnitedBadgeLongName.');
     expect(value).toContain('(NEWCASTLE123)');
     expect(value).not.toMatch(/[\uD800-\uDBFF]$/u);
     expect(value).not.toContain('987654321098765432');

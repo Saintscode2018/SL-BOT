@@ -7,6 +7,7 @@ import {
   DuplicateOfferError,
   EntityNotFoundError,
   SquadFullError,
+  StaffMemberCannotReceiveOffersError,
 } from '../domain/errors.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
@@ -16,7 +17,12 @@ import { OfferRepository } from '../repositories/offer-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
 import type { AuthorizationInput } from './authorization-service.js';
 import { AuthorizationService } from './authorization-service.js';
-import { teamBannerConfigFrom, type TeamBannerConfig } from '../domain/team-label.js';
+import {
+  formatTeamBanner,
+  teamBannerConfigFrom,
+  type TeamBannerConfig,
+} from '../domain/team-label.js';
+import { getFriendlyPositionName, type StaffType } from './staff-management-service.js';
 
 export const offerCreatedAuditEventType = 'offer.created';
 
@@ -58,9 +64,24 @@ export class OfferCreationService {
       if (destinationClub === null) throw new EntityNotFoundError('team was not found');
       if (!destinationClub.active) throw new ClubInactiveError('team is inactive');
       const users = new UserRepository(transaction);
-      const player = await users.getOrCreateByDiscordUserId(input.playerDiscordUserId);
-      const offeredBy = await users.getOrCreateByDiscordUserId(input.authorization.discordUserId);
+      const existingPlayer = await users.getByDiscordUserId(input.playerDiscordUserId);
       const memberships = new MembershipRepository(transaction);
+      if (existingPlayer !== null) {
+        const staffMembership = await memberships.getActiveStaffMembershipForUserInGuild(
+          authorization.guild.id,
+          existingPlayer.id,
+        );
+        if (staffMembership !== null) {
+          throw new StaffMemberCannotReceiveOffersError(
+            input.playerDiscordUserId,
+            getFriendlyPositionName(staffMembership.membershipType as StaffType),
+            formatTeamBanner(staffMembership.club, teamBannerConfigFrom(authorization.settings)),
+          );
+        }
+      }
+      const player =
+        existingPlayer ?? (await users.getOrCreateByDiscordUserId(input.playerDiscordUserId));
+      const offeredBy = await users.getOrCreateByDiscordUserId(input.authorization.discordUserId);
       const activeMembership = await memberships.getActivePlayerMembership(
         authorization.guild.id,
         player.id,

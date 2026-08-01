@@ -35,8 +35,8 @@ model GuildSettings {
   defaultSquadLimit      Int      @default(17)
   offerTimeoutSeconds    Int      @default(86400)
   bannerHasEmoji         Boolean  @default(true)
-  bannerHasName          Boolean  @default(true)
-  bannerHasShort         Boolean  @default(true)
+  bannerHasName          Boolean  @default(false)
+  bannerHasShort         Boolean  @default(false)
   bannerHasRole          Boolean  @default(true)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt

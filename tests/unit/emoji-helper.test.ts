@@ -105,19 +105,28 @@ describe('emoji helper', () => {
 
 describe('team labels', () => {
   it('formats unicode custom and legacy labels', () => {
-    expect(formatTeamBanner({ name: 'Chelsea', shortName: 'CHE', emoji: '🔵' })).toBe(
-      '🔵 Chelsea (CHE)',
-    );
+    const allComponents = {
+      bannerHasEmoji: true,
+      bannerHasName: true,
+      bannerHasShort: true,
+      bannerHasRole: true,
+    };
     expect(
-      formatTeamBanner({
-        name: 'Chelsea',
-        shortName: 'CHE',
-        emoji: '<:chelsea:123456789012345678>',
-      }),
+      formatTeamBanner({ name: 'Chelsea', shortName: 'CHE', emoji: '🔵' }, allComponents),
+    ).toBe('🔵 Chelsea (CHE)');
+    expect(
+      formatTeamBanner(
+        {
+          name: 'Chelsea',
+          shortName: 'CHE',
+          emoji: '<:chelsea:123456789012345678>',
+        },
+        allComponents,
+      ),
     ).toBe('<:chelsea:123456789012345678> Chelsea (CHE)');
-    expect(formatTeamBanner({ name: 'Chelsea', shortName: 'CHE', emoji: null })).toBe(
-      'Chelsea (CHE)',
-    );
+    expect(
+      formatTeamBanner({ name: 'Chelsea', shortName: 'CHE', emoji: null }, allComponents),
+    ).toBe('Chelsea (CHE)');
   });
 
   it('uses a custom emoji name fallback for autocomplete', () => {
@@ -131,16 +140,16 @@ describe('team labels', () => {
         undefined,
         'autocomplete',
       ),
-    ).toBe(':chelsea: Chelsea (CHE)');
+    ).toBe('.chelsea.');
     expect(
       formatTeamBanner(
         { name: 'Chelsea', shortName: 'CHE', emoji: '🔵' },
         undefined,
         'autocomplete',
       ),
-    ).toBe('🔵 Chelsea (CHE)');
+    ).toBe('🔵');
     expect(formatTeamBanner({ name: 'Chelsea', shortName: 'CHE' }, undefined, 'autocomplete')).toBe(
-      'Chelsea (CHE)',
+      'Chelsea',
     );
   });
 });

@@ -38,6 +38,7 @@ import {
   ConfigurationError,
   InvalidOfferMessageError,
   OfferDeliveryError,
+  StaffMemberCannotReceiveOffersError,
 } from '../../src/domain/errors.js';
 import type { OfferAcceptanceResult } from '../../src/services/offer-acceptance-service.js';
 import type { OfferCreationResult } from '../../src/services/offer-creation-service.js';
@@ -397,6 +398,7 @@ describe('stage three command registry and deployment', () => {
             updatedAt: now,
           },
           players: [],
+          staff: [],
         }),
     };
     context.guildConfigurationService = {
@@ -437,7 +439,7 @@ describe('stage three command registry and deployment', () => {
     expect(interaction.replies[0]?.embeds?.[0]?.data?.description).toBe('Arsenal (ARS) <@&r-1>');
   });
 
-  it('defers offer creation privately before a public successful response', async () => {
+  it('defers and edits the same private response after successful offer delivery', async () => {
     const interaction = new OfferCommandInteraction();
     const context = commandContext(new MemoryLogger());
     const delivery = vi.fn(() => {
@@ -446,11 +448,17 @@ describe('stage three command registry and deployment', () => {
     });
     context.offerDeliveryService = { createAndDeliver: delivery };
     await loadCommands(commandDefinitions).resolve('offer')?.execute(interaction, context);
-    expect(interaction.order).toEqual(['defer', 'delivery', 'delete_reply', 'follow_up']);
+    expect(interaction.order).toEqual(['defer', 'delivery', 'edit']);
     expect(interaction.replies).toEqual([]);
-    expect(interaction.followUps).toHaveLength(1);
-    expect(interaction.edits).toHaveLength(0);
-    expect(interaction.followUps[0]?.embeds?.[0]?.data?.title).toBe('✅ Contract Offer Sent');
+    expect(interaction.followUps).toEqual([]);
+    expect(interaction.edits).toHaveLength(1);
+    expect(interaction.edits[0]?.embeds?.[0]?.data?.title).toBe('✅ Contract Offer Sent');
+    expect(interaction.edits[0]?.embeds?.[0]?.data?.fields?.[1]?.name).toBe('Source Team');
+    expect(interaction.edits[0]?.embeds?.[0]?.data?.fields?.[1]?.value).toBe(
+      '<@&100000000000000007>',
+    );
+    expect(JSON.stringify(interaction.edits[0])).not.toContain('Destination Team');
+    expect(JSON.stringify(interaction.edits[0])).not.toContain('**<@&');
   });
 
   it('edits a deferred command with a safe failure and never sends a second initial reply', async () => {
@@ -506,7 +514,7 @@ describe('stage three command registry and deployment', () => {
         serialized.embeds[0]?.fields.map(({ name, value }) => [name, value]) ?? [],
       ),
     ).toMatchObject({
-      'Destination Club': 'Team (TM) <@&100000000000000007>',
+      'Destination Club': '<@&100000000000000007>',
       'Offered Player': '<@100000000000000003>',
       'Offering Manager': '<@100000000000000004>',
       Squad: '4/10',
@@ -545,6 +553,33 @@ describe('stage three command registry and deployment', () => {
     ) as { embeds: Array<{ thumbnail?: { url: string } }> };
     expect(payloadWithLogo.embeds[0]?.thumbnail?.url).toBe('https://example.com/team-logo.png');
     expect(payloadWithoutLogo.embeds[0]?.thumbnail).toBeUndefined();
+  });
+
+  it('brands the private offer with the configured issuing team banner and custom thumbnail', () => {
+    const result = offerCreationResult();
+    result.destinationClub.name = 'Newcastle';
+    result.destinationClub.shortName = 'NEW';
+    result.destinationClub.emoji = '<:Newcastle:987654321098765432>';
+    result.bannerConfig = {
+      bannerHasEmoji: true,
+      bannerHasName: false,
+      bannerHasShort: false,
+      bannerHasRole: true,
+    };
+
+    const payload = JSON.parse(JSON.stringify(createOfferMessagePayload(result))) as {
+      embeds: Array<{
+        fields: Array<{ name: string; value: string }>;
+        thumbnail?: { url: string };
+      }>;
+    };
+
+    expect(payload.embeds[0]?.fields.find(({ name }) => name === 'Destination Club')?.value).toBe(
+      '<:Newcastle:987654321098765432> <@&100000000000000007>',
+    );
+    expect(payload.embeds[0]?.thumbnail?.url).toBe(
+      'https://cdn.discordapp.com/emojis/987654321098765432.png',
+    );
   });
 
   it('opens the offered player DM and never fetches a guild transfer channel', async () => {
@@ -800,5 +835,17 @@ describe('discord error mapping', () => {
     const invalidOfferMapped = mapDiscordError(new InvalidOfferMessageError('private message ids'));
     expect(invalidOfferMapped.title).toBe('❌ Invalid Offer Interaction');
     expect(invalidOfferMapped.description).toBe('This offer interaction is no longer valid.');
+
+    const staffTargetMapped = mapDiscordError(
+      new StaffMemberCannotReceiveOffersError(
+        '100000000000000009',
+        'Assistant Team Manager',
+        '<:Newcastle:987654321098765432> <@&100000000000000008>',
+      ),
+    );
+    expect(staffTargetMapped.title).toBe('❌ Staff Member Cannot Receive Offers');
+    expect(staffTargetMapped.description).toContain(
+      '<@100000000000000009> is currently the Assistant Team Manager of <:Newcastle:987654321098765432> <@&100000000000000008>.',
+    );
   });
 });

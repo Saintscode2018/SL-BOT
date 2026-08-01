@@ -16,7 +16,7 @@ The database is authoritative. Discord roles are linked presentation and authori
   - `add`: Register a new team linked to an existing role with required Discord emoji branding. (Ephemeral embed in staff channel)
   - `edit`: Update team name, short name, role, or team emoji. (Ephemeral embed in staff channel)
   - `remove`: Safe soft deactivation of an active team while preserving all historical records (memberships, staff appointments, offers, transactions, and audit events). Full franchise shutdown is reserved for the future `/disband` workflow. (Ephemeral embed in staff channel)
-  - `list`: List active teams with role mentions, team emojis, player counts, effective limit, and remaining spaces. (Public embed in bot-commands or staff)
+  - `list`: List active teams in the compact `<configured banner> — current/max` format. (Public embed in bot-commands or staff)
 - `/limit`
   - `default`: Set guild-wide default squad limit (1–100, default 17). (Ephemeral embed in staff channel)
   - `team`: Set squad limit override for a specific club (1–100). (Ephemeral embed in staff channel)
@@ -27,11 +27,11 @@ The database is authoritative. Discord roles are linked presentation and authori
   - `remove`: Remove active holder of a staff position. (Ephemeral embed in staff channel)
   - `list`: List active team staff as vertical per-team blocks with the configured banner and friendly position titles. (Public embed in bot-commands or staff)
 - `/roster`: Display the configured team banner without putting role mentions in the title, followed by the actual Team Manager, Assistant Team Manager, and Player Manager sections, player divider, and player list. There is no Assistant Coach section. (Public embed in an authorized bot-commands or staff channel)
-- `/offer player:<user>`: Send a private contract offer DM to a player on behalf of the caller's team. Destination team is automatically derived from caller's active staff appointment. Includes Sign Contract and Decline Offer buttons, and outputs a public embed acknowledgement in channel.
+- `/offer player:<user>`: Send a private contract offer DM on behalf of the source team derived from the caller's active database TM/ATM/PM appointment. Active team staff cannot receive player offers until removed from staff. Sign Contract and Decline Offer buttons remain persistent, while the command acknowledgement edits the original ephemeral response and labels the issuing club as `Source Team`.
 - `/health`: Report bot and database status ephemerally (`Online ✅`, `Connected ✅`). (Ephemeral embed in bot-commands or staff)
 - `/debugreset`: Temporary development-only command (`SLBOT_ENABLE_DEBUG_COMMANDS=true`) for Discord Administrators to reset all server application data safely. Only the initiating Administrator can use its confirmation buttons.
 
-Team inputs use database-backed autocomplete. Inactive teams are excluded and every selected internal club ID is revalidated during execution.
+Team inputs use database-backed autocomplete. Choice values are immutable internal club IDs, never names, abbreviations, banners, roles, or emoji values. Inactive teams are excluded and every selected club ID is revalidated within the current guild during execution.
 
 ## Authorization and Global Bot Permissions
 
@@ -55,7 +55,7 @@ Commands are enforced via `CommandChannelPolicyService`:
 - **Team-Staff Command** (`/offer`): Bot-commands and staff remain valid execution channels. Wrong-channel guidance mentions only bot commands to non-global callers; global callers may receive both configured channel mentions. A valid channel is checked before the active TM/ATM/PM appointment.
 - **Staff-Only Commands** (`/setup *`, `/bannerconfig`, `/team add|edit|remove`, `/limit default|team|reset`, `/staff appoint|remove`): Must be used strictly in the configured **Staff Channel**.
 - **Bootstrap Exception**: Before the staff channel or `bot_permissions` role is configured, a Discord Administrator may execute `/setup` commands in the current channel.
-- **Administrative Visibility**: Successful setup, team mutation, limit mutation, staff mutation, and debug-reset responses are ephemeral. `/setup view` is also ephemeral. Team/staff/limit lists and rosters stay public, health stays ephemeral, and the successful offer acknowledgement stays public.
+- **Administrative Visibility**: Successful setup, team mutation, limit mutation, staff mutation, debug-reset, and offer acknowledgements are ephemeral. `/setup view` is also ephemeral. Team/staff/limit lists and rosters stay public, health stays ephemeral, and the private contract DM remains visible only to its target.
 - **Embed-Only Responses**: Every command response is a Discord embed with `✅` prefixes for successful administrative output and `❌` prefixes for errors, ending with an explicit actor line when applicable.
 - **Ephemeral Errors**: All handled errors produce visible ephemeral red error embeds detailing specific conflicts without exposing database IDs or stack traces.
 - **Permission-Aware Guidance**: Administrative permission is checked before staff-channel guidance is revealed. Ordinary users never receive protected staff-channel details; globally authorized callers receive guidance for the configured channels available to them.
@@ -65,10 +65,10 @@ Commands are enforced via `CommandChannelPolicyService`:
 - `/team add` requires a team emoji; `/team edit` allows optional emoji updates.
 - Accepts full server custom mentions (`<:name:emojiId>`, `<a:name:emojiId>`), wrapped names (`:name:`), plain names (`name`), or standard Unicode emoji sequences such as `⚽`, `🇹🇷`, `👍🏽`, and family ZWJ emoji.
 - Custom mention IDs must exist in the current guild. Wrapped or plain names resolve by exact case-insensitive guild-emoji name and must have exactly one match; ambiguous names require the full custom mention. Deleted and cross-server emojis are rejected.
-- `/bannerconfig` controls four guild-specific Boolean components: emoji, name, short name, and role. All default to enabled, at least one must remain enabled, and their fixed order is always `<emoji> Name (SHORT) @Role`; free-form templates and custom ordering are not supported.
+- `/bannerconfig` controls four guild-specific Boolean components: emoji, name, short name, and role. The default is emoji plus role (`true`, `false`, `false`, `true`), at least one must remain enabled, and fixed component order is always `<emoji> Name (SHORT) @Role`; free-form templates and custom ordering are not supported. Safe previews use the fictional `.examplept. Example Preview Team (EPT) @ExamplePreviewTeam`, reduced to `.examplept. @ExamplePreviewTeam` under defaults.
 - Normal embeds and messages use real custom emoji mentions and Discord role mentions. Legacy records with missing emoji or role data omit those components safely.
-- Autocomplete renders Unicode directly, intentionally uses readable `:emojiName:` text for custom server emojis because Discord choice labels do not reliably render server emoji images, and uses `@RoleName` only when the role name is available from the guild cache. Raw custom emoji IDs and role IDs are never exposed, choice values remain club IDs, and names are limited safely to Discord's 100-character maximum.
-- Staff appointment and removal confirmations include the affected user, friendly position name, and configured team banner. Staff directory output uses one line each for `👑 Team Manager`, `👔 Assistant Team Manager`, and `🧠 Player Manager`, with `Vacant` for empty positions.
+- Discord autocomplete choice labels are plain text and cannot render guild custom emoji images. Unicode renders directly; custom emoji intentionally use `.emojiName.` text, and `@RoleName` appears only when the guild cache resolves it. Raw custom emoji IDs, custom mentions, and role IDs are never exposed, choice values remain club IDs, and labels are limited safely to Discord's 100-character maximum without splitting graphemes.
+- Staff appointment and removal confirmations include the affected user, friendly position name, and configured team banner. Staff directory output keeps the banner in normal text rather than a bold embed field heading, then uses one line each for `👑 Team Manager`, `👔 Assistant Team Manager`, and `🧠 Player Manager`, with `Vacant` for empty positions.
 - Single-team embeds (team add/edit confirmations, roster views, offer cards) use derived CDN or Twemoji URLs as their embed thumbnail.
 - Multi-team list embeds display team emojis inline beside team names.
 

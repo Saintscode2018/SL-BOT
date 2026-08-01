@@ -76,8 +76,8 @@ describe('team banner configuration service', () => {
 
     expect(result.before).toEqual({
       bannerHasEmoji: true,
-      bannerHasName: true,
-      bannerHasShort: true,
+      bannerHasName: false,
+      bannerHasShort: false,
       bannerHasRole: true,
     });
     expect(result.after).toEqual({
@@ -239,22 +239,37 @@ describe('team banner configuration service', () => {
       emoji: '🔵',
     });
 
-    const withoutRoleCache = await clubs.autocomplete(guildId, '', 25);
-    expect(withoutRoleCache).toEqual(
+    const defaultChoices = await clubs.autocomplete(guildId, '', 25, {
+      [custom.discordRoleId]: 'T1',
+      [unicode.discordRoleId]: 'T2',
+    });
+    expect(defaultChoices).toEqual(
       expect.arrayContaining([
-        { name: ':Newcastle: Newcastle (NEW)', value: custom.id },
-        { name: '🔵 Chelsea (CHE)', value: unicode.id },
+        { name: '.Newcastle. @T1', value: custom.id },
+        { name: '🔵 @T2', value: unicode.id },
       ]),
     );
-    const customChoice = withoutRoleCache.find((choice) => choice.value === custom.id);
+    const customChoice = defaultChoices.find((choice) => choice.value === custom.id);
     expect(customChoice?.name).not.toContain('987654321098765432');
     expect(customChoice?.name).not.toContain('<:');
+    expect(customChoice?.name).not.toContain(':Newcastle:');
 
-    const withRoleCache = await clubs.autocomplete(guildId, 'Newcastle', 25, {
-      [custom.discordRoleId]: 'Newcastle',
+    await service.updateBannerConfiguration({
+      authorization: authorization(),
+      bannerHasEmoji: true,
+      bannerHasName: true,
+      bannerHasShort: true,
+      bannerHasRole: true,
     });
-    expect(withRoleCache).toEqual([
-      { name: ':Newcastle: Newcastle (NEW) @Newcastle', value: custom.id },
-    ]);
+    const allEnabled = await clubs.autocomplete(guildId, '', 25, {
+      [custom.discordRoleId]: 'T1',
+      [unicode.discordRoleId]: 'T2',
+    });
+    expect(allEnabled).toEqual(
+      expect.arrayContaining([
+        { name: '.Newcastle. Newcastle (NEW) @T1', value: custom.id },
+        { name: '🔵 Chelsea (CHE) @T2', value: unicode.id },
+      ]),
+    );
   });
 });

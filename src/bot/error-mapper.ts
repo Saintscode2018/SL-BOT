@@ -28,6 +28,8 @@ import {
   SquadFullError,
   StaffAlreadyAppointedError,
   StaffChannelNotConfiguredError,
+  StaffMemberCannotReceiveOffersError,
+  TeamNotFoundError,
   TeamPositionOccupiedError,
   UnauthorizedOfferAcceptanceError,
   ValidationError,
@@ -86,6 +88,9 @@ export function mapDiscordError(error: unknown): MappedErrorResponse {
   } else if (error instanceof StaffAlreadyAppointedError) {
     title = '❌ Staff Member Already Appointed';
     description = error.message;
+  } else if (error instanceof StaffMemberCannotReceiveOffersError) {
+    title = '❌ Staff Member Cannot Receive Offers';
+    description = error.message;
   } else if (error instanceof TeamPositionOccupiedError) {
     title = '❌ Position Already Occupied';
     description = error.message;
@@ -131,6 +136,9 @@ export function mapDiscordError(error: unknown): MappedErrorResponse {
   } else if (error instanceof ClubInactiveError) {
     title = '❌ Team Inactive';
     description = 'That team is inactive.';
+  } else if (error instanceof TeamNotFoundError) {
+    title = '❌ Team Not Found';
+    description = 'The selected team does not exist in this server.';
   } else if (error instanceof SquadFullError) {
     title = '❌ Squad Limit Reached';
     description = 'That team has reached its squad limit.';

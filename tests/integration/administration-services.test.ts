@@ -10,6 +10,7 @@ import {
   InvalidOfferMessageError,
   OfferDeliveryError,
   SquadFullError,
+  StaffMemberCannotReceiveOffersError,
   UnauthorizedOfferAcceptanceError,
 } from '../../src/domain/errors.js';
 import { ClubRepository } from '../../src/repositories/club-repository.js';
@@ -208,13 +209,13 @@ describe('administration services', () => {
     );
     const legacyClub = await createClub('930000000000000003', 'Bursa City', 'BUR');
     await expect(service.autocomplete(guildId, 'lion')).resolves.toEqual([
-      { name: '🦁 Istanbul Lions (IL)', value: unicodeClub.id },
+      { name: '🦁', value: unicodeClub.id },
     ]);
     await expect(service.autocomplete(guildId, 'ank')).resolves.toEqual([
-      { name: ':ankara: Ankara United (ANK)', value: customClub.id },
+      { name: '.ankara.', value: customClub.id },
     ]);
     await expect(service.autocomplete(guildId, 'bursa')).resolves.toEqual([
-      { name: 'Bursa City (BUR)', value: legacyClub.id },
+      { name: 'Bursa City', value: legacyClub.id },
     ]);
     await expect(service.autocomplete(guildId, '', 1)).resolves.toHaveLength(1);
     await expect(service.autocomplete('999999999999999999', '')).resolves.toEqual([]);
@@ -490,6 +491,128 @@ describe('administration services', () => {
         playerIsBot: false,
       }),
     ).rejects.toBeInstanceOf(SquadFullError);
+  });
+
+  it.each([
+    ['source', 'TEAM_MANAGER', 'ASSISTANT_MANAGER'],
+    ['source', 'ASSISTANT_MANAGER', 'TEAM_MANAGER'],
+    ['source', 'PLAYER_MANAGER', 'TEAM_MANAGER'],
+    ['other', 'TEAM_MANAGER', 'TEAM_MANAGER'],
+    ['other', 'ASSISTANT_MANAGER', 'TEAM_MANAGER'],
+    ['other', 'PLAYER_MANAGER', 'TEAM_MANAGER'],
+  ] as const)(
+    'blocks a target with an active %s team %s appointment before delivery',
+    async (targetTeam, targetType, callerType) => {
+      const source = await createClub('930000000000000010', 'Source Team', 'SRC', 5, '⚽');
+      const other = await createClub(
+        '930000000000000011',
+        'Other Team',
+        'OTH',
+        5,
+        '<:Other:987654321098765432>',
+      );
+      const targetClub = targetTeam === 'source' ? source : other;
+      const staff = new StaffManagementService(database.client);
+      await staff.appoint({
+        authorization: authorization(),
+        clubId: source.id,
+        staffDiscordUserId: outsiderId,
+        staffType: callerType,
+        staffIsBot: false,
+      });
+      await staff.appoint({
+        authorization: authorization(),
+        clubId: targetClub.id,
+        staffDiscordUserId: playerId,
+        staffType: targetType,
+        staffIsBot: false,
+      });
+      const sendOffer = vi.fn(() =>
+        Promise.resolve({
+          channelId: '910000000000000010',
+          messageId: '940000000000000010',
+        }),
+      );
+      const adapter: OfferMessageAdapter = {
+        sendOffer,
+        setTerminalState: vi.fn(() => Promise.resolve()),
+        cleanupOrphan: vi.fn(() => Promise.resolve()),
+      };
+      const beforeAuditCount = await database.client.auditEvent.count();
+      const beforeTransactionCount = await database.client.leagueTransaction.count();
+
+      const failure = new OfferDeliveryService(
+        database.client,
+        adapter,
+        new MemoryLogger(),
+      ).createAndDeliver({
+        authorization: authorization(outsiderId),
+        destinationClubId: source.id,
+        playerDiscordUserId: playerId,
+        playerIsBot: false,
+      });
+
+      await expect(failure).rejects.toMatchObject({
+        positionName:
+          targetType === 'TEAM_MANAGER'
+            ? 'Team Manager'
+            : targetType === 'ASSISTANT_MANAGER'
+              ? 'Assistant Team Manager'
+              : 'Player Manager',
+        teamName:
+          targetTeam === 'source'
+            ? `⚽ <@&${source.discordRoleId}>`
+            : `<:Other:987654321098765432> <@&${other.discordRoleId}>`,
+      });
+      await expect(failure).rejects.toBeInstanceOf(StaffMemberCannotReceiveOffersError);
+      expect(sendOffer).not.toHaveBeenCalled();
+      await expect(database.client.offer.count()).resolves.toBe(0);
+      await expect(database.client.auditEvent.count()).resolves.toBe(beforeAuditCount);
+      await expect(database.client.leagueTransaction.count()).resolves.toBe(beforeTransactionCount);
+    },
+  );
+
+  it('allows a removed former staff member to receive a private offer', async () => {
+    const source = await createClub('930000000000000010', 'Source Team', 'SRC', 5, '⚽');
+    const formerTeam = await createClub('930000000000000011', 'Former Team', 'FOR', 5, '🔵');
+    const staff = new StaffManagementService(database.client);
+    await staff.appoint({
+      authorization: authorization(),
+      clubId: source.id,
+      staffDiscordUserId: outsiderId,
+      staffType: 'TEAM_MANAGER',
+      staffIsBot: false,
+    });
+    await staff.appoint({
+      authorization: authorization(),
+      clubId: formerTeam.id,
+      staffDiscordUserId: playerId,
+      staffType: 'PLAYER_MANAGER',
+      staffIsBot: false,
+    });
+    await staff.remove(authorization(), formerTeam.id, 'PLAYER_MANAGER');
+    const sendOffer = vi.fn(() =>
+      Promise.resolve({
+        channelId: '910000000000000010',
+        messageId: '940000000000000010',
+      }),
+    );
+    const adapter: OfferMessageAdapter = {
+      sendOffer,
+      setTerminalState: vi.fn(() => Promise.resolve()),
+      cleanupOrphan: vi.fn(() => Promise.resolve()),
+    };
+
+    await expect(
+      new OfferDeliveryService(database.client, adapter, new MemoryLogger()).createAndDeliver({
+        authorization: authorization(outsiderId),
+        destinationClubId: source.id,
+        playerDiscordUserId: playerId,
+        playerIsBot: false,
+      }),
+    ).resolves.toMatchObject({ destinationClub: { id: source.id } });
+    expect(sendOffer).toHaveBeenCalledOnce();
+    await expect(database.client.offer.count({ where: { status: 'PENDING' } })).resolves.toBe(1);
   });
 
   it('declines atomically without membership or league transaction writes', async () => {

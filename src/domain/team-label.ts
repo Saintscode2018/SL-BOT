@@ -19,8 +19,8 @@ export type TeamBannerMode = 'embed' | 'autocomplete';
 
 export const defaultTeamBannerConfig: TeamBannerConfig = {
   bannerHasEmoji: true,
-  bannerHasName: true,
-  bannerHasShort: true,
+  bannerHasName: false,
+  bannerHasShort: false,
   bannerHasRole: true,
 };
 
@@ -50,8 +50,8 @@ export function teamBannerConfigFrom(
 ): TeamBannerConfig {
   return {
     bannerHasEmoji: source?.bannerHasEmoji ?? true,
-    bannerHasName: source?.bannerHasName ?? true,
-    bannerHasShort: source?.bannerHasShort ?? true,
+    bannerHasName: source?.bannerHasName ?? false,
+    bannerHasShort: source?.bannerHasShort ?? false,
     bannerHasRole: source?.bannerHasRole ?? true,
   };
 }
@@ -61,7 +61,7 @@ function autocompleteEmoji(team: TeamBannerSource): string | null {
   if (!emoji) return null;
 
   const customEmoji = CUSTOM_EMOJI_MENTION_REGEX.exec(emoji);
-  return customEmoji ? `:${customEmoji[1]}:` : emoji;
+  return customEmoji ? `.${customEmoji[1]}.` : emoji;
 }
 
 function renderBannerComponents(

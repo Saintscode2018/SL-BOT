@@ -121,11 +121,11 @@ async function loadTeamBannerConfig(
 }
 
 const exampleTeamBanner = {
-  emoji: '🔵',
-  name: 'Chelsea',
-  shortName: 'CHE',
+  emoji: '<:examplept:100000000000000001>',
+  name: 'Example Preview Team',
+  shortName: 'EPT',
   discordRoleId: '100000000000000001',
-  discordRoleName: 'Chelsea',
+  discordRoleName: 'ExamplePreviewTeam',
 } as const;
 
 function bannerConfigurationText(config: TeamBannerConfig): string {
@@ -758,8 +758,8 @@ const teamCommand: CommandDefinition = {
       return;
     }
 
-    const teamLines = teams.map(({ club, activePlayerCount, effectiveLimit, remainingSpaces }) => {
-      return `${formatTeamBanner(club, bannerConfig)} — ${activePlayerCount}/${effectiveLimit} (${remainingSpaces} spaces remaining)`;
+    const teamLines = teams.map(({ club, activePlayerCount, effectiveLimit }) => {
+      return `${formatTeamBanner(club, bannerConfig)} — ${activePlayerCount}/${effectiveLimit}`;
     });
 
     const embed = createInfoEmbed({
@@ -1045,8 +1045,8 @@ const staffCommand: CommandDefinition = {
           ? {
               fields: [
                 {
-                  name: formatTeamBanner(selectedClubItem.club, bannerConfig),
-                  value: staffDirectoryBlock(staff),
+                  name: '\u200b',
+                  value: `${formatTeamBanner(selectedClubItem.club, bannerConfig)}\n\n${staffDirectoryBlock(staff)}`,
                   inline: false,
                 },
               ],
@@ -1073,8 +1073,8 @@ const staffCommand: CommandDefinition = {
       activeTeams.map(async ({ club }) => {
         const staff = await context.staffManagementService.list(execution.guildId, club.id);
         return {
-          name: formatTeamBanner(club, bannerConfig),
-          value: staffDirectoryBlock(staff),
+          name: '\u200b',
+          value: `${formatTeamBanner(club, bannerConfig)}\n\n${staffDirectoryBlock(staff)}`,
           inline: false,
         };
       }),
@@ -1110,7 +1110,6 @@ const rosterCommand: CommandDefinition = {
 
     // roster view matches the visual specification
     const result = await context.rosterManagementService.list(execution.guildId, teamId);
-    const staff = await context.staffManagementService.list(execution.guildId, teamId);
     const settings = await context.guildConfigurationService
       .load(execution.guildId)
       .catch(() => null);
@@ -1121,7 +1120,7 @@ const rosterCommand: CommandDefinition = {
     const fullBanner = formatTeamBanner(result.club, bannerConfig);
     const titleIdentity = rosterTitleIdentity(result.club, bannerConfig);
 
-    const staffByType = new Map(staff.map((m) => [m.membershipType, m.user]));
+    const staffByType = new Map(result.staff.map((m) => [m.membershipType, m.user]));
     const tmUser = staffByType.get('TEAM_MANAGER');
     const atmUser = staffByType.get('ASSISTANT_MANAGER');
     const pmUser = staffByType.get('PLAYER_MANAGER');
@@ -1196,7 +1195,7 @@ const offerCommand: CommandDefinition = {
       fields: [
         { name: 'Target Player', value: `<@${result.player.discordUserId}>`, inline: true },
         {
-          name: 'Destination Team',
+          name: 'Source Team',
           value: formatTeamBanner(
             club ?? destinationClub,
             teamBannerConfigFrom(result.bannerConfig),
@@ -1207,8 +1206,7 @@ const offerCommand: CommandDefinition = {
       thumbnail,
     });
 
-    await interaction.deleteReply();
-    await interaction.followUp({ embeds: [embed] });
+    await interaction.editReply({ embeds: [embed] });
   },
 };
 

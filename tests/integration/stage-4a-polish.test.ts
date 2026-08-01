@@ -283,7 +283,7 @@ describe('Stage 4A Polish Verification', () => {
           discordRoleId: '300000000000000001',
           emoji: '🔴',
         }),
-      ).rejects.toThrow('⚽ Chelsea (CHE)');
+      ).rejects.toThrow('⚽ <@&300000000000000001>');
     });
 
     it('detects duplicate team name and short name', async () => {
@@ -304,7 +304,7 @@ describe('Stage 4A Polish Verification', () => {
           discordRoleId: '300000000000000002',
           emoji: '🔵',
         }),
-      ).rejects.toThrow('⚽ Chelsea (CHE)');
+      ).rejects.toThrow('⚽ <@&300000000000000001>');
 
       await expect(
         clubService.create({
@@ -314,7 +314,7 @@ describe('Stage 4A Polish Verification', () => {
           discordRoleId: '300000000000000003',
           emoji: '🔵',
         }),
-      ).rejects.toThrow('⚽ Chelsea (CHE)');
+      ).rejects.toThrow('⚽ <@&300000000000000001>');
     });
   });
 
@@ -506,7 +506,9 @@ describe('Stage 4A Polish Verification', () => {
       expect(commandContext.offerDeliveryService.createAndDeliver).toHaveBeenCalledWith(
         expect.objectContaining({ destinationClubId: club.id }),
       );
-      expect(interaction.followUps[0]?.embeds?.[0]?.data.title).toBe('✅ Contract Offer Sent');
+      expect(interaction.followUps).toEqual([]);
+      expect(interaction.edits[0]?.embeds?.[0]?.data.title).toBe('✅ Contract Offer Sent');
+      expect(interaction.edits[0]?.embeds?.[0]?.data.fields?.[1]?.name).toBe('Source Team');
     });
 
     it('rejects global bot permission without an active staff appointment', async () => {
@@ -651,8 +653,8 @@ describe('Stage 4A Polish Verification', () => {
             });
 
       expect(embedData.author?.name).toBe('Development League');
-      expect(embedData.title).toBe('⚽ Chelsea FC Roster');
-      expect(embedData.description).toContain('⚽ Chelsea FC (CHE)');
+      expect(embedData.title).toBe('⚽ Roster');
+      expect(embedData.description).toBe(`⚽ <@&${club.discordRoleId}>`);
       expect(embedData.footer?.text).toContain('Roster for Development League');
 
       const fields = embedData.fields ?? [];

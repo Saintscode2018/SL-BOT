@@ -27,19 +27,20 @@ Index: [[SLBot]]
   - Specific domain conflict errors (duplicate role, name, short name, staff appointed, position occupied).
   - Global staff uniqueness rule (1 active staff position per user league-wide).
   - Guild-record custom emoji validation and composed Unicode emoji support.
-  - Flattened `/offer player:<user>` command (auto-derives destination team from caller's active staff appointment).
+  - Flattened `/offer player:<user>` command (auto-derives source team from caller's active database staff appointment).
   - Visual embed overhaul (`✅`/`❌` title prefixes, actor lines, vertical block fields for channels/roles).
   - Roster layout with author, standard team-label title, thumbnail, count, actual TM/ATM/PM names, divider, and players.
   - Development-only `/debugreset` command with confirmation flow.
 - **Stage 4A Live-Test Corrections**:
   - Guild custom emoji resolution from full mentions, wrapped names, or plain names, plus composed Unicode regression coverage.
-  - Standard `<emoji> Name (SHORT)` labels and custom-emoji autocomplete fallback.
+  - Default emoji-plus-role banners, safe `.examplept.` previews, and `.emojiName.` plain-text autocomplete fallback.
   - Correct TM/ATM/PM roster sections with no Assistant Coach placeholder.
   - Ephemeral administrative success matrix and authorization-aware channel guidance.
   - Setup/configuration Discord audit publishing for league, channels, roles, and team banners with nonfatal delivery failure.
-  - Guild-specific `/bannerconfig` with four default-enabled fixed-order components and all-false rejection.
+  - Guild-specific `/bannerconfig` with fixed-order emoji/name/short/role components, emoji-plus-role defaults, and all-false rejection.
   - Shared team-banner formatting across normal output, safe text autocomplete, staff presentation, roster identity, offers, and relevant conflicts.
   - Vertical staff-directory blocks, affected-user appointment/removal wording, role-safe roster titles, setup-view preview, and best-effort banner audit publishing.
+  - Compact `banner — current/max` team lists, normal-text staff banners, club-ID roster correlation, active-staff offer rejection, and ephemeral `Source Team` offer acknowledgements.
 
 ## Explicitly Excluded / Future Stages (Stage 4B+)
 

@@ -282,7 +282,7 @@ function createContext(input?: {
     rosterManagementService: {
       add: () => Promise.reject(new Error('unused')),
       remove: () => Promise.reject(new Error('unused')),
-      list: () => Promise.resolve({ club: team, players: [] }),
+      list: () => Promise.resolve({ club: team, players: [], staff: [] }),
     },
     limitManagementService: {
       setDefaultLimit: () => Promise.resolve({ defaultSquadLimit: 20 }),
@@ -317,6 +317,12 @@ function createContext(input?: {
           leagueName: result.guild.name,
           activePlayerCount: 0,
           effectiveSquadLimit: 17,
+          bannerConfig: {
+            bannerHasEmoji: result.settings.bannerHasEmoji,
+            bannerHasName: result.settings.bannerHasName,
+            bannerHasShort: result.settings.bannerHasShort,
+            bannerHasRole: result.settings.bannerHasRole,
+          },
         } as never),
     },
     offerButtonHandler: { handle: () => Promise.resolve(false) },
@@ -417,12 +423,13 @@ describe('command visibility', () => {
     expect(interaction.replies[0]?.flags).toBe(MessageFlags.Ephemeral);
   });
 
-  it('keeps offer acknowledgement public while failures inherit an ephemeral defer', async () => {
+  it('keeps offer success and failure on the ephemeral deferred response', async () => {
     const success = new TestInteraction('offer', { player: 'player-1' }, 'bot-channel');
     await resolveCommand('offer').execute(success, createContext());
     expect(success.deferrals[0]?.flags).toBe(MessageFlags.Ephemeral);
-    expect(success.deletedReply).toBe(true);
-    expect(success.followUps[0]?.flags).toBeUndefined();
+    expect(success.deletedReply).toBe(false);
+    expect(success.followUps).toEqual([]);
+    expect(success.edits[0]?.embeds?.[0]?.data.title).toBe('✅ Contract Offer Sent');
 
     const failure = new TestInteraction('offer', { player: 'player-1' }, 'bot-channel');
     const logger = new MemoryLogger();
@@ -464,7 +471,7 @@ describe('banner configuration command', () => {
     const context = createContext({ auditPublish: { publish } });
     const interaction = new TestInteraction('bannerconfig', {
       has_emoji: true,
-      has_name: true,
+      has_name: false,
       has_short: false,
       has_role: true,
     });
@@ -479,12 +486,19 @@ describe('banner configuration command', () => {
       value: `<@${authorization.discordUserId}>`,
       inline: false,
     });
+    expect(response?.fields?.find((field) => field.name === 'Team Banner Preview')?.value).toBe(
+      '.examplept. @ExamplePreviewTeam',
+    );
     expect(publish).toHaveBeenCalledOnce();
     expect(publish.mock.calls[0]?.[0]).toMatchObject({
       channelId: 'audit-channel',
       title: '✅ Team Banner Configuration Updated',
       actorDiscordUserId: authorization.discordUserId,
     });
+    expect(
+      publish.mock.calls[0]?.[0].fields?.find((field) => field.name === 'Team Banner Preview')
+        ?.value,
+    ).toBe('.examplept. @ExamplePreviewTeam');
   });
 
   it('rejects all false ephemerally and publishes no audit message', async () => {
@@ -537,6 +551,48 @@ describe('banner configuration command', () => {
     expect(failedAudit.edits[0]?.embeds?.[0]?.data.description).toContain(
       'audit message could not be delivered',
     );
+  });
+
+  it('uses the fictional preview consistently for every valid component combination', async () => {
+    for (let mask = 1; mask < 16; mask += 1) {
+      const hasEmoji = (mask & 1) !== 0;
+      const hasName = (mask & 2) !== 0;
+      const hasShort = (mask & 4) !== 0;
+      const hasRole = (mask & 8) !== 0;
+      const expected = [
+        hasEmoji ? '.examplept.' : null,
+        hasName ? 'Example Preview Team' : null,
+        hasShort ? '(EPT)' : null,
+        hasRole ? '@ExamplePreviewTeam' : null,
+      ]
+        .filter((component): component is string => component !== null)
+        .join(' ');
+      const publish = vi.fn((message: SetupAuditMessage) => {
+        void message;
+        return Promise.resolve(true);
+      });
+      const interaction = new TestInteraction('bannerconfig', {
+        has_emoji: hasEmoji,
+        has_name: hasName,
+        has_short: hasShort,
+        has_role: hasRole,
+      });
+
+      await resolveCommand('bannerconfig').execute(
+        interaction,
+        createContext({ auditPublish: { publish } }),
+      );
+
+      expect(
+        interaction.edits[0]?.embeds?.[0]?.data.fields?.find(
+          (field) => field.name === 'Team Banner Preview',
+        )?.value,
+      ).toBe(expected);
+      expect(
+        publish.mock.calls[0]?.[0].fields?.find((field) => field.name === 'Team Banner Preview')
+          ?.value,
+      ).toBe(expected);
+    }
   });
 });
 
@@ -593,7 +649,61 @@ describe('command team branding', () => {
       ]);
     const list = new TestInteraction('team', { subcommand: 'list' }, 'bot-channel');
     await resolveCommand('team').execute(list, context);
-    expect(list.replies[0]?.embeds?.[0]?.data.description).toContain('🔵 Chelsea (CHE)');
+    expect(list.replies[0]?.embeds?.[0]?.data.description).toBe(
+      '🔵 Chelsea (CHE) <@&role-1> — 4/17',
+    );
+    expect(list.replies[0]?.embeds?.[0]?.data.description).not.toContain('spaces remaining');
+  });
+
+  it('formats Unicode custom and alternate team list banners as banner and capacity only', async () => {
+    const customTeam = {
+      ...team,
+      id: 'club-2',
+      name: 'Newcastle',
+      shortName: 'NEW',
+      discordRoleId: 'role-2',
+      emoji: '<:Newcastle:987654321098765432>',
+    };
+    const defaultContext = createContext({
+      bannerConfig: {
+        bannerHasEmoji: true,
+        bannerHasName: false,
+        bannerHasShort: false,
+        bannerHasRole: true,
+      },
+    });
+    defaultContext.clubManagementService.listActive = () =>
+      Promise.resolve([
+        { club: team, activePlayerCount: 0, effectiveLimit: 17, remainingSpaces: 17 },
+        { club: customTeam, activePlayerCount: 3, effectiveLimit: 20, remainingSpaces: 17 },
+      ]);
+    const defaultList = new TestInteraction('team', { subcommand: 'list' }, 'bot-channel');
+
+    await resolveCommand('team').execute(defaultList, defaultContext);
+
+    expect(defaultList.replies[0]?.embeds?.[0]?.data.description).toBe(
+      '🔵 <@&role-1> — 0/17\n<:Newcastle:987654321098765432> <@&role-2> — 3/20',
+    );
+    expect(defaultList.replies[0]?.embeds?.[0]?.data.description).not.toContain('remaining');
+    expect(defaultList.replies[0]?.embeds?.[0]?.data.description).not.toContain('(');
+
+    const alternateContext = createContext({
+      bannerConfig: {
+        bannerHasEmoji: false,
+        bannerHasName: true,
+        bannerHasShort: true,
+        bannerHasRole: false,
+      },
+    });
+    alternateContext.clubManagementService.listActive = () =>
+      Promise.resolve([
+        { club: customTeam, activePlayerCount: 3, effectiveLimit: 20, remainingSpaces: 17 },
+      ]);
+    const alternateList = new TestInteraction('team', { subcommand: 'list' }, 'bot-channel');
+
+    await resolveCommand('team').execute(alternateList, alternateContext);
+
+    expect(alternateList.replies[0]?.embeds?.[0]?.data.description).toBe('Newcastle (NEW) — 3/20');
   });
 
   it('uses the standard label in staff roster offer and limit output', async () => {
@@ -609,7 +719,7 @@ describe('command team branding', () => {
       'bot-channel',
     );
     await resolveCommand('staff').execute(staff, context);
-    expect(staff.replies[0]?.embeds?.[0]?.data.fields?.[0]?.name).toContain('🔵 Chelsea (CHE)');
+    expect(staff.replies[0]?.embeds?.[0]?.data.fields?.[0]?.value).toContain('🔵 Chelsea (CHE)');
 
     const roster = new TestInteraction('roster', { team: team.id }, 'bot-channel');
     await resolveCommand('roster').execute(roster, context);
@@ -618,7 +728,7 @@ describe('command team branding', () => {
 
     const offer = new TestInteraction('offer', { player: 'player-1' }, 'bot-channel');
     await resolveCommand('offer').execute(offer, context);
-    expect(offer.followUps[0]?.embeds?.[0]?.data.description).toContain('🔵 Chelsea (CHE)');
+    expect(offer.edits[0]?.embeds?.[0]?.data.description).toContain('🔵 Chelsea (CHE)');
 
     const limitMutation = new TestInteraction('limit', {
       subcommand: 'team',
@@ -690,11 +800,12 @@ describe('configured staff and roster presentation', () => {
     await resolveCommand('staff').execute(interaction, context);
 
     const field = interaction.replies[0]?.embeds?.[0]?.data.fields?.[0];
-    expect(field?.name).toBe('Chelsea <@&role-1>');
+    expect(field?.name).toBe('\u200b');
     expect(field?.value).toBe(
-      '👑 Team Manager: <@manager-1>\n👔 Assistant Team Manager: Vacant\n🧠 Player Manager: Vacant',
+      'Chelsea <@&role-1>\n\n👑 Team Manager: <@manager-1>\n👔 Assistant Team Manager: Vacant\n🧠 Player Manager: Vacant',
     );
     expect(field?.value).not.toContain('|');
+    expect(field?.value).not.toContain('**<@&role-1>**');
   });
 
   it('keeps role mentions out of roster titles while respecting role only banners', async () => {
@@ -733,7 +844,28 @@ describe('configured staff and roster presentation', () => {
     expect(fields?.find((field) => field.name === 'Team Banner')?.value).toContain(
       'Emoji: Disabled',
     );
-    expect(fields?.find((field) => field.name === 'Preview')?.value).toBe('Chelsea @Chelsea');
+    expect(fields?.find((field) => field.name === 'Preview')?.value).toBe(
+      'Example Preview Team @ExamplePreviewTeam',
+    );
+    expect(publish).not.toHaveBeenCalled();
+
+    const defaultView = new TestInteraction('setup', { subcommand: 'view' });
+    await resolveCommand('setup').execute(
+      defaultView,
+      createContext({
+        bannerConfig: {
+          bannerHasEmoji: true,
+          bannerHasName: false,
+          bannerHasShort: false,
+          bannerHasRole: true,
+        },
+        auditPublish: { publish },
+      }),
+    );
+    expect(
+      defaultView.edits[0]?.embeds?.[0]?.data.fields?.find((field) => field.name === 'Preview')
+        ?.value,
+    ).toBe('.examplept. @ExamplePreviewTeam');
     expect(publish).not.toHaveBeenCalled();
   });
 });

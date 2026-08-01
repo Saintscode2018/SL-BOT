@@ -90,6 +90,8 @@ export class GuildNotConfiguredError extends DomainError {}
 
 export class ClubInactiveError extends DomainError {}
 
+export class TeamNotFoundError extends EntityNotFoundError {}
+
 export class DuplicateOfferError extends DomainError {}
 
 export class BotUserNotAllowedError extends DomainError {}
@@ -130,6 +132,18 @@ export class StaffAlreadyAppointedError extends ConflictError {
   ) {
     super(
       `<@${discordUserId}> is already the ${positionName} of ${teamName}.\n\nThey must be removed from that position before receiving another appointment.`,
+    );
+  }
+}
+
+export class StaffMemberCannotReceiveOffersError extends ConflictError {
+  public constructor(
+    public readonly discordUserId: string,
+    public readonly positionName: string,
+    public readonly teamName: string,
+  ) {
+    super(
+      `<@${discordUserId}> is currently the ${positionName} of ${teamName}.\n\nActive team staff must be removed from their staff position before they can receive a player contract offer.`,
     );
   }
 }

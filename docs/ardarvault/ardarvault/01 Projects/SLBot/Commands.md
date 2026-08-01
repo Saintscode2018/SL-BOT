@@ -29,7 +29,7 @@ Index: [[SLBot]] | Architecture: [[Architecture]]
   ├── add             (Inputs: name, short_name, role, emoji [required])
   ├── edit            (Inputs: team, [name], [short_name], [role], [emoji])
   ├── remove          (Inputs: team) - Safe soft deactivation preserving historical records (distinguished from future /disband)
-  └── list            (Displays active teams with custom/unicode emojis, counts, limits, remaining spaces)
+  └── list            (Displays one configured banner per team as current/max)
 
 /limit
   ├── default         (Inputs: amount 1-100)
@@ -73,7 +73,7 @@ Index: [[SLBot]] | Architecture: [[Architecture]]
 | `/staff remove`   | Staff channel only                             | Global bot permission         | **Ephemeral Embed**                        |
 | `/staff list`     | Bot Commands; Staff for global callers         | Normal bot user               | **Public Embed**                           |
 | `/roster`         | Bot Commands; Staff for global callers         | Normal bot user               | **Public Embed**                           |
-| `/offer`          | Bot Commands OR Staff                          | Active Club Staff (TM/ATM/PM) | **Public Embed Ack** (DM to target player) |
+| `/offer`          | Bot Commands OR Staff                          | Active Club Staff (TM/ATM/PM) | **Ephemeral Embed Ack** (DM to target)     |
 | `/debugreset`     | Staff channel only                             | Discord Administrator ONLY    | **Ephemeral Confirmation Embed & Buttons** |
 
 ### Bootstrap Exception Rules
@@ -86,6 +86,6 @@ All error responses and channel policy violations produce **ephemeral red error 
 
 Ordinary informational callers are directed only to Bot Commands. Globally authorized callers may receive Bot Commands and Staff guidance when both are configured. Administrative permission is checked before Staff details are revealed. `/offer` validates Bot Commands or Staff before resolving the caller's active TM/ATM/PM appointment.
 
-`/bannerconfig` stores four guild-specific Boolean switches, all defaulting to enabled. At least one must be true and the order is fixed as emoji, name, `(SHORT)`, role; custom templates and ordering are unsupported. Normal output uses real custom emoji and role mentions. Autocomplete intentionally represents custom emoji as `:emojiName:` text, adds a readable cached `@RoleName` when available, never exposes emoji or role IDs, and retains the club ID choice value. Staff appointment/removal output includes the affected user, friendly position, and banner; `/staff list` uses vertical `👑`/`👔`/`🧠` lines with `Vacant`; roster role mentions remain outside the title. Successful setup league/channels/roles and banner configuration mutations mirror to the configured audit channel; setup view does not publish.
+`/bannerconfig` stores four guild-specific Boolean switches with defaults emoji on, name off, short name off, and role on. At least one must be true and the order is fixed as emoji, name, `(SHORT)`, role; safe previews use `.examplept. Example Preview Team (EPT) @ExamplePreviewTeam`. Discord autocomplete labels are plain text: Unicode remains visible, custom emoji use `.emojiName.`, cached roles use `@RoleName`, raw IDs and custom mentions are omitted, and the choice value remains the club ID. `/team list` uses `banner — current/max`. `/staff list` keeps the banner out of bold field headings and uses vertical `👑`/`👔`/`🧠` lines. `/roster` consumes only the selected current-guild club ID. `/offer` derives `Source Team` from the caller's active database staff appointment, rejects active staff targets, and edits its original ephemeral reply; Discord-role source derivation remains deferred. Setup league/channels/roles and banner mutations mirror to Audit; setup view does not publish.
 
 Related notes: [[Product Decisions]], [[Roadmap]], [[Testing and Deployment]]

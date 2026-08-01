@@ -148,20 +148,20 @@ describe('database migrations', () => {
     }
   });
 
-  it('defaults every team banner component to enabled on a fresh database', async () => {
+  it('defaults team banners to emoji and role on a fresh database', async () => {
     const guild = await database.client.guild.create({
       data: { discordGuildId: '100000000000000001', name: 'Banner League' },
     });
     const settings = await database.client.guildSettings.create({ data: { guildId: guild.id } });
     expect(settings).toMatchObject({
       bannerHasEmoji: true,
-      bannerHasName: true,
-      bannerHasShort: true,
+      bannerHasName: false,
+      bannerHasShort: false,
       bannerHasRole: true,
     });
   });
 
-  it('migrates an existing Stage 4A database without changing saved settings', () => {
+  it('corrects Stage 4A defaults without changing saved banner settings', () => {
     const databasePath = join(process.cwd(), 'prisma', `.stage4a-${randomUUID()}.db`);
     writeFileSync(databasePath, '', { flag: 'wx' });
     const sqlite = new DatabaseSync(databasePath);
@@ -200,6 +200,23 @@ describe('database migrations', () => {
           { encoding: 'utf8' },
         ),
       );
+      sqlite
+        .prepare(
+          'UPDATE "GuildSettings" SET "bannerHasEmoji" = ?, "bannerHasName" = ?, "bannerHasShort" = ?, "bannerHasRole" = ? WHERE "id" = ?',
+        )
+        .run(0, 1, 1, 0, 'settings-1');
+      sqlite.exec(
+        readFileSync(
+          join(
+            process.cwd(),
+            'prisma',
+            'migrations',
+            '20260801210000_correct_team_banner_defaults',
+            'migration.sql',
+          ),
+          { encoding: 'utf8' },
+        ),
+      );
 
       const settings = sqlite
         .prepare(
@@ -207,10 +224,10 @@ describe('database migrations', () => {
         )
         .get('settings-1') as unknown as BannerSettingsRow;
       expect(settings).toEqual({
-        bannerHasEmoji: 1,
+        bannerHasEmoji: 0,
         bannerHasName: 1,
         bannerHasShort: 1,
-        bannerHasRole: 1,
+        bannerHasRole: 0,
         botCommandsChannelId: '200000000000000001',
         defaultSquadLimit: 23,
       });

@@ -13,7 +13,7 @@ Welcome to the project memory for **SL Bot**, the official Discord administratio
 
 ## Project Overview
 
-SL Bot provides automated, authoritative league administration for Discord and SQLite. The current Stage 4A correction set adds guild-name custom emoji resolution, guild-specific fixed-order team banners configured by `/bannerconfig`, intentional text fallbacks for Discord autocomplete, vertical TM/ATM/PM staff presentation, role-safe roster banners, ephemeral administrative successes, authorization-aware channel guidance, and setup/configuration Discord audit publishing.
+SL Bot provides automated, authoritative league administration for Discord and SQLite. The final Stage 4A correction set uses emoji-plus-role banner defaults, safe `.examplept.` previews, `.emojiName.` plain-text autocomplete fallbacks with immutable club-ID values, compact team lists, normal-text staff banners, transactionally correlated roster reads, active-staff offer restrictions, ephemeral `Source Team` acknowledgements, persistent private offer buttons, authorization-aware channel guidance, and setup/configuration Discord audit publishing.
 
 ## Quick Navigation
 

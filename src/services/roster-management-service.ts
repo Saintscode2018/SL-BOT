@@ -12,6 +12,7 @@ import {
   ClubInactiveError,
   EntityNotFoundError,
   SquadFullError,
+  TeamNotFoundError,
 } from '../domain/errors.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
@@ -171,14 +172,20 @@ export class RosterManagementService {
   ): Promise<{
     club: Club;
     players: Array<ClubMembership & { user: LeagueUser }>;
+    staff: Array<ClubMembership & { user: LeagueUser }>;
   }> {
-    const guild = await new GuildRepository(this.database).getByDiscordGuildId(discordGuildId);
-    if (guild === null) throw new EntityNotFoundError('server is not configured');
-    const club = await new ClubRepository(this.database).getByIdInGuild(clubId, guild.id);
-    if (club === null || !club.active) throw new EntityNotFoundError('active team was not found');
-    const players = await new MembershipRepository(this.database).listActivePlayersWithUsers(
-      club.id,
-    );
-    return { club, players };
+    return this.database.$transaction(async (transaction) => {
+      const guild = await new GuildRepository(transaction).getByDiscordGuildId(discordGuildId);
+      if (guild === null) throw new EntityNotFoundError('server is not configured');
+      const club = await new ClubRepository(transaction).getByIdInGuild(clubId, guild.id);
+      if (club === null) throw new TeamNotFoundError('team was not found in this server');
+      if (!club.active) throw new ClubInactiveError('team is inactive');
+      const memberships = new MembershipRepository(transaction);
+      const [players, staff] = await Promise.all([
+        memberships.listActivePlayersWithUsers(club.id),
+        memberships.listActiveStaffWithUsers(club.id),
+      ]);
+      return { club, players, staff };
+    });
   }
 }
