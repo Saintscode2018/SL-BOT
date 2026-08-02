@@ -1,4 +1,6 @@
 import type {
+  ActionRowBuilder,
+  ButtonBuilder,
   EmbedBuilder,
   MessageFlags,
   RESTPostAPIChatInputApplicationCommandsJSONBody,
@@ -17,11 +19,13 @@ import type { RosterManagementService } from '../services/roster-management-serv
 import type { StaffManagementService } from '../services/staff-management-service.js';
 import type { SetupAuditService } from '../services/setup-audit-service.js';
 import type { OfferButtonHandler } from './offer-button-handler.js';
+import type { RosterDepartureCommandHandler } from './departure-command-handler.js';
 import type { GuildEmoji } from './emoji-helper.js';
 
 export interface SafeInteractionResponse {
   content?: string;
   embeds?: readonly EmbedBuilder[];
+  components?: ActionRowBuilder<ButtonBuilder>[];
   flags?: MessageFlags.Ephemeral;
 }
 
@@ -38,6 +42,21 @@ export interface GuildRoleMetadata {
 export interface EditedInteractionResponse {
   content?: string;
   embeds?: readonly EmbedBuilder[];
+  components?: ActionRowBuilder<ButtonBuilder>[];
+}
+
+export interface ButtonInteractionAdapter {
+  readonly customId: string;
+  readonly userId: string;
+  readonly guildId?: string | undefined;
+  readonly replied: boolean;
+  readonly deferred: boolean;
+  getGuildRoleMetadata?(roleId: string): GuildRoleMetadata | null;
+  getGuildMemberDisplayName?(userId: string): string | null;
+  deferUpdate(): Promise<void>;
+  reply(response: SafeInteractionResponse): Promise<void>;
+  editReply(response: EditedInteractionResponse): Promise<void>;
+  followUp(response: SafeInteractionResponse): Promise<void>;
 }
 
 export interface CommandInteraction {
@@ -111,6 +130,10 @@ export interface CommandContext {
   commandChannelPolicyService: Pick<CommandChannelPolicyService, 'validateChannelPolicy'>;
   offerDeliveryService: Pick<OfferDeliveryService, 'createAndDeliver'>;
   offerButtonHandler: Pick<OfferButtonHandler, 'handle'>;
+  departureCommandHandler?: Pick<
+    RosterDepartureCommandHandler,
+    'beginDemand' | 'beginRelease' | 'canHandle' | 'handleButton'
+  >;
   setupAuditService: Pick<SetupAuditService, 'publish'>;
 }
 

@@ -97,4 +97,40 @@ describe('confirmation registry', () => {
     ).toThrow(ConfirmationAlreadyHandledError);
     registry.clear();
   });
+
+  it('atomically consumes the staff-only decision and enforces the bound guild', () => {
+    const registry = new ConfirmationRegistry(new MemoryLogger());
+    const confirmation = registry.create(
+      { ...context, action: 'DEMAND', commandName: 'demand', targetStaffRole: 'ATM' },
+      { now },
+    );
+    expect(() =>
+      registry.consumeDecision(
+        confirmation.staffOnlyCustomId,
+        context.initiatorDiscordUserId,
+        now,
+        'different-guild',
+      ),
+    ).toThrow(StaleConfirmationError);
+    expect(
+      registry.consumeDecision(
+        confirmation.staffOnlyCustomId,
+        context.initiatorDiscordUserId,
+        now,
+        context.discordGuildId,
+      ),
+    ).toEqual({
+      context: {
+        ...context,
+        action: 'DEMAND',
+        commandName: 'demand',
+        targetStaffRole: 'ATM',
+      },
+      decision: 'staff-only',
+    });
+    expect(() =>
+      registry.consume(confirmation.confirmCustomId, context.initiatorDiscordUserId, now),
+    ).toThrow(ConfirmationAlreadyHandledError);
+    registry.clear();
+  });
 });

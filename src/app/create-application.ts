@@ -1,6 +1,7 @@
 import type { Client } from 'discord.js';
 
 import { createDiscordClient } from '../bot/client.js';
+import { RosterDepartureCommandHandler } from '../bot/departure-command-handler.js';
 import { loadCommands } from '../bot/command-loader.js';
 import { commandDefinitions } from '../bot/commands.js';
 import { EventRegistry } from '../bot/event-registry.js';
@@ -24,9 +25,11 @@ import { ClubRepository } from '../repositories/club-repository.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
 import { ClubManagementService } from '../services/club-management-service.js';
 import { CommandChannelPolicyService } from '../services/command-channel-policy-service.js';
+import { ConfirmationRegistry } from '../services/confirmation-registry.js';
 import { DatabaseHealthService } from '../services/database-health-service.js';
 import { GuildConfigurationService } from '../services/guild-configuration-service.js';
 import { GuildSetupService } from '../services/guild-setup-service.js';
+import { demandRateLimitMs, GuildUserRateLimiter } from '../services/guild-user-rate-limiter.js';
 import { LimitManagementService } from '../services/limit-management-service.js';
 import { MemberRoleSynchronizationService } from '../services/member-role-synchronization-service.js';
 import { OfferAcceptanceService } from '../services/offer-acceptance-service.js';
@@ -35,6 +38,7 @@ import { OfferDeclineService } from '../services/offer-decline-service.js';
 import { OfferDeliveryService } from '../services/offer-delivery-service.js';
 import { OfferResponseService } from '../services/offer-response-service.js';
 import { RosterManagementService } from '../services/roster-management-service.js';
+import { RosterDepartureService } from '../services/roster-departure-service.js';
 import { RoleSynchronizedMutationService } from '../services/role-synchronized-mutation-service.js';
 import { RosterMutationService } from '../services/roster-mutation-service.js';
 import { StaffManagementService } from '../services/staff-management-service.js';
@@ -84,6 +88,13 @@ export function createApplication(
     logger,
   );
   const rosterMutations = new RosterMutationService(prisma, synchronizedMutations);
+  const commandChannelPolicy = new CommandChannelPolicyService(prisma);
+  const departureCommandHandler = new RosterDepartureCommandHandler(
+    commandChannelPolicy,
+    new RosterDepartureService(prisma, rosterMutations),
+    new ConfirmationRegistry(logger),
+    new GuildUserRateLimiter(demandRateLimitMs),
+  );
   const offerAcceptanceService = new OfferAcceptanceService(
     prisma,
     undefined,
@@ -119,9 +130,10 @@ export function createApplication(
     staffManagementService: new StaffManagementService(prisma, rosterMutations),
     rosterManagementService: new RosterManagementService(prisma),
     limitManagementService: new LimitManagementService(prisma),
-    commandChannelPolicyService: new CommandChannelPolicyService(prisma),
+    commandChannelPolicyService: commandChannelPolicy,
     offerDeliveryService,
     offerButtonHandler,
+    departureCommandHandler,
     setupAuditService,
   };
   const events = new EventRegistry(createEventDefinitions(commands, context, logger));

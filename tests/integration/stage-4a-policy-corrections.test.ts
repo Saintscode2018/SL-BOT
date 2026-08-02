@@ -81,14 +81,14 @@ describe('authorization aware channel policy', () => {
   async function policyError(input: {
     authorization: AuthorizationInput;
     commandName: string;
-    subcommand?: string;
+    subcommand?: string | null | undefined;
     channelId?: string;
   }): Promise<unknown> {
     try {
       await new CommandChannelPolicyService(database.client).validateChannelPolicy({
         authorization: input.authorization,
         commandName: input.commandName,
-        subcommand: input.subcommand,
+        ...(input.subcommand === undefined ? {} : { subcommand: input.subcommand }),
         channelId: input.channelId ?? unrelatedChannelId,
       });
       throw new Error('expected policy failure');
@@ -97,14 +97,23 @@ describe('authorization aware channel policy', () => {
     }
   }
 
-  it('guides ordinary informational users only to bot commands', async () => {
+  it('allows ordinary informational users in Staff without disclosing its channel ID', async () => {
     await configureChannelsAndRoles();
+    await expect(
+      new CommandChannelPolicyService(database.client).validateChannelPolicy({
+        authorization: ordinaryUser,
+        commandName: 'roster',
+        channelId: staffChannelId,
+      }),
+    ).resolves.toBeUndefined();
     const error = await policyError({ authorization: ordinaryUser, commandName: 'roster' });
     expect(error).toBeInstanceOf(WrongCommandChannelError);
     const mapped = mapDiscordError(error);
     expect(mapped.title).toBe('❌ Wrong Command Channel');
-    expect(mapped.description).toBe(`Please use <#${botCommandsChannelId}> for bot commands.`);
+    expect(mapped.description).toBe(`Use this command in <#${botCommandsChannelId}>.`);
     expect(mapped.description).not.toContain(staffChannelId);
+    expect(mapped.description).not.toContain('Staff Commands');
+    expect(mapped.description).not.toContain('configured Staff Commands channel');
   });
 
   it('guides globally authorized informational users to both configured channels', async () => {
@@ -112,8 +121,10 @@ describe('authorization aware channel policy', () => {
     const error = await policyError({ authorization: administrator, commandName: 'health' });
     const mapped = mapDiscordError(error);
     expect(mapped.description).toBe(
-      `Use either <#${botCommandsChannelId}> or <#${staffChannelId}> for this command.`,
+      `Use this command in <#${botCommandsChannelId}> or <#${staffChannelId}>.`,
     );
+    expect(mapped.description).not.toContain('Use either');
+    expect(mapped.description).not.toContain('Please use');
   });
 
   it('checks administrative permission before revealing the staff channel', async () => {
@@ -127,9 +138,10 @@ describe('authorization aware channel policy', () => {
     const mapped = mapDiscordError(error);
     expect(mapped.title).toBe('❌ Permission Denied');
     expect(mapped.description).not.toContain(staffChannelId);
+    expect(mapped.description).not.toContain('Staff Commands');
   });
 
-  it('directs authorized administrative callers only to staff commands', async () => {
+  it('directs authorized administrative callers only to staff commands with concise wording', async () => {
     await configureChannelsAndRoles();
     for (const authorization of [botPermissionsUser, administrator]) {
       const error = await policyError({
@@ -139,7 +151,10 @@ describe('authorization aware channel policy', () => {
         channelId: botCommandsChannelId,
       });
       expect(error).toBeInstanceOf(AdministrativeWrongChannelError);
-      expect(mapDiscordError(error).description).toContain(`<#${staffChannelId}>`);
+      const mapped = mapDiscordError(error);
+      expect(mapped.title).toBe('❌ Wrong Command Channel');
+      expect(mapped.description).toBe(`Use this command in <#${staffChannelId}>.`);
+      expect(mapped.description).not.toContain('Administrative commands must be used in');
     }
   });
 
@@ -200,7 +215,7 @@ describe('authorization aware channel policy', () => {
       subcommand: 'list',
     });
     expect(mapDiscordError(globalStaffOnly).description).toBe(
-      `Please use <#${staffChannelId}> for this command.`,
+      `Use this command in <#${staffChannelId}>.`,
     );
 
     await database.client.guildSettings.update({
@@ -213,7 +228,7 @@ describe('authorization aware channel policy', () => {
       subcommand: 'list',
     });
     expect(mapDiscordError(globalBotOnly).description).toBe(
-      `Please use <#${botCommandsChannelId}> for this command.`,
+      `Use this command in <#${botCommandsChannelId}>.`,
     );
 
     await database.client.guildSettings.update({
@@ -234,7 +249,7 @@ describe('authorization aware channel policy', () => {
       commandName: 'offer',
     });
     expect(mapDiscordError(ordinaryError).description).toBe(
-      `Please use <#${botCommandsChannelId}> for bot commands.`,
+      `Use this command in <#${botCommandsChannelId}>.`,
     );
 
     const globalError = await policyError({
@@ -242,7 +257,7 @@ describe('authorization aware channel policy', () => {
       commandName: 'offer',
     });
     expect(mapDiscordError(globalError).description).toBe(
-      `Use either <#${botCommandsChannelId}> or <#${staffChannelId}> for this command.`,
+      `Use this command in <#${botCommandsChannelId}> or <#${staffChannelId}>.`,
     );
 
     await expect(
@@ -252,6 +267,50 @@ describe('authorization aware channel policy', () => {
         channelId: staffChannelId,
       }),
     ).resolves.toBeUndefined();
+  });
+
+  it('ensures every BOT_OR_STAFF command used by an ordinary user in a wrong channel mentions only Bot Commands', async () => {
+    await configureChannelsAndRoles();
+    const botOrStaffCommands = [
+      { commandName: 'health' },
+      { commandName: 'team', subcommand: 'list' },
+      { commandName: 'staff', subcommand: 'list' },
+      { commandName: 'limit', subcommand: 'view' },
+      { commandName: 'roster' },
+      { commandName: 'offer' },
+      { commandName: 'demand' },
+      { commandName: 'release' },
+    ];
+
+    for (const item of botOrStaffCommands) {
+      const error = await policyError({
+        authorization: ordinaryUser,
+        commandName: item.commandName,
+        ...(item.subcommand === undefined ? {} : { subcommand: item.subcommand }),
+        channelId: unrelatedChannelId,
+      });
+      expect(error).toBeInstanceOf(WrongCommandChannelError);
+      const mapped = mapDiscordError(error);
+      expect(mapped.title).toBe('❌ Wrong Command Channel');
+      expect(mapped.description).toBe(`Use this command in <#${botCommandsChannelId}>.`);
+      expect(mapped.description).not.toContain(staffChannelId);
+      expect(mapped.description).not.toContain('Staff Commands');
+      expect(mapped.description).not.toContain('configured Staff Commands channel');
+    }
+  });
+
+  it('rejection for normal player running /demand in Transfer Market matches exact live specification', async () => {
+    await configureChannelsAndRoles();
+    const transferChannelId = '333333333333333333';
+    const error = await policyError({
+      authorization: ordinaryUser,
+      commandName: 'demand',
+      channelId: transferChannelId,
+    });
+    expect(error).toBeInstanceOf(WrongCommandChannelError);
+    const mapped = mapDiscordError(error);
+    expect(mapped.title).toBe('❌ Wrong Command Channel');
+    expect(mapped.description).toBe(`Use this command in <#${botCommandsChannelId}>.`);
   });
 
   it('keeps debug reset administrator only and staff channel restricted', async () => {
@@ -269,5 +328,40 @@ describe('authorization aware channel policy', () => {
       channelId: botCommandsChannelId,
     });
     expect(wrongChannelError).toBeInstanceOf(AdministrativeWrongChannelError);
+    expect(mapDiscordError(wrongChannelError).description).toBe(
+      `Use this command in <#${staffChannelId}>.`,
+    );
+  });
+
+  it('classifies grouped command subcommands with explicit final scopes', () => {
+    const policy = new CommandChannelPolicyService(database.client);
+    for (const [commandName, subcommand] of [
+      ['demand', null],
+      ['release', null],
+      ['offer', null],
+      ['roster', null],
+      ['team', 'list'],
+      ['staff', 'list'],
+      ['limit', 'view'],
+    ] as const) {
+      expect(policy.getScope(commandName, subcommand)).toBe('BOT_OR_STAFF');
+    }
+    for (const [commandName, subcommand] of [
+      ['setup', 'league'],
+      ['setup', 'channels'],
+      ['setup', 'roles'],
+      ['setup', 'view'],
+      ['team', 'add'],
+      ['team', 'edit'],
+      ['team', 'remove'],
+      ['staff', 'appoint'],
+      ['staff', 'remove'],
+      ['limit', 'default'],
+      ['limit', 'team'],
+      ['limit', 'reset'],
+      ['debugreset', null],
+    ] as const) {
+      expect(policy.getScope(commandName, subcommand)).toBe('STAFF_ONLY');
+    }
   });
 });

@@ -163,7 +163,7 @@ describe('transfer-market announcements', () => {
       color: 0xf97316,
       fields: [
         {
-          name: '👑 Appointment',
+          name: '📌 Appointment',
           value: `> <@${plan.discordUserId}> \`Unknown User\` has been appointed as <@&${staffRoleId}> for <:T1:987654321098765432> <@&${plan.teamIdentity.discordRoleId}> by <@300000000000000099> \`ardaryusz\`!`,
         },
       ],
@@ -230,7 +230,7 @@ describe('transfer-market announcements', () => {
       color: 0x3498db,
       fields: [
         {
-          name: '📉 Demotion',
+          name: '⬇️ Demotion',
           value: `> <@${plan.discordUserId}> \`Unknown User\` has been demoted to player for ⚽ <@&${plan.teamIdentity.discordRoleId}> by <@300000000000000099> \`ardaryusz\`!`,
         },
       ],

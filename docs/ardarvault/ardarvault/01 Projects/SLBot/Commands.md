@@ -34,6 +34,8 @@ tags:
   list [team]
 /roster team
 /offer player
+/demand
+/release player
 /debugreset  (development flag only)
 ```
 
@@ -45,21 +47,23 @@ All `team` string options use the same database-backed autocomplete. Labels cont
 
 ## Visibility and channels
 
-| Command         | Channel                                     | Authorization                                             | Response                               |
-| --------------- | ------------------------------------------- | --------------------------------------------------------- | -------------------------------------- | --------- | --------- |
-| `/health`       | Bot Commands; Staff for global admins       | Any allowed caller                                        | Ephemeral                              |
-| `/setup *`      | Staff; Administrator bootstrap before setup | Global                                                    | Ephemeral                              |
-| `/team add      | edit                                        | remove`                                                   | Staff                                  | Global    | Ephemeral |
-| `/team list`    | Bot Commands; Staff for global admins       | Any allowed caller                                        | Public                                 |
-| `/limit default | team                                        | reset`                                                    | Staff                                  | Global    | Ephemeral |
-| `/limit view`   | Bot Commands; Staff for global admins       | Any allowed caller                                        | Public                                 |
-| `/staff appoint | remove`                                     | Staff                                                     | Global                                 | Ephemeral |
-| `/staff list`   | Bot Commands; Staff for global admins       | Any allowed caller                                        | Public                                 |
-| `/roster`       | Bot Commands; Staff for global admins       | Any allowed caller                                        | Public                                 |
-| `/offer`        | Bot Commands or Staff                       | Active database TM/ATM/PM or global path plus appointment | Ephemeral acknowledgement + private DM |
-| `/debugreset`   | Staff once configured                       | Discord Administrator                                     | Ephemeral                              |
+| Command                       | Channel                                     | Authorization                                         | Response                                                           |
+| ----------------------------- | ------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------ |
+| `/health`                     | Bot Commands or Staff                       | Any allowed caller                                    | Ephemeral                                                          |
+| `/setup *`                    | Staff; Administrator bootstrap before setup | Global                                                | Ephemeral                                                          |
+| `/team add\|edit\|remove`     | Staff                                       | Global                                                | Ephemeral                                                          |
+| `/team list`                  | Bot Commands or Staff                       | Any allowed caller                                    | Public                                                             |
+| `/limit default\|team\|reset` | Staff                                       | Global                                                | Ephemeral                                                          |
+| `/limit view`                 | Bot Commands or Staff                       | Any allowed caller                                    | Public                                                             |
+| `/staff appoint\|remove`      | Staff                                       | Global                                                | Ephemeral                                                          |
+| `/staff list`                 | Bot Commands or Staff                       | Any allowed caller                                    | Public                                                             |
+| `/roster`                     | Bot Commands or Staff                       | Any allowed caller                                    | Public                                                             |
+| `/offer`                      | Bot Commands or Staff                       | Active database TM/ATM/PM appointment                 | Ephemeral acknowledgement + private DM                             |
+| `/demand`                     | Bot Commands or Staff                       | Player, ATM, or PM with active membership; TM blocked | Ephemeral confirmation/result; public Transfer Market success only |
+| `/release player`             | Bot Commands or Staff                       | Active TM/ATM/PM, exact own-team hierarchy            | Ephemeral confirmation/result; public Transfer Market success only |
+| `/debugreset`                 | Staff once configured                       | Discord Administrator                                 | Ephemeral                                                          |
 
-Errors are always ephemeral. Stale commands receive an ephemeral `Command Unavailable` response.
+Errors are always ephemeral. Stale commands receive an ephemeral `Command Unavailable` response. Transfer Market and Audit are output-only for bot operations, so commands are rejected there before confirmations, mutations, or announcements. Wrong-channel responses use exact concise wording (`Use this command in <channel list>.`). Non-global callers (including TM/ATM/PM callers without global administrative authorization) see channel guidance mentioning only Bot Commands (`Use this command in <#botCommandsChannelId>.`); Staff Commands is never disclosed to non-global callers. Unauthorized callers on STAFF_ONLY commands receive `Permission Denied` without channel guidance.
 
 ## Output contracts
 
@@ -74,12 +78,16 @@ Errors are always ephemeral. Stale commands receive an ephemeral `Command Unavai
 - Staff Transfer Market cards: titles use the team-role name without `@`; appointment/removal bodies mention the administrative actor and their readable username/avatar appears in the timestamped `Appointed by`/`Demoted by` footer.
 - Accepted signing: `✅ Offer Accepted - TeamRole`, acceptance description, `📊 Roster: current/max`, `👑 Team Manager`, and a timestamped `Player:` footer using the signed player's readable username/avatar.
 - Private offer: the command resolves a readable source role and guild author metadata before delivery. The card is `Contract Offer` with Source Team, Team Manager, `📊 Squad`, and relative-only `⏰ Expires`; the persistent buttons render `✅ Sign Contract` and `❌ Decline Offer` with unchanged IDs.
+- Demand: ordinary player buttons are Demand/Cancel. ATM/PM buttons are Leave Staff Position/Leave Team Completely/Cancel. TM never receives a prompt. Every confirmation is initiator/guild/team/rank-bound, expires after two minutes, and performs a fresh membership/rank/Discord-role check. The one-minute per-guild/user in-memory limiter is fixed-window: only an allowed attempt stores expiry; blocked retries count down without extension, and wrong-channel attempts do not consume it.
+- Staff-only demand: ends the ATM/PM row, removes only that global role, retains the roster/team role and count, and publishes a `stepped down to player` Demotion card.
+- Full demand: ends roster plus ATM/PM row when present, removes the team plus matching staff role, and publishes `📣 Demand - TeamRole` (fallback `Team`) with exactly two adjacent blockquote lines: demand sentence and post-roster `📊 Roster`. The affected-player `Action by` footer remains.
+- Release: caller team comes only from the active staff appointment. TM releases ATM/PM/player; ATM releases PM/player; PM releases player. No self-release, TM release, other-team release, target approval, reason, or DM. The public `🚪 Release - TeamRole` card (fallback `Team`) has exactly three adjacent blockquote lines: release sentence, post-roster `📊 Roster`, and current `👑 Team Manager`; its neutral affected-player footer reveals no acting manager.
 - Presentation foundation: Presentation strings, emojis (`BOT_EMOJIS`), labels (`BOT_LABELS`), colors (`BOT_COLORS`), and formatters are centralized in `src/bot/presentation/`.
 - Setup view: channels, roles, settings, and missing configuration only; no team-identity configuration and no audit publication.
 
 Single-team team/staff/limit/roster/offer embeds use the current nonzero Discord team-role color. Missing or zero-color roles retain the existing fallback color. Role colors are cache-derived presentation data and are not stored.
 
-Stage 4B.1 registers no new commands. `/demand`, `/release`, `/promote`, `/demote`, and `/folist` remain planned for Stage 4B.2–4B.4; their two-minute server-side confirmation and shared mutation infrastructure are ready but not exposed.
+Stage 4B.2 implements only `/demand` and `/release`. `/promote`, `/demote`, and `/folist` remain planned and are not registered.
 
 Staff appointment/demotion transaction cards publish to Transfer Market, never Audit, and title the action with the readable team role name—without a leading `@`—rather than a removed team name. The live removal path force-refreshes member roles before deciding whether to call Discord. Discord changes require Manage Roles/Administrator plus hierarchy: place the SL Bot role above playable admin roles, TM/ATM/PM, and team roles. Administrator does not bypass hierarchy, and the server owner cannot be role-managed.
 

@@ -21,6 +21,7 @@ import {
   MemberNotOnTeamError,
   SelfActionForbiddenError,
   SquadFullError,
+  StaleConfirmationError,
   StaffAlreadyAppointedError,
   StaffSlotOccupiedError,
   TargetAlreadyDesiredRankError,
@@ -37,6 +38,7 @@ import type {
   TransferAnnouncementType,
 } from '../domain/roster-mutation.js';
 import { toStaffRoleCode } from '../domain/roster-mutation.js';
+import { canReleaseStaffRole } from '../domain/roster-mutation.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { formatTeamIdentity } from '../domain/team-label.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
@@ -52,6 +54,8 @@ export interface MemberMutationInput {
   clubId: string;
   actorDiscordUserId: string;
   targetDiscordUserId: string;
+  expectedStaffType?: StaffMembershipType | null;
+  expectedActorStaffType?: StaffMembershipType | null;
   occurredAt?: Date;
 }
 
@@ -200,6 +204,10 @@ export class RosterMutationService {
       context.guild.id,
       context.actor.id,
     );
+    const actorPlayer = await context.memberships.getActivePlayerMembership(
+      context.guild.id,
+      context.actor.id,
+    );
     const addRoles: PlannedDiscordRole[] = [];
     const removeRoles: PlannedDiscordRole[] = [];
 
@@ -222,8 +230,28 @@ export class RosterMutationService {
       await this.assertCapacity(context);
       addRoles.push(this.teamRole(context));
     } else {
-      if (player === null) throw new MemberIsFreeAgentError();
-      if (player.clubId !== context.club.id) throw new MemberNotOnTeamError();
+      const confirmationBound =
+        input.expectedStaffType !== undefined || input.expectedActorStaffType !== undefined;
+      if (player === null) {
+        if (confirmationBound) throw new StaleConfirmationError();
+        throw new MemberIsFreeAgentError();
+      }
+      if (player.clubId !== context.club.id) {
+        if (confirmationBound) throw new StaleConfirmationError();
+        throw new MemberNotOnTeamError();
+      }
+      if (
+        input.expectedStaffType !== undefined &&
+        (staff?.membershipType ?? null) !== input.expectedStaffType
+      ) {
+        throw new StaleConfirmationError();
+      }
+      if (
+        input.expectedActorStaffType !== undefined &&
+        (actorStaff?.membershipType ?? null) !== input.expectedActorStaffType
+      ) {
+        throw new StaleConfirmationError();
+      }
 
       if (kind === 'LEAVE_STAFF' || kind === 'LEAVE_TEAM') {
         if (context.actor.id !== context.user.id) throw new SelfActionForbiddenError();
@@ -232,6 +260,10 @@ export class RosterMutationService {
       }
       if (kind === 'RELEASE') {
         if (context.actor.id === context.user.id) throw new SelfActionForbiddenError();
+        if (actorPlayer?.clubId !== context.club.id) {
+          if (confirmationBound) throw new StaleConfirmationError();
+          throw new InsufficientStaffRankError();
+        }
         this.assertMayRelease(actorStaff, staff, context.club.id);
       }
       if (kind === 'PROMOTE') {
@@ -420,6 +452,15 @@ export class RosterMutationService {
         leagueTransaction.id,
       );
     }
+    const currentRosterSize = await context.memberships.countActivePlayers(context.club.id);
+    const teamManagerMembership = await context.memberships.getActiveStaffAppointment(
+      context.club.id,
+      'TEAM_MANAGER',
+    );
+    const teamManager =
+      teamManagerMembership === null
+        ? null
+        : await new UserRepository(transactionClient).getById(teamManagerMembership.userId);
     const announcement = this.buildAnnouncement(
       context,
       kind,
@@ -427,6 +468,8 @@ export class RosterMutationService {
       staff,
       previousStaffType,
       occurredAt,
+      currentRosterSize,
+      teamManager?.discordUserId ?? null,
     );
     return {
       guild: context.guild,
@@ -448,6 +491,8 @@ export class RosterMutationService {
     resultingStaff: ClubMembership | null,
     previousStaffType: StaffMembershipType | null,
     occurredAt: Date,
+    currentRosterSize: number,
+    teamManagerDiscordUserId: string | null,
   ): MutationPlans['announcement'] {
     const staffCode =
       kind === 'APPOINT' || kind === 'PROMOTE'
@@ -489,6 +534,16 @@ export class RosterMutationService {
       actorDiscordUserId: context.actor.discordUserId,
       ...(staffCode === undefined ? {} : { staffRole: staffCode }),
       ...(appointedStaffRole === null ? {} : { staffRoleId: appointedStaffRole.id }),
+      ...(kind === 'LEAVE_STAFF'
+        ? { departureMode: 'STAFF_ONLY' as const }
+        : kind === 'LEAVE_TEAM'
+          ? { departureMode: 'FULL' as const }
+          : {}),
+      roster: {
+        currentSize: currentRosterSize,
+        maximumSize: getEffectiveSquadLimit(context.club, context.settings),
+        teamManagerDiscordUserId,
+      },
     };
   }
 
@@ -498,15 +553,12 @@ export class RosterMutationService {
     clubId: string,
   ): void {
     if (actorStaff?.clubId !== clubId) throw new InsufficientStaffRankError();
-    const actorRank = actorStaff.membershipType;
-    const targetRank = targetStaff?.membershipType ?? 'PLAYER';
-    const permitted =
-      actorRank === 'TEAM_MANAGER'
-        ? targetRank !== 'TEAM_MANAGER'
-        : actorRank === 'ASSISTANT_MANAGER'
-          ? ['PLAYER', 'PLAYER_MANAGER'].includes(targetRank)
-          : actorRank === 'PLAYER_MANAGER' && targetRank === 'PLAYER';
-    if (!permitted) throw new TargetRankNotManageableError();
+    const actorRole = toStaffRoleCode(actorStaff.membershipType as StaffMembershipType);
+    const targetRole =
+      targetStaff === null
+        ? null
+        : toStaffRoleCode(targetStaff.membershipType as StaffMembershipType);
+    if (!canReleaseStaffRole(actorRole, targetRole)) throw new TargetRankNotManageableError();
   }
 
   private assertPromotion(

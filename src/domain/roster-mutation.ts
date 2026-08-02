@@ -56,6 +56,7 @@ export interface TransferAnnouncementPlan {
   actorDiscordUserId?: string;
   staffRole?: StaffRoleCode;
   staffRoleId?: string;
+  departureMode?: 'STAFF_ONLY' | 'FULL';
   roster?: TransferRosterPresentation;
   presentation?: TransferAnnouncementPresentation;
 }
@@ -85,4 +86,14 @@ export function fromStaffRoleCode(role: StaffRoleCode): StaffMembershipType {
     case 'PM':
       return 'PLAYER_MANAGER';
   }
+}
+
+export function canReleaseStaffRole(
+  actorRole: StaffRoleCode,
+  targetRole: StaffRoleCode | null,
+): boolean {
+  if (targetRole === 'TM') return false;
+  if (actorRole === 'TM') return true;
+  if (actorRole === 'ATM') return targetRole === null || targetRole === 'PM';
+  return targetRole === null;
 }

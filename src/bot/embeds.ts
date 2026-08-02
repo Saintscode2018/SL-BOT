@@ -79,7 +79,9 @@ export function createInfoEmbed(options: EmbedOptions): EmbedBuilder {
 }
 
 export function createWarningEmbed(options: EmbedOptions & { title: string }): EmbedBuilder {
-  const embed = new EmbedBuilder().setTitle(options.title).setColor(BOT_COLORS.warning);
+  const embed = new EmbedBuilder()
+    .setTitle(options.title)
+    .setColor(options.color ?? BOT_COLORS.warning);
 
   if (options.author) {
     embed.setAuthor({

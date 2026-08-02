@@ -33,7 +33,7 @@ The appended final-identity migration rebuilds both SQLite tables without changi
 
 ## Authorization and policy
 
-Global access: guild owner, Discord Administrator, or configured `bot_permissions` role. Club staff scope: active database TM/ATM/PM appointment. Informational commands use Bot Commands (and Staff for global callers); administrative commands use Staff; `/offer` accepts Bot Commands or Staff. Protected channel details are disclosed only after authorization.
+Global access: guild owner, Discord Administrator, or configured `bot_permissions` role. Club staff scope: active database TM/ATM/PM appointment. Explicit channel scopes are subcommand-aware: `/health`, `/team list`, `/staff list`, `/roster`, `/limit view`, `/offer`, `/demand`, and `/release` are `BOT_OR_STAFF`; setup/team/staff/limit mutations, setup view, and debug reset are `STAFF_ONLY`. Command-channel access never grants command authority. Transfer Market and Audit are output-only bot-operation channels. Non-global callers (ordinary players and TM/ATM/PM callers without global administrative authorization) receive channel guidance mentioning only Bot Commands (`Use this command in <#botCommandsChannelId>.`) to ensure Staff Commands is never disclosed. Globally authorized callers receive concise guidance mentioning both channels for BOT_OR_STAFF commands (`Use this command in <#botCommandsChannelId> or <#staffCommandsChannelId>.`) and staff-channel guidance for STAFF_ONLY commands (`Use this command in <#staffCommandsChannelId>.`). Channel-not-configured errors remain distinct.
 
 ## Presentation and auditing
 
@@ -47,7 +47,7 @@ Setup league/channels/roles persist before best-effort Audit publication. Player
 
 ## Offer boundary
 
-The issuing/source team is still derived from the caller's active database staff appointment. Offer creation and acceptance require a free agent. Acceptance rechecks free-agent state, team validity, and capacity, adds only the team role, commits the signing, then publishes to Transfer Market. Competing pending offers remain historical but become unacceptable after a signing.
+The issuing/source team is still derived from the caller's active database staff appointment. Offer creation and acceptance require a free agent. Acceptance rechecks free-agent state, team validity, and capacity, adds only the team role, commits the signing, then publishes to Transfer Market. Competing pending offers remain historical but become unacceptable after a signing. Demand's in-memory guild/user limiter stores a one-minute expiry only on successful acquisition; blocked retries report the decreasing remainder without changing expiry, and channel validation occurs first so wrong-channel attempts consume nothing.
 
 ## Stage 4B.1 mutation boundary
 
@@ -57,8 +57,18 @@ Discord roles are validated and changed before SQLite commits. The adapter force
 
 Administrator grants permission but never bypasses hierarchy. The bot's highest role must be above both the target member's highest role and every affected team/staff role; the server owner cannot be managed. Production order is `SL Bot role`, playable administrator roles, TM/ATM/PM, then team roles. Administrators may play only below the bot role.
 
-Structured staff appointment/demotion embeds go to Transfer Market only after critical success; Audit remains for configuration. They use the server author/icon, team-role color, emoji thumbnail, and readable `TeamRole Transaction (...)` title without `@` because no team name is stored. The administrative actor is mentioned in the body and appears by readable username/avatar with a UTC timestamp in the footer. Structured signing cards use `✅ Offer Accepted - TeamRole`, acceptance text, roster current/max, the current TM, and a signed-player username/avatar footer. A presentation provider supplies plain Discord metadata before rendering, so the message adapter does not query users, roles, or guild presentation independently. Offer DMs remain unchanged: Source Team, Team Manager, `📊 Squad`, relative-only `⏰ Expires`, and persistent ✅/❌ buttons.
+Structured staff appointment/demotion embeds go to Transfer Market only after critical success; Audit remains for configuration. They use the server author/icon, team-role color, emoji thumbnail, and readable `TeamRole Transaction (...)` title without `@` because no team name is stored. The administrative actor is mentioned in the body and appears by readable username/avatar with a UTC timestamp in the footer. Structured signing cards use `✅ Offer Accepted - TeamRole`, acceptance text, roster current/max, the current TM, and a signed-player username/avatar footer. Full demand uses `📣 Demand - TeamRole` plus exactly two adjacent blockquote lines (sentence, post-roster); release uses `🚪 Release - TeamRole` plus exactly three (sentence, post-roster, current TM) and hides the actor. Both fall back to `Team`. A presentation provider supplies plain Discord metadata before rendering, so the message adapter does not query users, roles, or guild presentation independently. Offer DMs remain unchanged: Source Team, Team Manager, `📊 Squad`, relative-only `⏰ Expires`, and persistent ✅/❌ buttons.
 
-The in-memory confirmation registry binds random tokens to initiator, guild, action, team, and target, atomically consumes/cancels, expires after two minutes, and supports ephemeral UI expiry/cancel callbacks. Restart invalidation is safe. Fresh authorization and eligibility execute through the confirmation callback. The later public movement commands are not registered yet.
+The in-memory confirmation registry binds random tokens to initiator, guild, action, team, target, and caller/target rank, atomically consumes one of multiple decisions or cancellation, expires after two minutes, and supports ephemeral UI expiry/cancel callbacks. Restart invalidation is safe. Fresh authorization, membership, team, rank, and Discord role feasibility run after consumption.
+
+## Stage 4B.2 departure boundary
+
+`RosterDepartureService` derives demand/release teams from active membership and staff rows. `/demand` blocks TM and free agents. `/release` enforces self, exact-team, free-agent, TM-target, and TM > ATM > PM > player hierarchy rules with no global permission bypass. Expected caller and target ranks are passed into the central mutation transaction so confirmation state cannot silently drift.
+
+`RosterDepartureCommandHandler` owns the ephemeral prompts and terminal component replacement. Ordinary demand offers Demand/Cancel; ATM/PM offers staff-only/full/cancel; release offers Release/Cancel. The reusable one-minute in-memory guild/user demand limiter is refreshed for invocation, blocked retry, cancel, expiry, failed recheck, and success. `/release` has no limiter.
+
+Full demand/release removes the team role plus the matching configured ATM/PM role when applicable and ends both active membership rows. Staff-only demand removes only the matching global role, ends only the staff row, and retains capacity/team membership. All history is retained and no departure Audit event is written. The existing forced member fetch, hierarchy checks, role-first ordering, database recheck, compensation, and post-success best-effort Transfer Market delivery remain the synchronization boundary.
+
+Demand and release cards use server author/icon, plain team-role title, team color/thumbnail, one blockquote panel, post-mutation roster data, UTC player footer, and no audit/reason details. Release also shows the current TM but never identifies the acting manager. Staff-only demand uses the Demotion card with `stepped down to player` and `Action by` wording.
 
 Related notes: [[Commands]], [[Product Decisions]], [[Roadmap]]

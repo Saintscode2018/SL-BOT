@@ -62,7 +62,7 @@ export class AdministrativeWrongChannelError extends ConfigurationError {
 export class WrongCommandChannelError extends ConfigurationError {
   public constructor(
     public readonly allowedChannelIds: readonly string[],
-    public readonly guidance: 'bot_commands' | 'global',
+    public readonly guidance: 'bot_or_staff' | 'global',
   ) {
     super('command used outside its permitted channels');
   }
@@ -176,6 +176,34 @@ export class NoStaffAppointmentError extends DomainError {
   }
 }
 
+export class CallerHasNoStaffAppointmentError extends AuthorizationError {
+  public readonly code = 'CALLER_HAS_NO_STAFF_APPOINTMENT';
+
+  public constructor() {
+    super(
+      'You must be an active Team Manager, Assistant Team Manager, or Player Manager to release a player.',
+    );
+  }
+}
+
+export class NotCurrentlySignedError extends InvalidStateTransitionError {
+  public readonly code = 'NOT_CURRENTLY_SIGNED';
+
+  public constructor() {
+    super('You are not currently registered to a team.');
+  }
+}
+
+export class DemandRateLimitedError extends AuthorizationError {
+  public readonly code = 'DEMAND_RATE_LIMITED';
+
+  public constructor(public readonly remainingSeconds: number) {
+    super(
+      `Please wait ${remainingSeconds} second${remainingSeconds === 1 ? '' : 's'} before using /demand again.`,
+    );
+  }
+}
+
 export class MemberAlreadySignedError extends ConflictError {
   public readonly code = 'MEMBER_ALREADY_SIGNED';
 
@@ -205,6 +233,38 @@ export class SelfActionForbiddenError extends AuthorizationError {
 
   public constructor() {
     super('You cannot perform this action on yourself.');
+  }
+}
+
+export class SelfReleaseForbiddenError extends AuthorizationError {
+  public readonly code = 'SELF_RELEASE_FORBIDDEN';
+
+  public constructor() {
+    super('Use /demand if you want to leave your own team.');
+  }
+}
+
+export class TargetNotOnCallerTeamError extends AuthorizationError {
+  public readonly code = 'TARGET_NOT_ON_CALLER_TEAM';
+
+  public constructor() {
+    super('That player is not in your team. You can only release members of your own team.');
+  }
+}
+
+export class ReleaseTargetIsFreeAgentError extends InvalidStateTransitionError {
+  public readonly code = 'RELEASE_TARGET_IS_FREE_AGENT';
+
+  public constructor() {
+    super('That user is not currently signed to a team.');
+  }
+}
+
+export class TeamManagerCannotBeReleasedError extends AuthorizationError {
+  public readonly code = 'TEAM_MANAGER_CANNOT_BE_RELEASED';
+
+  public constructor() {
+    super('A Team Manager cannot be released. An administrator must remove or replace them.');
   }
 }
 

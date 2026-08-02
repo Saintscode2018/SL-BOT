@@ -77,8 +77,19 @@ tags:
 - Live role inspection is force-refreshed before synchronization so a stale member cache cannot leave the previous global staff role assigned while committing staff removal.
 - Presentation foundation is centralized under `src/bot/presentation/` (`BOT_EMOJIS`, `BOT_LABELS`, `BOT_COLORS`, `timestamps.ts`, `users.ts`, `roles.ts`, `blockquotes.ts`, `authors.ts`, `footers.ts`). Canonical emojis replace conflicting historical usages (`👑` for Team Manager, `🧠` for Player Manager, `⚡` for Bot Permissions, `📊` for Roster, `⏰` for Expiry). Global cosmetic pass is deferred.
 
-## 9. Explicit exclusions
+## 9. Stage 4B.2 demand and release decisions
 
-Stage 4B.1 does not register release/demand/promotion/demotion/folist or implement imports, role-derived offer source, retry queues, reconciliation, team-inactivation removal, free-form templates, or per-team aliases.
+- `/demand` has no options, runs only in Bot Commands or Staff, is always ephemeral except the final Transfer Market success, and uses a fixed one-minute in-memory per-guild/user anti-spam window. Only an allowed acquisition stores a new expiry; blocked retries report the decreasing remainder without extension, wrong-channel attempts do not consume or refresh it, and restart clears it.
+- Ordinary players may demand fully. ATM/PM may leave only staff and remain as an ordinary player, or leave the team fully. TM cannot demand and must be removed/replaced administratively.
+- `/release player` has no team/reason/mode option, runs only in Bot Commands or Staff, has no cooldown, derives the team from the caller's active staff row, and provides no global-permission or Administrator bypass.
+- Release hierarchy is TM > ATM > PM > ordinary player. TM cannot be released, self-release is forbidden, and the target must be a current member of the caller's exact team. The target never confirms and receives no DM.
+- Staff-only demand keeps the player row/team role and removes only the matching ATM/PM role. Full demand/release ends player and staff rows historically and removes only the affected team/staff roles. No hard delete, unrelated role change, or departure Audit event occurs.
+- Confirmation state is initiator/guild/action/team/target/rank-bound for exactly two minutes, consumes atomically, is restart-invalid, and rechecks current membership, rank, team, and forced Discord feasibility.
+- Non-admin/team-user and informational commands use Bot Commands or Staff; admin/configuration commands use Staff only. The selection is subcommand-aware, channel access never grants command authority, and Transfer Market/Audit remain output-only bot-operation channels. Wrong-channel errors use exact normalized wording (`Use this command in <channel list>.`). Non-global callers (including TM/ATM/PM callers without global administrative authorization) see channel guidance mentioning only Bot Commands (`Use this command in <#botCommandsChannelId>.`); Staff Commands is never disclosed to non-global callers. Unauthorized callers on STAFF_ONLY commands receive `Permission Denied` without channel guidance.
+- Full demand uses `📣 Demand - TeamRole` and exactly two adjacent blockquote lines; release uses `🚪 Release - TeamRole` and exactly three adjacent lines with post-mutation roster/current TM while never revealing the acting manager. Both titles fall back to `Team`. Staff-only demand uses `stepped down to player` wording. Delivery failure is non-critical after completed state.
+
+## 10. Explicit exclusions
+
+Stage 4B.2 does not register promotion/demotion/folist or implement release reasons, target confirmation/DMs, demand counts/gameplay limits, offer cancellation, imports, role-derived offer source, retry queues, reconciliation, team-inactivation removal, free-form templates, or per-team aliases.
 
 Related notes: [[Commands]], [[Architecture]], [[Roadmap]]

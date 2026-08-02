@@ -38,8 +38,8 @@ describe('Presentation System Foundation', () => {
       expect(BOT_EMOJIS.success).toBe('✅');
       expect(BOT_EMOJIS.error).toBe('❌');
       expect(BOT_EMOJIS.warning).toBe('⚠️');
-      expect(BOT_EMOJIS.appointment).toBe('👑');
-      expect(BOT_EMOJIS.demotion).toBe('📉');
+      expect(BOT_EMOJIS.appointment).toBe('📌');
+      expect(BOT_EMOJIS.demotion).toBe('⬇️');
     });
   });
 

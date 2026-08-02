@@ -6,6 +6,7 @@ import { formatTeamIdentity } from '../domain/team-label.js';
 import type { AuthorizationInput } from '../services/authorization-service.js';
 import { getFriendlyPositionName, type StaffType } from '../services/staff-management-service.js';
 import { createActorField, createInfoEmbed, createSuccessEmbed } from './embeds.js';
+import { demandCommand, releaseCommand } from './departure-command-definitions.js';
 import { getTeamThumbnail, validateTeamEmoji } from './emoji-helper.js';
 import {
   BOT_COLORS,
@@ -1208,6 +1209,8 @@ export const commands: readonly CommandDefinition[] = [
   staffCommand,
   rosterCommand,
   offerCommand,
+  demandCommand,
+  releaseCommand,
 ];
 
 export const commandDefinitions = [
@@ -1218,5 +1221,7 @@ export const commandDefinitions = [
   staffCommand,
   rosterCommand,
   offerCommand,
+  demandCommand,
+  releaseCommand,
   ...(process.env['SLBOT_ENABLE_DEBUG_COMMANDS'] === 'true' ? [debugResetCommand] : []),
 ] satisfies readonly CommandDefinition[];

@@ -83,8 +83,10 @@ export class DiscordTransferAnnouncementAdapter implements TransferAnnouncementA
       plan.type === 'APPOINTED' || plan.type === 'DEMOTED'
         ? (() => {
             const isAppointed = plan.type === 'APPOINTED';
+            const isStaffOnlyDemand =
+              plan.type === 'DEMOTED' && plan.departureMode === 'STAFF_ONLY';
             const footer = createActorFooter({
-              verb: isAppointed ? 'Appointed' : 'Demoted',
+              verb: isAppointed ? 'Appointed' : isStaffOnlyDemand ? 'Action' : 'Demoted',
               username: actorUsername,
               avatarUrl: actorAvatarUrl,
               timestamp: plan.occurredAt,
@@ -97,7 +99,9 @@ export class DiscordTransferAnnouncementAdapter implements TransferAnnouncementA
 
             const panelText = isAppointed
               ? `${memberFormatted} has been appointed as ${staffRoleMention} for ${team} by ${actorFormatted}!`
-              : `${memberFormatted} has been demoted to player for ${team} by ${actorFormatted}!`;
+              : isStaffOnlyDemand
+                ? `${memberFormatted} has stepped down to player for ${team}!`
+                : `${memberFormatted} has been demoted to player for ${team} by ${actorFormatted}!`;
 
             return createInfoEmbed({
               author,
@@ -147,10 +151,54 @@ export class DiscordTransferAnnouncementAdapter implements TransferAnnouncementA
                 ...(footer.iconURL ? { footerIconURL: footer.iconURL } : {}),
               });
             })()
-          : createInfoEmbed({
-              description: announcementDescription(plan),
-              color: resolveTeamRoleColor(roleColor, BOT_COLORS.info),
-            });
+          : plan.type === 'DEMANDED' || plan.type === 'RELEASED'
+            ? (() => {
+                const isDemand = plan.type === 'DEMANDED';
+                const footer = isDemand
+                  ? createActorFooter({
+                      verb: 'Action',
+                      username: subjectName,
+                      avatarUrl: plan.presentation?.subject?.avatarUrl ?? null,
+                      timestamp: plan.occurredAt,
+                    })
+                  : createPlayerFooter({
+                      username: subjectName,
+                      avatarUrl: plan.presentation?.subject?.avatarUrl ?? null,
+                      timestamp: plan.occurredAt,
+                    });
+                const rosterLine = `${BOT_EMOJIS.roster} ${BOT_LABELS.roster}: ${plan.roster?.currentSize ?? 0}/${plan.roster?.maximumSize ?? 0}`;
+                const descriptionLines = [
+                  isDemand
+                    ? `${memberFormatted} has demanded from ${team}!`
+                    : `${memberFormatted} has been released from ${team}!`,
+                  rosterLine,
+                ];
+                if (!isDemand) {
+                  const tmUserId = plan.roster?.teamManagerDiscordUserId;
+                  const tmUsername = plan.presentation?.teamManager?.username;
+                  const tmFormatted = tmUserId
+                    ? formatUserWithVisibleName(tmUserId, tmUsername || 'Unknown User')
+                    : BOT_LABELS.vacant;
+                  descriptionLines.push(
+                    `${BOT_EMOJIS.teamManager} ${BOT_LABELS.teamManager}: ${tmFormatted}`,
+                  );
+                }
+                return createInfoEmbed({
+                  author,
+                  title: `${isDemand ? BOT_EMOJIS.demand : BOT_EMOJIS.release} ${
+                    isDemand ? BOT_LABELS.demand : BOT_LABELS.release
+                  } - ${teamRoleName}`,
+                  description: formatBlockquote(descriptionLines),
+                  color: resolveTeamRoleColor(roleColor, BOT_COLORS.info),
+                  thumbnail,
+                  footer: footer.text,
+                  ...(footer.iconURL ? { footerIconURL: footer.iconURL } : {}),
+                });
+              })()
+            : createInfoEmbed({
+                description: announcementDescription(plan),
+                color: resolveTeamRoleColor(roleColor, BOT_COLORS.info),
+              });
     await channel
       .send({ allowedMentions: { parse: [] }, embeds: [embed] })
       .catch((error: unknown) => {

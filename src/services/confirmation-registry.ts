@@ -18,12 +18,16 @@ export interface ConfirmationContext {
   initiatorDiscordUserId: string;
   teamId: string;
   targetDiscordUserId?: string;
+  initiatorStaffRole?: 'TM' | 'ATM' | 'PM';
   targetStaffRole?: 'TM' | 'ATM' | 'PM';
 }
+
+export type ConfirmationDecision = 'confirm' | 'staff-only';
 
 export interface ConfirmationRegistration {
   id: string;
   confirmCustomId: string;
+  staffOnlyCustomId: string;
   cancelCustomId: string;
   expiresAt: Date;
 }
@@ -38,7 +42,7 @@ interface ConfirmationRecord extends ConfirmationContext {
 }
 
 const confirmationCustomIdPattern =
-  /^roster-confirm:([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}):(confirm|cancel)$/i;
+  /^roster-confirm:([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}):(confirm|staff-only|cancel)$/i;
 
 export const confirmationLifetimeMs = 2 * 60 * 1000;
 
@@ -75,16 +79,33 @@ export class ConfirmationRegistry {
     return {
       id,
       confirmCustomId: `roster-confirm:${id}:confirm`,
+      staffOnlyCustomId: `roster-confirm:${id}:staff-only`,
       cancelCustomId: `roster-confirm:${id}:cancel`,
       expiresAt,
     };
   }
 
   public consume(customId: string, discordUserId: string, now = new Date()): ConfirmationContext {
-    const record = this.resolve(customId, discordUserId, now, 'confirm');
+    const record = this.resolve(customId, discordUserId, now, ['confirm']);
     record.status = 'CONSUMED';
     clearTimeout(record.timer);
     return this.context(record);
+  }
+
+  public consumeDecision(
+    customId: string,
+    discordUserId: string,
+    now = new Date(),
+    discordGuildId?: string,
+  ): { context: ConfirmationContext; decision: ConfirmationDecision } {
+    const record = this.resolve(customId, discordUserId, now, ['confirm', 'staff-only']);
+    if (discordGuildId !== undefined && record.discordGuildId !== discordGuildId) {
+      throw new StaleConfirmationError();
+    }
+    const decision = customId.endsWith(':staff-only') ? 'staff-only' : 'confirm';
+    record.status = 'CONSUMED';
+    clearTimeout(record.timer);
+    return { context: this.context(record), decision };
   }
 
   public async consumeAndExecute<T>(
@@ -101,8 +122,12 @@ export class ConfirmationRegistry {
     customId: string,
     discordUserId: string,
     now = new Date(),
+    discordGuildId?: string,
   ): Promise<ConfirmationContext> {
-    const record = this.resolve(customId, discordUserId, now, 'cancel');
+    const record = this.resolve(customId, discordUserId, now, ['cancel']);
+    if (discordGuildId !== undefined && record.discordGuildId !== discordGuildId) {
+      throw new StaleConfirmationError();
+    }
     record.status = 'CANCELLED';
     clearTimeout(record.timer);
     if (record.onCancel !== undefined) {
@@ -144,10 +169,15 @@ export class ConfirmationRegistry {
     customId: string,
     discordUserId: string,
     now: Date,
-    expectedAction: 'confirm' | 'cancel',
+    expectedActions: ReadonlyArray<'confirm' | 'staff-only' | 'cancel'>,
   ): ConfirmationRecord {
     const match = confirmationCustomIdPattern.exec(customId);
-    if (match === null || match[1] === undefined || match[2] !== expectedAction) {
+    if (
+      match === null ||
+      match[1] === undefined ||
+      match[2] === undefined ||
+      !expectedActions.includes(match[2] as 'confirm' | 'staff-only' | 'cancel')
+    ) {
       throw new InvalidConfirmationTokenError();
     }
     const record = this.records.get(match[1]);
@@ -173,6 +203,9 @@ export class ConfirmationRegistry {
       ...(record.targetDiscordUserId === undefined
         ? {}
         : { targetDiscordUserId: record.targetDiscordUserId }),
+      ...(record.initiatorStaffRole === undefined
+        ? {}
+        : { initiatorStaffRole: record.initiatorStaffRole }),
       ...(record.targetStaffRole === undefined ? {} : { targetStaffRole: record.targetStaffRole }),
     };
   }

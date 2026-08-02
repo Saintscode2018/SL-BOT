@@ -31,6 +31,8 @@ There is no team display name, abbreviation, or configurable banner. `Club.id` r
 - `/staff appoint|remove|list`: Manage TM, ATM, and PM appointments. Appointment also ensures an active player roster row; staff-only removal retains that row and the team role while removing the matching configured global staff role. Public lists use vertical per-team blocks and `Vacant`.
 - `/roster team:<club>`: Public roster whose description begins `<emoji> <@&RoleId> Roster`, with no title or separate `Team` field, followed by effective squad count, TM/ATM/PM fields, and players. Active staff count toward capacity but appear only in their staff field, never again under ordinary Players. Its footer is `Roster for <footer-safe team identity>, <server name>`.
 - `/offer player:<user>`: Send a private contract offer for the team derived from the caller's active database staff appointment. Only free agents can receive or accept one. Acceptance adds the team role and publishes the completed signing to Transfer Market.
+- `/demand`: Leave the caller's current team. Ordinary players may leave completely; ATM/PM callers may instead leave only their staff position and remain on the roster. TM callers are blocked.
+- `/release player:<user>`: TM/ATM/PM callers may release a lower-ranked member of their own team. The target never confirms and receives no DM.
 - `/health`: Ephemeral bot/database health.
 - `/debugreset`: Development-only, Discord-Administrator reset flow when `SLBOT_ENABLE_DEBUG_COMMANDS=true`.
 
@@ -40,9 +42,12 @@ There is no team display name, abbreviation, or configurable banner. `Club.id` r
 
 Global administration requires the server owner, Discord Administrator permission, or the configured `bot_permissions` role. TM/ATM/PM appointments grant only club-scoped operations.
 
-- Informational `/team list`, `/staff list`, `/roster`, and `/limit view` output is public in Bot Commands; globally authorized callers may also use Staff.
+- Non-administrative and informational `/health`, `/team list`, `/staff list`, `/roster`, `/limit view`, `/offer`, `/demand`, and `/release` may be invoked only in the configured Bot Commands or Staff Commands channel. Command-specific authorization still applies in either channel. Non-global callers (including ordinary players and TM/ATM/PM callers without global administrative authorization) see channel guidance mentioning only Bot Commands (`Use this command in <#botCommandsChannelId>.`); Staff Commands is never disclosed to non-global callers.
 - `/offer` is allowed in Bot Commands or Staff and checks channel policy before resolving the caller's database appointment.
-- `/setup *`, `/team add|edit|remove`, `/limit default|team|reset`, and `/staff appoint|remove` are Staff-only.
+- `/demand` is ephemeral and uses a fixed one-minute in-memory guild/user cooldown. A permitted first attempt starts the window; blocked retries report the decreasing remainder without extending it, and wrong-channel attempts neither start nor refresh it.
+- `/release` is ephemeral and allowed only in Bot Commands or Staff. Database staff authority—not global bot permission or Discord Administrator—controls access.
+- `/setup *` (including view after setup), `/team add|edit|remove`, `/limit default|team|reset`, `/staff appoint|remove`, and `/debugreset` are Staff-only; the existing pre-configuration setup bootstrap remains. Unauthorized callers on STAFF_ONLY commands receive `Permission Denied` without channel guidance. Authorized callers in wrong channels see concise guidance (`Use this command in <#staffCommandsChannelId>.`).
+- Transfer Market and Audit are output-only for bot operations: completed roster movement is published to Transfer Market and configuration events to Audit, but slash commands are rejected there.
 - Successful mutations, offer acknowledgements, setup view, health, and all handled errors are ephemeral.
 - Setup league/channels/roles mutations publish timestamped actor-attributed audit embeds when configured. Player and staff movements use Transfer Market instead; announcement failure is logged but does not roll back completed state.
 
@@ -52,13 +57,23 @@ Global administration requires the server owner, Discord Administrator permissio
 
 Live mutations force a fresh Discord member-role snapshot, validate member/role feasibility, remove/add only roles that need changing, apply Discord first, then commit SQLite. The fresh snapshot prevents a stale role cache from suppressing a required `/staff remove` global-role operation. A failed commit triggers best-effort compensation of the exact role operations already applied. A compensation failure is logged and surfaced as requiring manual reconciliation; there is intentionally no retry queue or reconciliation command yet. Transfer Market publication occurs only after both critical steps and is non-critical afterward.
 
-The in-memory confirmation registry provides random server-side tokens, initiating-user/guild/action/team/target binding, atomic consume/cancel, two-minute expiry, and callbacks for disabling or replacing expired/cancelled ephemeral components. Confirmation-time callers must use its execution callback to re-run authorization and eligibility. Restart safely invalidates pending confirmations. No `/demand`, `/release`, `/promote`, `/demote`, or `/folist` command is registered in Stage 4B.1; those are planned for Stage 4B.2–4B.4.
+The in-memory confirmation registry provides random server-side tokens, initiating-user/guild/action/team/target binding, atomic consume/cancel, two-minute expiry, and callbacks for disabling or replacing expired/cancelled ephemeral components. Confirmation-time callers re-run authorization, membership, rank, team, and Discord feasibility checks. Restart safely invalidates pending confirmations.
 
 Discord role changes require Manage Roles (or Administrator), but Administrator never bypasses hierarchy. The bot's highest role must be above the target member's highest role and every team/staff role being added or removed; the server owner cannot be role-managed. Recommended production order is: `SL Bot role`, playable administrator roles, `TM / ATM / PM`, then team roles. Administrators can still play when their highest role remains below the bot role.
 
 Staff appointments and removals publish structured Transfer Market-only transaction embeds after critical Discord and database success. Their title uses the readable team-role name without `@` (`Role Transaction (Appointment|Demotion)`) because team names are no longer stored, with a safe `Team Transaction` fallback. The administrative actor appears as a mention in the body and by readable username, avatar, and UTC timestamp in the footer; appointment bodies use the configured staff-role mention. Audit remains reserved for setup/configuration events.
 
 Accepted signings use a structured `✅ Offer Accepted - RoleName` Transfer Market card. It identifies the accepting player and team, shows `📁 Roster: current/max` followed by the current `💼 Team Manager`, and uses the signed player's readable username/avatar in a timestamped footer. A dedicated presentation provider resolves Discord names, avatars, guild icon, and team-role color before passing plain metadata to the message adapter.
+
+## Stage 4B.2 demand and release
+
+`/demand` derives the caller's team and rank from active memberships. An ordinary player confirms either `Demand` or `Cancel`. ATM/PM callers confirm `Leave Staff Position`, `Leave Team Completely`, or `Cancel`; staff-only departure ends the appointment, removes only the matching global staff role, retains the player row/team role, and returns the user to ordinary Players. Full demand ends both rows and removes the team plus matching staff role. TM cannot demand.
+
+`/release player` derives the source team from the caller's active TM/ATM/PM appointment. TM may release ATM, PM, and ordinary players; ATM may release PM and ordinary players; PM may release ordinary players only. Self-release, TM targets, equal/higher ranks, free agents, and other-team targets are rejected. Release always ends the target's roster membership and any ATM/PM appointment, removes only the affected team/staff roles, and never asks or DMs the target.
+
+Both commands use initiating-user, guild, action, team, target, and staff-rank-bound two-minute confirmations. Confirmation consumption is atomic and all eligibility plus forced Discord role feasibility is checked again. Critical role synchronization happens before the repeated database transaction; no success or public message occurs until both succeed. Completed movements publish only to Transfer Market. Full-demand cards use `📣 Demand - TeamRole` and an exact two-line blockquote (departure sentence, post-departure `📊 Roster`); staff-only demand uses the structured step-down Demotion card. Release cards use `🚪 Release - TeamRole` and an exact three-line blockquote (release sentence, post-release roster, current TM) plus a neutral `Player:` footer that does not reveal the acting manager. Missing role names fall back to `Team`. Announcement failure is logged and returned as a private warning without rolling back state.
+
+Stage 4B.2 does not implement `/promote`, `/demote`, `/folist`, release reasons, target confirmation/DMs, demand counts, offer cancellation, retry queues, or team-inactivation removal.
 
 ## Emoji validation and thumbnails
 
@@ -79,7 +94,7 @@ Presentation logic is centralized under `src/bot/presentation/`:
 - `blockquotes.ts`: Blockquote helpers (`formatBlockquote`, `blockquoteLine`).
 - `authors.ts` & `footers.ts`: Standardized embed author (`createGuildAuthor`) and footer builders (`createActorFooter`, `createPlayerFooter`, `createTimestampedFooter`).
 
-Existing output is preserved while establishing single canonical meanings for emojis, labels, colors, and timestamps. Full cosmetic changes (such as global `@Mention \`username\`` or blockquotes across all embeds) are deferred to a later cosmetic pass. No new commands were added.
+Existing output is preserved while establishing single canonical meanings for emojis, labels, colors, and timestamps. Stage 4B.2 reuses these helpers for confirmations, successes, errors, and Transfer Market cards.
 
 ## Database and migrations
 

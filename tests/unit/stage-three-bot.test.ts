@@ -328,7 +328,17 @@ class RosterCommandInteraction implements CommandInteraction {
 describe('stage three command registry and deployment', () => {
   it('exports every visible command as exact deployment JSON', () => {
     const registry = loadCommands(commandDefinitions);
-    const expectedNames = ['health', 'setup', 'team', 'limit', 'staff', 'roster', 'offer'];
+    const expectedNames = [
+      'health',
+      'setup',
+      'team',
+      'limit',
+      'staff',
+      'roster',
+      'offer',
+      'demand',
+      'release',
+    ];
     if (process.env['SLBOT_ENABLE_DEBUG_COMMANDS'] === 'true') expectedNames.push('debugreset');
     expect(registry.toJSON().map(({ name }) => name)).toEqual(expectedNames);
     expect(registry.toJSON().find(({ name }) => name === 'offer')).toMatchObject({

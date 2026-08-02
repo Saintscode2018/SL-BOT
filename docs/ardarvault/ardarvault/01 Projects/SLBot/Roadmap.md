@@ -36,9 +36,19 @@ tags:
 - Structured Transfer Market staff Appointment/Demotion cards use role-name titles without `@`, actor-attributed bodies/footers, and force-refreshed live role removal. Accepted signings use `✅ Offer Accepted - TeamRole`, roster/TM lines, and a signed-player footer. Private `Contract Offer` DMs retain resolved readable team roles, server author/icon, four ordered fields, relative expiry, and ✅/❌ persistent-button emoji.
 - Centralized presentation system foundation under `src/bot/presentation/` (`emojis.ts`, `labels.ts`, `colors.ts`, `timestamps.ts`, `users.ts`, `roles.ts`, `blockquotes.ts`, `authors.ts`, `footers.ts`) establishing unified `BOT_EMOJIS`, `BOT_LABELS`, `BOT_COLORS`, timestamp helpers, and embed author/footer builders; global cosmetic pass is deferred.
 
-## Stage 4B.2–4B.4 and later
+## Completed Stage 4B.2 demand and release
 
-- Public `/demand`, `/release`, `/promote`, `/demote`, and `/folist` commands using the foundation.
+- Registered exact `/demand` and `/release player` command shapes.
+- Finalized subcommand-aware channel scopes: non-admin/team-user and informational commands (including demand/release/offer) use Bot Commands or Staff, while admin/configuration mutations use Staff only; Transfer Market and Audit are output-only.
+- Corrected demand anti-spam to a fixed one-minute in-memory guild/user expiry: rejected retries do not slide it and wrong-channel attempts do not consume it. Two-minute rank-bound initiating-user confirmations remain unchanged.
+- Added ordinary versus ATM/PM demand choices, TM restriction, staff-only step-down, full self-departure, own-team release hierarchy, no self/TM release, and no target confirmation or DM.
+- Reused forced Discord role feasibility, role-first/database-second mutation, exact compensation, historical membership ending, and Transfer Market-only best-effort announcement routing.
+- Completed `📣 Demand - TeamRole` two-line and `🚪 Release - TeamRole` three-line blockquote cards with safe `Team` fallback, post-roster/current-TM data, no stray quote line, and non-manager release attribution; staff-only demand reuses the structured Demotion card.
+- Added no schema change or migration.
+
+## Stage 4B.3–4B.4 and later
+
+- Public `/promote`, `/demote`, and `/folist` commands using the foundation.
 - Role-derived offer source.
 - Import tooling.
 - General mutation Discord auditing.

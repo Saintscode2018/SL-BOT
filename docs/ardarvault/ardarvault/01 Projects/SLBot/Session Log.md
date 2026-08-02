@@ -65,3 +65,15 @@ Related notes: [[Architecture]], [[Commands]], [[Testing and Deployment]]
 - Built reusable formatters (`formatDiscordRelative`, `formatUtcFooterTimestamp`, `formatUserMention`, `formatUserWithVisibleName`, `formatTeamMessageIdentity`, `formatBlockquote`, `createGuildAuthor`, `createActorFooter`, `createPlayerFooter`).
 - Refactored `commands.ts`, `error-mapper.ts`, `transfer-announcement-adapter.ts`, `offer-message-adapter.ts`, `setup-audit-message-adapter.ts`, `debug-reset-handler.ts`, and `interaction-handler.ts` to use presentation modules.
 - Added comprehensive unit test coverage (`tests/unit/presentation.test.ts`) bringing the test suite to 318 passed tests across 24 files with 0 failures.
+
+## Stage 4B.2 demand and release
+
+- Registered `/demand` with no options and `/release player` with exactly one required user option; `/promote`, `/demote`, and `/folist` remain absent.
+- Added `RosterDepartureService` for database-derived demand/release eligibility and exact TM/ATM/PM hierarchy, with no global permission bypass for release.
+- Extended confirmations to bind caller/target staff rank and atomically choose staff-only, full, or cancel. Prompts expire after two minutes, are initiator/guild-bound, recheck eligibility, and replace handled components.
+- Corrected the reusable one-minute in-memory guild/user demand limiter to a fixed expiry. Only an allowed acquisition starts a window; blocked retries show the decreasing remainder without extending it, and wrong-channel attempts run before acquisition. Release still has no cooldown.
+- Reused central synchronized mutations: staff-only demand ends only staff/removes only ATM/PM role; full demand/release ends roster plus staff and removes team/matching staff roles. History remains and no movement Audit event is written.
+- Finalized `📣 Demand - TeamRole` as an exact two-line blockquote and `🚪 Release - TeamRole` as an exact three-line blockquote, both with safe `Team` fallback and no stray `>` line. Post-mutation roster/current TM, affected-player footers, and release actor privacy remain intact; staff-only demand still says the user `stepped down to player`.
+- Replaced the superseded Bot-only demand/any-channel release rules with explicit subcommand-aware scopes: non-admin/team-user and informational commands run in Bot Commands or Staff; admin/configuration commands run in Staff only. Transfer Market and Audit are output-only for bot operations.
+- Added focused command, fixed-window rate-limit, confirmation, hierarchy, database/history/role-plan, channel-policy, error, and announcement tests. Preserved the intentionally selected `📌` appointment and `⬇️` demotion emojis. Final correction verification is 380/380 tests across 30 files.
+- No schema or migration change; no commit or deployment is performed by implementation work.

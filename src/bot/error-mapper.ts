@@ -6,10 +6,12 @@ import {
   AuthorizationError,
   BotCommandsChannelNotConfiguredError,
   BotUserNotAllowedError,
+  CallerHasNoStaffAppointmentError,
   ClubInactiveError,
   ConfigurationError,
   ConflictError,
   DebugAdministratorPermissionRequiredError,
+  DemandRateLimitedError,
   DiscordManageRolesPermissionError,
   DiscordMemberMissingError,
   DiscordRoleCompensationFailedError,
@@ -31,6 +33,7 @@ import {
   InvalidTeamEmojiError,
   LeagueSetupRequiredError,
   NoStaffAppointmentError,
+  NotCurrentlySignedError,
   NoTeamChangesProvidedError,
   OfferDeliveryError,
   OfferExpiredError,
@@ -41,13 +44,17 @@ import {
   MemberIsFreeAgentError,
   MemberNotOnTeamError,
   SelfActionForbiddenError,
+  SelfReleaseForbiddenError,
   StaffSlotOccupiedError,
   StaleConfirmationError,
   StaleMutationStateError,
   TargetAlreadyDesiredRankError,
+  TargetNotOnCallerTeamError,
   TargetNotStaffError,
   TargetRankNotManageableError,
   TeamManagerCannotDemandError,
+  TeamManagerCannotBeReleasedError,
+  ReleaseTargetIsFreeAgentError,
   SquadFullError,
   StaffAlreadyAppointedError,
   StaffChannelNotConfiguredError,
@@ -79,15 +86,13 @@ export function mapDiscordError(error: unknown): MappedErrorResponse {
     description = error.message;
   } else if (error instanceof AdministrativeWrongChannelError) {
     title = `${BOT_EMOJIS.error} Wrong Command Channel`;
-    description = `Administrative commands must be used in <#${error.staffChannelId}>.\n\nUse the configured staff commands channel and try again.`;
+    description = `Use this command in <#${error.staffChannelId}>.`;
   } else if (error instanceof WrongCommandChannelError) {
     title = `${BOT_EMOJIS.error} Wrong Command Channel`;
-    if (error.guidance === 'bot_commands') {
-      description = `Please use <#${error.allowedChannelIds[0]}> for bot commands.`;
-    } else if (error.allowedChannelIds.length > 1) {
-      description = `Use either <#${error.allowedChannelIds[0]}> or <#${error.allowedChannelIds[1]}> for this command.`;
+    if (error.allowedChannelIds.length > 1) {
+      description = `Use this command in <#${error.allowedChannelIds[0]}> or <#${error.allowedChannelIds[1]}>.`;
     } else {
-      description = `Please use <#${error.allowedChannelIds[0]}> for this command.`;
+      description = `Use this command in <#${error.allowedChannelIds[0]}>.`;
     }
   } else if (error instanceof StaffChannelNotConfiguredError) {
     title = `${BOT_EMOJIS.error} Staff Channel Not Configured`;
@@ -121,6 +126,37 @@ export function mapDiscordError(error: unknown): MappedErrorResponse {
   } else if (error instanceof NoStaffAppointmentError) {
     title = `${BOT_EMOJIS.error} Staff Appointment Required`;
     description = error.message;
+  } else if (error instanceof CallerHasNoStaffAppointmentError) {
+    title = `${BOT_EMOJIS.error} Staff Appointment Required`;
+    description = error.message;
+  } else if (error instanceof TeamManagerCannotDemandError) {
+    title = `${BOT_EMOJIS.error} Team Manager Cannot Demand`;
+    description =
+      'Team Managers cannot demand from their team. An administrator must remove or replace the Team Manager.';
+  } else if (error instanceof NotCurrentlySignedError) {
+    title = `${BOT_EMOJIS.error} Not Currently Signed`;
+    description = error.message;
+  } else if (error instanceof DemandRateLimitedError) {
+    title = `${BOT_EMOJIS.error} Demand Rate Limited`;
+    description = error.message;
+  } else if (error instanceof SelfReleaseForbiddenError) {
+    title = `${BOT_EMOJIS.error} Cannot Release Yourself`;
+    description = error.message;
+  } else if (error instanceof TargetNotOnCallerTeamError) {
+    title = `${BOT_EMOJIS.error} Player Not On Your Team`;
+    description = error.message;
+  } else if (error instanceof ReleaseTargetIsFreeAgentError) {
+    title = `${BOT_EMOJIS.error} Player Is Already a Free Agent`;
+    description = error.message;
+  } else if (error instanceof TeamManagerCannotBeReleasedError) {
+    title = `${BOT_EMOJIS.error} Team Manager Cannot Be Released`;
+    description = error.message;
+  } else if (
+    error instanceof InsufficientStaffRankError ||
+    error instanceof TargetRankNotManageableError
+  ) {
+    title = `${BOT_EMOJIS.error} Insufficient Staff Authority`;
+    description = 'Your current staff position cannot release that team member.';
   } else if (
     error instanceof DiscordMemberMissingError ||
     error instanceof DiscordRoleMissingError ||
@@ -145,9 +181,6 @@ export function mapDiscordError(error: unknown): MappedErrorResponse {
     error instanceof MemberIsFreeAgentError ||
     error instanceof MemberNotOnTeamError ||
     error instanceof SelfActionForbiddenError ||
-    error instanceof InsufficientStaffRankError ||
-    error instanceof TargetRankNotManageableError ||
-    error instanceof TeamManagerCannotDemandError ||
     error instanceof StaffSlotOccupiedError ||
     error instanceof TargetNotStaffError ||
     error instanceof TargetAlreadyDesiredRankError ||

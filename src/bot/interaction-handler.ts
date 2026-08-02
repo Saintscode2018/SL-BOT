@@ -20,6 +20,7 @@ import type {
   CommandContext,
   CommandInteraction,
   CommandInteractionOptions,
+  ButtonInteractionAdapter,
   DeferredInteractionResponse,
   EditedInteractionResponse,
   SafeInteractionResponse,
@@ -281,7 +282,7 @@ class DiscordAutocomplete implements CommandAutocompleteInteraction {
   }
 }
 
-class DiscordOfferButton implements OfferButtonInteraction {
+class DiscordButtonAdapter implements OfferButtonInteraction, ButtonInteractionAdapter {
   public constructor(private readonly interaction: ButtonInteraction) {}
 
   public get customId(): string {
@@ -290,6 +291,10 @@ class DiscordOfferButton implements OfferButtonInteraction {
 
   public get userId(): string {
     return this.interaction.user.id;
+  }
+
+  public get guildId(): string | undefined {
+    return this.interaction.guildId ?? undefined;
   }
 
   public get channelId(): string {
@@ -310,6 +315,28 @@ class DiscordOfferButton implements OfferButtonInteraction {
 
   public async reply(response: SafeInteractionResponse): Promise<void> {
     await this.interaction.reply(response);
+  }
+
+  public getGuildRoleMetadata(roleId: string): {
+    id: string;
+    name: string;
+    color: number;
+  } | null {
+    const role = this.interaction.guild?.roles.cache.get(roleId);
+    return role === undefined ? null : { id: role.id, name: role.name, color: role.color };
+  }
+
+  public getGuildMemberDisplayName(userId: string): string | null {
+    const member = this.interaction.guild?.members.cache.get(userId);
+    if (member) {
+      return member.displayName.trim() || member.user.globalName || member.user.username;
+    }
+    const user = this.interaction.client.users.cache.get(userId);
+    return user ? user.globalName || user.username : null;
+  }
+
+  public async deferUpdate(): Promise<void> {
+    await this.interaction.deferUpdate();
   }
 
   public async deferReply(response?: DeferredInteractionResponse): Promise<void> {
@@ -356,9 +383,14 @@ export function createInteractionCreateHandler(
       return;
     }
     if (interaction.isButton()) {
-      const adapted = new DiscordOfferButton(interaction);
+      const adapted = new DiscordButtonAdapter(interaction);
+      const isDeparture = context.departureCommandHandler?.canHandle(adapted.customId) ?? false;
       try {
-        await context.offerButtonHandler.handle(adapted);
+        if (isDeparture) {
+          await context.departureCommandHandler!.handleButton(adapted);
+        } else {
+          await context.offerButtonHandler.handle(adapted);
+        }
       } catch (error: unknown) {
         logger.error('button interaction failed', error, { customId: adapted.customId });
         const mapped = mapDiscordError(error);
@@ -367,7 +399,10 @@ export function createInteractionCreateHandler(
           flags: MessageFlags.Ephemeral,
         } as const;
         if (adapted.deferred && !adapted.replied) {
-          await adapted.editReply({ embeds: [mapped.embed] });
+          await adapted.editReply({
+            embeds: [mapped.embed],
+            ...(isDeparture ? { components: [] } : {}),
+          });
         } else if (adapted.replied) {
           await adapted.followUp(response);
         } else {
