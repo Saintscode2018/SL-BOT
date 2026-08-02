@@ -9,15 +9,16 @@ import {
 } from '@prisma/client';
 
 import {
-  AlreadyMemberOfClubError,
   ConflictError,
   DomainError,
   EntityNotFoundError,
   InvalidStateTransitionError,
+  MemberAlreadySignedError,
   OfferExpiredError,
   SquadFullError,
   UnauthorizedOfferAcceptanceError,
 } from '../domain/errors.js';
+import type { MemberRoleMutationPlan, MutationPlans } from '../domain/roster-mutation.js';
 import type { DatabaseClient } from '../domain/types.js';
 import { discordSnowflakeSchema } from '../domain/validation.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
@@ -28,6 +29,7 @@ import { MembershipRepository } from '../repositories/membership-repository.js';
 import { OfferRepository } from '../repositories/offer-repository.js';
 import { LeagueTransactionRepository } from '../repositories/transaction-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
+import type { RoleSynchronizedMutationService } from './role-synchronized-mutation-service.js';
 
 export const offerAcceptedAuditEventType = 'offer.accepted';
 
@@ -37,14 +39,15 @@ export interface AcceptOfferInput {
   acceptedAt?: Date;
 }
 
-export interface OfferAcceptanceResult {
+export interface OfferAcceptanceResult extends MutationPlans {
   offer: Offer;
   player: LeagueUser;
   destinationClub: Club;
   sourceClub: Club | null;
   newMembership: ClubMembership;
   transaction: LeagueTransaction;
-  transactionType: 'SIGNING' | 'TRANSFER';
+  transactionType: 'SIGNING';
+  announcementDelivered?: boolean | null;
 }
 
 export interface OfferAcceptanceRepositories {
@@ -54,7 +57,11 @@ export interface OfferAcceptanceRepositories {
   guilds: Pick<GuildRepository, 'getSettings'>;
   memberships: Pick<
     MembershipRepository,
-    'getActivePlayerMembership' | 'countActivePlayers' | 'end' | 'createActive'
+    | 'getActivePlayerMembership'
+    | 'getActiveStaffAppointment'
+    | 'countActivePlayers'
+    | 'end'
+    | 'createActive'
   >;
   transactions: Pick<LeagueTransactionRepository, 'create'>;
   auditEvents: Pick<AuditEventRepository, 'create'>;
@@ -86,9 +93,18 @@ export class OfferAcceptanceService {
   public constructor(
     private readonly database: PrismaClient,
     private readonly repositoryFactory: OfferAcceptanceRepositoryFactory = createOfferAcceptanceRepositories,
+    private readonly synchronization?: Pick<RoleSynchronizedMutationService, 'execute'>,
   ) {}
 
   public async acceptOffer(input: AcceptOfferInput): Promise<OfferAcceptanceResult> {
+    if (this.synchronization !== undefined) {
+      const rolePlan = await this.prepareAcceptance(input);
+      return this.synchronization.execute(rolePlan, () => this.acceptPersisted(input));
+    }
+    return this.acceptPersisted(input);
+  }
+
+  private async acceptPersisted(input: AcceptOfferInput): Promise<OfferAcceptanceResult> {
     const acceptedAt = input.acceptedAt ?? new Date();
     const acceptingDiscordUserId = discordSnowflakeSchema.parse(input.acceptingDiscordUserId);
     let outcome: AcceptanceTransactionOutcome;
@@ -117,6 +133,49 @@ export class OfferAcceptanceService {
       throw new OfferExpiredError(`offer ${input.offerId} expired before acceptance`);
     }
     return outcome.result;
+  }
+
+  private async prepareAcceptance(input: AcceptOfferInput): Promise<MemberRoleMutationPlan> {
+    const acceptedAt = input.acceptedAt ?? new Date();
+    const acceptingDiscordUserId = discordSnowflakeSchema.parse(input.acceptingDiscordUserId);
+    return this.database.$transaction(async (transactionClient) => {
+      const repositories = this.repositoryFactory(transactionClient);
+      const offer = await repositories.offers.getById(input.offerId);
+      if (offer === null) throw new EntityNotFoundError('offer was not found');
+      if (offer.status !== 'PENDING') {
+        throw new InvalidStateTransitionError('offer has already been handled');
+      }
+      const player = await repositories.users.getById(offer.playerUserId);
+      if (player === null) throw new EntityNotFoundError('player was not found');
+      if (player.discordUserId !== acceptingDiscordUserId) {
+        throw new UnauthorizedOfferAcceptanceError('only the offered player may accept');
+      }
+      if (offer.expiresAt.getTime() <= acceptedAt.getTime())
+        throw new OfferExpiredError('offer expired');
+      const club = await repositories.clubs.getById(offer.clubId);
+      if (club === null) throw new EntityNotFoundError('team was not found');
+      if (!club.active) throw new InvalidStateTransitionError('team is inactive');
+      if (
+        (await repositories.memberships.getActivePlayerMembership(offer.guildId, player.id)) !==
+        null
+      ) {
+        throw new MemberAlreadySignedError();
+      }
+      const settings = await repositories.guilds.getSettings(offer.guildId);
+      if (
+        (await repositories.memberships.countActivePlayers(club.id)) >=
+        getEffectiveSquadLimit(club, settings)
+      ) {
+        throw new SquadFullError('team has reached its squad limit');
+      }
+      const guild = await new GuildRepository(transactionClient).requireById(offer.guildId);
+      return {
+        discordGuildId: guild.discordGuildId,
+        discordUserId: player.discordUserId,
+        addRoles: [{ id: club.discordRoleId, purpose: 'TEAM' }],
+        removeRoles: [],
+      };
+    });
   }
 
   private async acceptInsideTransaction(
@@ -163,11 +222,7 @@ export class OfferAcceptanceService {
       pendingOffer.guildId,
       player.id,
     );
-    if (previousMembership?.clubId === destinationClub.id) {
-      throw new AlreadyMemberOfClubError(
-        `player ${player.id} is already active in club ${destinationClub.id}`,
-      );
-    }
+    if (previousMembership !== null) throw new MemberAlreadySignedError();
     const activePlayerCount = await repositories.memberships.countActivePlayers(destinationClub.id);
     const settings = await repositories.guilds.getSettings(pendingOffer.guildId);
     const effectiveLimit = getEffectiveSquadLimit(destinationClub, settings);
@@ -176,19 +231,7 @@ export class OfferAcceptanceService {
     }
 
     const acceptedOffer = await repositories.offers.transition(offerId, 'ACCEPTED', acceptedAt);
-    const sourceClub =
-      previousMembership === null
-        ? null
-        : await repositories.clubs.getById(previousMembership.clubId);
-    if (previousMembership !== null && sourceClub === null) {
-      throw new EntityNotFoundError(`club ${previousMembership.clubId} was not found`);
-    }
-    if (previousMembership !== null) {
-      await repositories.memberships.end(previousMembership.id, {
-        leftAt: acceptedAt,
-        endedByUserId: pendingOffer.offeredByUserId,
-      });
-    }
+    const sourceClub = null;
     const newMembership = await repositories.memberships.createActive({
       guildId: pendingOffer.guildId,
       clubId: destinationClub.id,
@@ -197,12 +240,12 @@ export class OfferAcceptanceService {
       joinedAt: acceptedAt,
       createdByUserId: pendingOffer.offeredByUserId,
     });
-    const transactionType = previousMembership === null ? 'SIGNING' : 'TRANSFER';
+    const transactionType = 'SIGNING' as const;
     const transaction = await repositories.transactions.create({
       guildId: pendingOffer.guildId,
       userId: player.id,
       transactionType,
-      sourceClubId: sourceClub?.id ?? null,
+      sourceClubId: null,
       destinationClubId: destinationClub.id,
       performedByUserId: pendingOffer.offeredByUserId,
       offerId: acceptedOffer.id,
@@ -215,14 +258,7 @@ export class OfferAcceptanceService {
       entityId: acceptedOffer.id,
       beforeState: {
         offerStatus: 'PENDING',
-        sourceMembership:
-          previousMembership === null
-            ? null
-            : {
-                id: previousMembership.id,
-                clubId: previousMembership.clubId,
-                status: previousMembership.status,
-              },
+        sourceMembership: null,
       },
       afterState: {
         offerStatus: 'ACCEPTED',
@@ -235,13 +271,22 @@ export class OfferAcceptanceService {
       metadata: {
         acceptingPlayerUserId: player.id,
         offeredByUserId: pendingOffer.offeredByUserId,
-        sourceClubId: sourceClub?.id ?? null,
+        sourceClubId: null,
         destinationClubId: destinationClub.id,
         transactionId: transaction.id,
         transactionType,
       },
     });
 
+    const guild = await new GuildRepository(transactionClient).requireById(pendingOffer.guildId);
+    const teamManagerMembership = await repositories.memberships.getActiveStaffAppointment(
+      destinationClub.id,
+      'TEAM_MANAGER',
+    );
+    const teamManager =
+      teamManagerMembership === null
+        ? null
+        : await repositories.users.getById(teamManagerMembership.userId);
     return {
       kind: 'accepted',
       result: {
@@ -252,6 +297,28 @@ export class OfferAcceptanceService {
         newMembership,
         transaction,
         transactionType,
+        roleMutation: {
+          discordGuildId: guild.discordGuildId,
+          discordUserId: player.discordUserId,
+          addRoles: [{ id: destinationClub.discordRoleId, purpose: 'TEAM' }],
+          removeRoles: [],
+        },
+        announcement:
+          settings?.transferChannelId === null || settings?.transferChannelId === undefined
+            ? null
+            : {
+                discordGuildId: guild.discordGuildId,
+                channelId: settings.transferChannelId,
+                type: 'SIGNED',
+                discordUserId: player.discordUserId,
+                teamIdentity: destinationClub,
+                occurredAt: acceptedAt,
+                roster: {
+                  currentSize: activePlayerCount + 1,
+                  maximumSize: effectiveLimit,
+                  teamManagerDiscordUserId: teamManager?.discordUserId ?? null,
+                },
+              },
       },
     };
   }

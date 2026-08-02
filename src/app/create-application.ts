@@ -8,7 +8,10 @@ import { registerEvents } from '../bot/event-loader.js';
 import { createEventDefinitions } from '../bot/events.js';
 import { OfferButtonHandler } from '../bot/offer-button-handler.js';
 import { DiscordOfferMessageAdapter } from '../bot/offer-message-adapter.js';
+import { DiscordMemberRoleAdapter } from '../bot/discord-member-role-adapter.js';
 import { DiscordSetupAuditMessageAdapter } from '../bot/setup-audit-message-adapter.js';
+import { DiscordTransferAnnouncementAdapter } from '../bot/transfer-announcement-adapter.js';
+import { DiscordTransferAnnouncementPresentationProvider } from '../bot/transfer-announcement-presentation.js';
 import type { CommandContext } from '../bot/types.js';
 import {
   loadRuntimeEnvironment,
@@ -25,14 +28,18 @@ import { DatabaseHealthService } from '../services/database-health-service.js';
 import { GuildConfigurationService } from '../services/guild-configuration-service.js';
 import { GuildSetupService } from '../services/guild-setup-service.js';
 import { LimitManagementService } from '../services/limit-management-service.js';
+import { MemberRoleSynchronizationService } from '../services/member-role-synchronization-service.js';
 import { OfferAcceptanceService } from '../services/offer-acceptance-service.js';
 import { OfferCreationService } from '../services/offer-creation-service.js';
 import { OfferDeclineService } from '../services/offer-decline-service.js';
 import { OfferDeliveryService } from '../services/offer-delivery-service.js';
 import { OfferResponseService } from '../services/offer-response-service.js';
 import { RosterManagementService } from '../services/roster-management-service.js';
+import { RoleSynchronizedMutationService } from '../services/role-synchronized-mutation-service.js';
+import { RosterMutationService } from '../services/roster-mutation-service.js';
 import { StaffManagementService } from '../services/staff-management-service.js';
 import { SetupAuditService } from '../services/setup-audit-service.js';
+import { TransferAnnouncementService } from '../services/transfer-announcement-service.js';
 import { Application, type DatabaseLifecycle } from './application.js';
 
 export interface ApplicationBundle {
@@ -62,7 +69,26 @@ export function createApplication(
   const guilds = new GuildRepository(prisma);
   const clubs = new ClubRepository(prisma);
   const guildConfigurationService = new GuildConfigurationService(guilds, clubs);
-  const offerAcceptanceService = new OfferAcceptanceService(prisma);
+  const memberRoles = new MemberRoleSynchronizationService(
+    new DiscordMemberRoleAdapter(discord),
+    logger,
+  );
+  const transferAnnouncements = new TransferAnnouncementService(
+    new DiscordTransferAnnouncementAdapter(discord),
+    logger,
+    new DiscordTransferAnnouncementPresentationProvider(discord),
+  );
+  const synchronizedMutations = new RoleSynchronizedMutationService(
+    memberRoles,
+    transferAnnouncements,
+    logger,
+  );
+  const rosterMutations = new RosterMutationService(prisma, synchronizedMutations);
+  const offerAcceptanceService = new OfferAcceptanceService(
+    prisma,
+    undefined,
+    synchronizedMutations,
+  );
   const offerDeclineService = new OfferDeclineService(prisma);
   const offerMessages = new DiscordOfferMessageAdapter(discord);
   const setupAuditService = new SetupAuditService(
@@ -90,7 +116,7 @@ export function createApplication(
     offerAcceptanceService,
     guildSetupService: new GuildSetupService(prisma),
     clubManagementService: new ClubManagementService(prisma),
-    staffManagementService: new StaffManagementService(prisma),
+    staffManagementService: new StaffManagementService(prisma, rosterMutations),
     rosterManagementService: new RosterManagementService(prisma),
     limitManagementService: new LimitManagementService(prisma),
     commandChannelPolicyService: new CommandChannelPolicyService(prisma),

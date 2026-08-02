@@ -37,14 +37,26 @@ Global access: guild owner, Discord Administrator, or configured `bot_permission
 
 ## Presentation and auditing
 
-The shared identity is used by team, staff, roster, limit, offer, and conflict output. Normal output remains `<emoji> <@&roleId>`. Staff directories are vertical and chunked safely. Rosters use `<emoji> @RoleName Roster`, contain no separate `Team` field, and end with `Roster for <footer-safe identity>, <server name>`; custom footer emoji use `.emojiName.`. Thumbnails derive only from emoji.
+The shared identity is used by team, staff, roster, limit, offer, and conflict output. Normal output remains `<emoji> <@&roleId>`. Staff directories are vertical and chunked safely. Rosters have no title; their description begins `<emoji> <@&roleId> Roster`, contains no separate `Team` field, and ends with `Roster for <footer-safe identity>, <server name>`; custom footer emoji use `.emojiName.`. Thumbnails derive only from emoji.
 
 The Discord interaction adapter supplies cached role `{ id, name, color }` metadata. Single-team embeds use a nonzero role color and keep their existing fallback when the role is missing or colorless. Resolved source-role color is passed into private offer delivery; the DM adapter does not query Discord. Role colors are never persisted.
 
-Setup league/channels/roles persist before best-effort audit publication. Adapter failure is logged without rollback. Setup view is private, read-only, unaudited, and has no team-identity configuration section. Other Discord mutation auditing remains deferred.
+Setup league/channels/roles persist before best-effort Audit publication. Player and staff movements publish to Transfer Market only after database and Discord role success. Announcement failure is logged without rolling back completed state.
 
 ## Offer boundary
 
-The issuing/source team is still derived from the caller's active database staff appointment. The ephemeral acknowledgement says the private offer was sent to the target by the actor on behalf of that source identity. Discord-role synchronization and role-derived source selection are deliberately not implemented.
+The issuing/source team is still derived from the caller's active database staff appointment. Offer creation and acceptance require a free agent. Acceptance rechecks free-agent state, team validity, and capacity, adds only the team role, commits the signing, then publishes to Transfer Market. Competing pending offers remain historical but become unacceptable after a signing.
+
+## Stage 4B.1 mutation boundary
+
+Every staff member has an active `PLAYER` row for the same guild/team plus one TM/ATM/PM row. Staff count toward capacity but roster presentation filters active staff user IDs out of ordinary Players, so each person is displayed once. Staff-only removal or demotion ends only the staff row; `/staff remove` preserves the prior rank to remove its configured global role while retaining the player row and team role. Full departure/release ends both. The central transaction service re-reads eligibility, preserves history, records actors/end times, enforces capacity and uniqueness, and returns discord.js-free role and announcement plans. A partial unique index enforces one active staff row per guild/user under races.
+
+Discord roles are validated and changed before SQLite commits. The adapter force-fetches the member so stale cached role IDs cannot suppress `/staff remove`, then checks member existence, Manage Roles, configured role existence, managed roles, and hierarchy. It skips truly redundant API operations and compensates exactly the operations applied when the commit fails. Failed compensation is logged and surfaced for manual reconciliation. SQLite and Discord cannot be atomic, and this stage intentionally adds no retry queue or reconciliation command.
+
+Administrator grants permission but never bypasses hierarchy. The bot's highest role must be above both the target member's highest role and every affected team/staff role; the server owner cannot be managed. Production order is `SL Bot role`, playable administrator roles, TM/ATM/PM, then team roles. Administrators may play only below the bot role.
+
+Structured staff appointment/demotion embeds go to Transfer Market only after critical success; Audit remains for configuration. They use the server author/icon, team-role color, emoji thumbnail, and readable `TeamRole Transaction (...)` title without `@` because no team name is stored. The administrative actor is mentioned in the body and appears by readable username/avatar with a UTC timestamp in the footer. Structured signing cards use `✅ Offer Accepted - TeamRole`, acceptance text, roster current/max, the current TM, and a signed-player username/avatar footer. A presentation provider supplies plain Discord metadata before rendering, so the message adapter does not query users, roles, or guild presentation independently. Offer DMs remain unchanged: Source Team, Team Manager, `📊 Squad`, relative-only `⏰ Expires`, and persistent ✅/❌ buttons.
+
+The in-memory confirmation registry binds random tokens to initiator, guild, action, team, and target, atomically consumes/cancels, expires after two minutes, and supports ephemeral UI expiry/cancel callbacks. Restart invalidation is safe. Fresh authorization and eligibility execute through the confirmation callback. The later public movement commands are not registered yet.
 
 Related notes: [[Commands]], [[Product Decisions]], [[Roadmap]]

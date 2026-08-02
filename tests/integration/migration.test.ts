@@ -93,6 +93,7 @@ describe('database migrations', () => {
         'ClubMembership_one_active_assistant_manager_per_club',
         'ClubMembership_one_active_player_manager_per_club',
         'ClubMembership_one_active_player_per_guild',
+        'ClubMembership_one_active_staff_per_guild_user',
         'ClubMembership_one_active_team_manager_per_club',
         'Offer_one_pending_per_club_player',
       ]);

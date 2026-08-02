@@ -43,7 +43,7 @@ tags:
 
 - Team list is one `identity — current/max` line per team.
 - Staff list is one normal-text identity followed by vertical TM/ATM/PM lines with `Vacant`.
-- Roster uses `<emoji> @RoleName Roster`, no separate `Team` field, effective limit, exact staff headings, player list, and a footer containing the readable identity plus server name.
+- Roster has no title; its description begins `<emoji> <@&roleId> Roster`, with no separate `Team` field, and retains the effective limit, exact staff headings, player list, and readable team/server footer.
 - Single-team thumbnails are emoji-derived.
 - Single-team embeds use the nonzero cached Discord role color; missing/zero colors use the existing fallback. Role colors are not persisted.
 
@@ -60,8 +60,24 @@ tags:
 - Setup league/channels/roles publish best-effort audit embeds after persistence.
 - Team, limit, staff, and debug-reset Discord auditing is not added in Stage 4A.
 
-## 8. Explicit exclusions
+## 8. Stage 4B.1 movement decisions
 
-No role synchronization, imports, transfers, release/demand, promotion/demotion, free-form templates, per-team aliases, or Stage 4B commands are implemented here.
+- TM/ATM/PM always have a same-team active player membership and consume squad capacity.
+- A staff-only end retains the player row; a full roster end also ends staff. History is never hard-deleted.
+- Active staff consume roster capacity but are excluded from the ordinary Players presentation. Removing staff preserves the player/team role and removes the prior rank's configured global role.
+- Active player and staff uniqueness are guild-wide, while staff slots are unique per team.
+- Discord role feasibility and changes precede the repeated database validation/commit. Commit failure triggers precise compensation; compensation failure requires visible manual reconciliation.
+- Transfer Market receives completed movement events. Audit remains for configuration changes. Announcement failure is non-critical after state completes.
+- Staff Transfer Market messages use structured Appointment/Demotion cards and readable team-role titles without `@` because team names are not stored. The administrative actor appears in both body and readable username/avatar/timestamp footer.
+- Signing messages use the structured `✅ Offer Accepted - TeamRole` design, show roster current/max and the current TM, and identify the player by readable username/avatar in the footer.
+- Offer creation and acceptance reject signed users; acceptance rechecks capacity and adds no global staff role.
+- Offer DMs use command-resolved readable role/guild metadata, four ordered fields with relative-only expiry, and ✅/❌ button emoji without changing persistent IDs.
+- Confirmations are random, server-side, initiating-user scoped, two minutes long, atomic, restart-invalid, and require a fresh confirmation-time eligibility callback.
+- Manage Roles/Administrator is necessary but hierarchy still applies. The bot stays above playable admin roles, TM/ATM/PM, team roles, and each target member; the server owner remains unmanageable.
+- Live role inspection is force-refreshed before synchronization so a stale member cache cannot leave the previous global staff role assigned while committing staff removal.
+
+## 9. Explicit exclusions
+
+Stage 4B.1 does not register release/demand/promotion/demotion/folist or implement imports, role-derived offer source, retry queues, reconciliation, team-inactivation removal, free-form templates, or per-team aliases.
 
 Related notes: [[Commands]], [[Architecture]], [[Roadmap]]

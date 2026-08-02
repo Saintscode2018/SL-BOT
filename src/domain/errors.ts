@@ -149,10 +149,12 @@ export class TeamPositionOccupiedError extends ConflictError {
   public constructor(
     public readonly positionName: string,
     public readonly teamName: string,
-    public readonly currentHolderUserId: string,
+    public readonly currentHolderUserId?: string,
   ) {
     super(
-      `${teamName} already has a ${positionName}: <@${currentHolderUserId}>.\n\nRemove the current ${positionName} before appointing another one.`,
+      `${teamName} already has a ${positionName}${
+        currentHolderUserId === undefined ? '' : `: <@${currentHolderUserId}>`
+      }.\n\nRemove the current ${positionName} before appointing another one.`,
     );
   }
 }
@@ -171,5 +173,213 @@ export class NoStaffAppointmentError extends DomainError {
     super(
       'You must be an active Team Manager, Assistant Team Manager, or Player Manager of a team to issue contract offers.',
     );
+  }
+}
+
+export class MemberAlreadySignedError extends ConflictError {
+  public readonly code = 'MEMBER_ALREADY_SIGNED';
+
+  public constructor() {
+    super('That user is already signed to a team and must become a free agent first.');
+  }
+}
+
+export class MemberIsFreeAgentError extends InvalidStateTransitionError {
+  public readonly code = 'MEMBER_IS_FREE_AGENT';
+
+  public constructor() {
+    super('That user is already a free agent.');
+  }
+}
+
+export class MemberNotOnTeamError extends AuthorizationError {
+  public readonly code = 'MEMBER_NOT_ON_TEAM';
+
+  public constructor() {
+    super('That user is not an active member of the selected team.');
+  }
+}
+
+export class SelfActionForbiddenError extends AuthorizationError {
+  public readonly code = 'SELF_ACTION_FORBIDDEN';
+
+  public constructor() {
+    super('You cannot perform this action on yourself.');
+  }
+}
+
+export class InsufficientStaffRankError extends AuthorizationError {
+  public readonly code = 'INSUFFICIENT_STAFF_RANK';
+
+  public constructor() {
+    super('Your current staff position cannot perform that action.');
+  }
+}
+
+export class TargetRankNotManageableError extends AuthorizationError {
+  public readonly code = 'TARGET_RANK_NOT_MANAGEABLE';
+
+  public constructor() {
+    super("Your staff position cannot manage the target member's current position.");
+  }
+}
+
+export class TeamManagerCannotDemandError extends AuthorizationError {
+  public readonly code = 'TEAM_MANAGER_CANNOT_DEMAND';
+
+  public constructor() {
+    super('A Team Manager cannot demand release from their team.');
+  }
+}
+
+export class StaffSlotOccupiedError extends TeamPositionOccupiedError {
+  public readonly code = 'STAFF_SLOT_OCCUPIED';
+
+  public constructor(public readonly staffRole: 'TM' | 'ATM' | 'PM') {
+    super(staffRole, 'The selected team');
+  }
+}
+
+export class TargetNotStaffError extends InvalidStateTransitionError {
+  public readonly code = 'TARGET_NOT_STAFF';
+
+  public constructor() {
+    super('That roster member does not hold an active staff position.');
+  }
+}
+
+export class TargetAlreadyDesiredRankError extends ConflictError {
+  public readonly code = 'TARGET_ALREADY_DESIRED_RANK';
+
+  public constructor() {
+    super('That roster member already holds the selected staff position.');
+  }
+}
+
+export class InvalidPromotionPathError extends InvalidStateTransitionError {
+  public readonly code = 'INVALID_PROMOTION_PATH';
+
+  public constructor() {
+    super('That promotion path is not allowed for your staff position.');
+  }
+}
+
+export class InvalidDemotionTargetError extends InvalidStateTransitionError {
+  public readonly code = 'INVALID_DEMOTION_TARGET';
+
+  public constructor() {
+    super('Only an Assistant Team Manager or Player Manager can be demoted to player.');
+  }
+}
+
+export class StaleConfirmationError extends InvalidStateTransitionError {
+  public readonly code = 'STALE_CONFIRMATION';
+
+  public constructor() {
+    super('This confirmation has expired or is no longer available.');
+  }
+}
+
+export class ConfirmationAlreadyHandledError extends InvalidStateTransitionError {
+  public readonly code = 'CONFIRMATION_ALREADY_HANDLED';
+
+  public constructor() {
+    super('This confirmation has already been handled.');
+  }
+}
+
+export class ConfirmationOwnershipError extends AuthorizationError {
+  public readonly code = 'CONFIRMATION_WRONG_USER';
+
+  public constructor() {
+    super('Only the user who started this action can use its confirmation buttons.');
+  }
+}
+
+export class InvalidConfirmationTokenError extends ValidationError {
+  public readonly code = 'INVALID_CONFIRMATION_TOKEN';
+
+  public constructor() {
+    super('This confirmation button is invalid or has been tampered with.');
+  }
+}
+
+export class DiscordMemberMissingError extends DomainError {
+  public readonly code = 'DISCORD_MEMBER_MISSING';
+
+  public constructor() {
+    super('The selected Discord member could not be found in this server.');
+  }
+}
+
+export class DiscordRoleMissingError extends ConfigurationError {
+  public readonly code = 'DISCORD_ROLE_MISSING';
+
+  public constructor(public readonly rolePurpose: 'TEAM' | 'TM' | 'ATM' | 'PM') {
+    super(`The configured ${rolePurpose} Discord role is missing.`);
+  }
+}
+
+export class DiscordManageRolesPermissionError extends AuthorizationError {
+  public readonly code = 'DISCORD_MANAGE_ROLES_MISSING';
+
+  public constructor() {
+    super('The bot needs the Discord Manage Roles permission to complete this action.');
+  }
+}
+
+export class DiscordRoleHierarchyError extends AuthorizationError {
+  public readonly code = 'DISCORD_ROLE_HIERARCHY';
+
+  public constructor() {
+    super(
+      'The bot’s highest Discord role must be above the target member’s highest role and every role being added or removed.',
+    );
+  }
+}
+
+export class DiscordRoleNotManageableError extends AuthorizationError {
+  public readonly code = 'DISCORD_ROLE_NOT_MANAGEABLE';
+
+  public constructor() {
+    super('One of the affected Discord roles is managed by an integration and cannot be changed.');
+  }
+}
+
+export class DiscordRoleUpdateFailedError extends DomainError {
+  public readonly code = 'DISCORD_ROLE_UPDATE_FAILED';
+
+  public constructor(options?: ErrorOptions) {
+    super('Discord role synchronization failed; no database success was recorded.', options);
+  }
+}
+
+export class DiscordRoleCompensationFailedError extends DomainError {
+  public readonly code = 'DISCORD_ROLE_COMPENSATION_FAILED';
+
+  public constructor(
+    public readonly affectedRolePurposes: readonly string[],
+    options?: ErrorOptions,
+  ) {
+    super(
+      'Discord role compensation failed and manual reconciliation is required. A league administrator has been notified in the logs.',
+      options,
+    );
+  }
+}
+
+export class StaleMutationStateError extends ConflictError {
+  public readonly code = 'STALE_MUTATION_STATE';
+
+  public constructor() {
+    super('Roster state changed before the action completed. Refresh and try again.');
+  }
+}
+
+export class TransferAnnouncementDeliveryError extends DomainError {
+  public readonly code = 'TRANSFER_ANNOUNCEMENT_DELIVERY_FAILED';
+
+  public constructor(options?: ErrorOptions) {
+    super('The transfer-market announcement could not be delivered.', options);
   }
 }

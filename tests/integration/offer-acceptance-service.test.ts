@@ -2,9 +2,9 @@ import type { Club, Guild, LeagueUser, Offer } from '@prisma/client';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
-  AlreadyMemberOfClubError,
   EntityNotFoundError,
   InvalidStateTransitionError,
+  MemberAlreadySignedError,
   OfferExpiredError,
   SquadFullError,
   UnauthorizedOfferAcceptanceError,
@@ -68,6 +68,10 @@ describe('offer acceptance service', () => {
       discordGuildId: '810000000000000001',
       name: 'acceptance guild',
     });
+    await guilds.upsertSettings(guild.id, {
+      transferChannelId: '840000000000000001',
+      defaultSquadLimit: 17,
+    });
     const destination = await clubs.create({
       guildId: guild.id,
       discordRoleId: '820000000000000001',
@@ -117,6 +121,16 @@ describe('offer acceptance service', () => {
         transactionType: 'SIGNING',
         performedByUserId: data.manager.id,
       },
+      roleMutation: {
+        discordGuildId: data.guild.discordGuildId,
+        discordUserId: data.player.discordUserId,
+        addRoles: [{ id: data.destination.discordRoleId, purpose: 'TEAM' }],
+        removeRoles: [],
+      },
+      announcement: {
+        channelId: '840000000000000001',
+        type: 'SIGNED',
+      },
     });
     await expect(database.client.clubMembership.count()).resolves.toBe(1);
     await expect(database.client.leagueTransaction.count()).resolves.toBe(1);
@@ -136,7 +150,87 @@ describe('offer acceptance service', () => {
     });
   });
 
-  it('transfers a player and preserves previous membership history', async () => {
+  it('carries the accepted roster size, limit, current TM, and timestamp into the signing announcement', async () => {
+    const data = await seed();
+    await memberships.createActive({
+      guildId: data.guild.id,
+      clubId: data.destination.id,
+      userId: data.manager.id,
+      membershipType: 'PLAYER',
+    });
+    await memberships.createActive({
+      guildId: data.guild.id,
+      clubId: data.destination.id,
+      userId: data.manager.id,
+      membershipType: 'TEAM_MANAGER',
+    });
+    const acceptedAt = new Date('2026-08-02T12:00:00.000Z');
+
+    const result = await accept(data, acceptedAt);
+
+    expect(result.announcement).toMatchObject({
+      type: 'SIGNED',
+      occurredAt: acceptedAt,
+      roster: {
+        currentSize: 2,
+        maximumSize: 17,
+        teamManagerDiscordUserId: data.manager.discordUserId,
+      },
+    });
+  });
+
+  it('requires role synchronization before committing a signing', async () => {
+    const data = await seed();
+    const synchronization = {
+      execute: () => Promise.reject(new Error('role feasibility failed')),
+    };
+    const synchronizedService = new OfferAcceptanceService(
+      database.client,
+      undefined,
+      synchronization,
+    );
+    await expect(
+      synchronizedService.acceptOffer({
+        offerId: data.offer.id,
+        acceptingDiscordUserId: data.player.discordUserId,
+      }),
+    ).rejects.toThrow('role feasibility failed');
+    await expect(
+      database.client.offer.findUniqueOrThrow({ where: { id: data.offer.id } }),
+    ).resolves.toMatchObject({ status: 'PENDING' });
+    await expect(database.client.clubMembership.count()).resolves.toBe(0);
+  });
+
+  it('allows only one of two competing team offers to be accepted', async () => {
+    const data = await seed();
+    const competingClub = await clubs.create({
+      guildId: data.guild.id,
+      discordRoleId: '820000000000000003',
+      emoji: '🟢',
+    });
+    const competingOffer = await offers.createPending({
+      guildId: data.guild.id,
+      clubId: competingClub.id,
+      playerUserId: data.player.id,
+      offeredByUserId: data.manager.id,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    await expect(accept(data)).resolves.toMatchObject({ offer: { status: 'ACCEPTED' } });
+    await expect(
+      service.acceptOffer({
+        offerId: competingOffer.id,
+        acceptingDiscordUserId: data.player.discordUserId,
+      }),
+    ).rejects.toBeInstanceOf(MemberAlreadySignedError);
+    await expect(
+      database.client.offer.findUniqueOrThrow({ where: { id: competingOffer.id } }),
+    ).resolves.toMatchObject({ status: 'PENDING' });
+    await expect(
+      database.client.clubMembership.count({ where: { status: 'ACTIVE' } }),
+    ).resolves.toBe(1);
+  });
+
+  it('rejects an old offer after the player signs elsewhere and preserves that membership', async () => {
     const data = await seed();
     const previous = await memberships.createActive({
       guildId: data.guild.id,
@@ -145,30 +239,16 @@ describe('offer acceptance service', () => {
       membershipType: 'PLAYER',
       createdByUserId: data.manager.id,
     });
-    const acceptedAt = new Date();
-    const result = await accept(data, acceptedAt);
-    expect(result).toMatchObject({
-      transactionType: 'TRANSFER',
-      sourceClub: { id: data.source.id },
-      transaction: {
-        transactionType: 'TRANSFER',
-        sourceClubId: data.source.id,
-        destinationClubId: data.destination.id,
-      },
-    });
+    await expect(accept(data)).rejects.toBeInstanceOf(MemberAlreadySignedError);
     const history = await memberships.listHistoryForUser(data.player.id);
-    expect(history).toHaveLength(2);
+    expect(history).toHaveLength(1);
     expect(history.find(({ id }) => id === previous.id)).toMatchObject({
-      status: 'ENDED',
-      leftAt: acceptedAt,
-      endedByUserId: data.manager.id,
-    });
-    expect(history.find(({ id }) => id === result.newMembership.id)).toMatchObject({
       status: 'ACTIVE',
-      clubId: data.destination.id,
-      createdByUserId: data.manager.id,
+      clubId: data.source.id,
     });
-    expect(result.transaction.performedByUserId).toBe(data.manager.id);
+    await expect(
+      database.client.offer.findUniqueOrThrow({ where: { id: data.offer.id } }),
+    ).resolves.toMatchObject({ status: 'PENDING' });
   });
 
   it('rejects acceptance when the derived active roster is full', async () => {
@@ -202,15 +282,21 @@ describe('offer acceptance service', () => {
     await expect(accept(data)).resolves.toMatchObject({ transactionType: 'SIGNING' });
   });
 
-  it('does not count staff memberships toward capacity', async () => {
+  it('counts staff roster memberships toward capacity', async () => {
     const data = await seed(1);
+    await memberships.createActive({
+      guildId: data.guild.id,
+      clubId: data.destination.id,
+      userId: data.manager.id,
+      membershipType: 'PLAYER',
+    });
     await memberships.createActive({
       guildId: data.guild.id,
       clubId: data.destination.id,
       userId: data.manager.id,
       membershipType: 'TEAM_MANAGER',
     });
-    await expect(accept(data)).resolves.toMatchObject({ transactionType: 'SIGNING' });
+    await expect(accept(data)).rejects.toBeInstanceOf(SquadFullError);
   });
 
   it('expires a stale pending offer without membership or transaction writes', async () => {
@@ -250,7 +336,7 @@ describe('offer acceptance service', () => {
       userId: data.player.id,
       membershipType: 'PLAYER',
     });
-    await expect(accept(data)).rejects.toBeInstanceOf(AlreadyMemberOfClubError);
+    await expect(accept(data)).rejects.toBeInstanceOf(MemberAlreadySignedError);
   });
 
   it('rejects an inactive destination club', async () => {

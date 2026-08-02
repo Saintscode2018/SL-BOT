@@ -1,0 +1,179 @@
+import { randomUUID } from 'node:crypto';
+
+import {
+  ConfirmationAlreadyHandledError,
+  ConfirmationOwnershipError,
+  InvalidConfirmationTokenError,
+  StaleConfirmationError,
+} from '../domain/errors.js';
+import type { Logger } from '../logging/logger.js';
+
+export type ConfirmationActionType = 'DEMAND' | 'RELEASE' | 'PROMOTE' | 'DEMOTE';
+export type ConfirmationTerminalState = 'CONSUMED' | 'CANCELLED' | 'EXPIRED';
+
+export interface ConfirmationContext {
+  action: ConfirmationActionType;
+  commandName: string;
+  discordGuildId: string;
+  initiatorDiscordUserId: string;
+  teamId: string;
+  targetDiscordUserId?: string;
+  targetStaffRole?: 'TM' | 'ATM' | 'PM';
+}
+
+export interface ConfirmationRegistration {
+  id: string;
+  confirmCustomId: string;
+  cancelCustomId: string;
+  expiresAt: Date;
+}
+
+interface ConfirmationRecord extends ConfirmationContext {
+  id: string;
+  expiresAt: Date;
+  status: 'PENDING' | ConfirmationTerminalState;
+  timer: NodeJS.Timeout;
+  onExpire?: () => Promise<void>;
+  onCancel?: () => Promise<void>;
+}
+
+const confirmationCustomIdPattern =
+  /^roster-confirm:([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}):(confirm|cancel)$/i;
+
+export const confirmationLifetimeMs = 2 * 60 * 1000;
+
+export class ConfirmationRegistry {
+  private readonly records = new Map<string, ConfirmationRecord>();
+
+  public constructor(
+    private readonly logger: Logger,
+    private readonly lifetimeMs = confirmationLifetimeMs,
+  ) {}
+
+  public create(
+    context: ConfirmationContext,
+    options: {
+      now?: Date;
+      onExpire?: () => Promise<void>;
+      onCancel?: () => Promise<void>;
+    } = {},
+  ): ConfirmationRegistration {
+    const id = randomUUID();
+    const now = options.now ?? new Date();
+    const expiresAt = new Date(now.getTime() + this.lifetimeMs);
+    const timer = setTimeout(() => this.expire(id), this.lifetimeMs);
+    timer.unref();
+    this.records.set(id, {
+      ...context,
+      id,
+      expiresAt,
+      status: 'PENDING',
+      timer,
+      ...(options.onExpire === undefined ? {} : { onExpire: options.onExpire }),
+      ...(options.onCancel === undefined ? {} : { onCancel: options.onCancel }),
+    });
+    return {
+      id,
+      confirmCustomId: `roster-confirm:${id}:confirm`,
+      cancelCustomId: `roster-confirm:${id}:cancel`,
+      expiresAt,
+    };
+  }
+
+  public consume(customId: string, discordUserId: string, now = new Date()): ConfirmationContext {
+    const record = this.resolve(customId, discordUserId, now, 'confirm');
+    record.status = 'CONSUMED';
+    clearTimeout(record.timer);
+    return this.context(record);
+  }
+
+  public async consumeAndExecute<T>(
+    customId: string,
+    discordUserId: string,
+    executeWithFreshAuthorization: (context: ConfirmationContext) => Promise<T>,
+    now = new Date(),
+  ): Promise<T> {
+    const context = this.consume(customId, discordUserId, now);
+    return executeWithFreshAuthorization(context);
+  }
+
+  public async cancel(
+    customId: string,
+    discordUserId: string,
+    now = new Date(),
+  ): Promise<ConfirmationContext> {
+    const record = this.resolve(customId, discordUserId, now, 'cancel');
+    record.status = 'CANCELLED';
+    clearTimeout(record.timer);
+    if (record.onCancel !== undefined) {
+      try {
+        await record.onCancel();
+      } catch (error: unknown) {
+        this.logger.warn('confirmation cancel response could not be updated', {
+          confirmationId: record.id,
+          error,
+        });
+      }
+    }
+    return this.context(record);
+  }
+
+  public expire(id: string, now = new Date()): boolean {
+    const record = this.records.get(id);
+    if (record === undefined || record.status !== 'PENDING') return false;
+    if (now.getTime() < record.expiresAt.getTime()) return false;
+    record.status = 'EXPIRED';
+    clearTimeout(record.timer);
+    if (record.onExpire !== undefined) {
+      void record.onExpire().catch((error: unknown) => {
+        this.logger.warn('confirmation expiry response could not be updated', {
+          confirmationId: id,
+          error,
+        });
+      });
+    }
+    return true;
+  }
+
+  public clear(): void {
+    for (const record of this.records.values()) clearTimeout(record.timer);
+    this.records.clear();
+  }
+
+  private resolve(
+    customId: string,
+    discordUserId: string,
+    now: Date,
+    expectedAction: 'confirm' | 'cancel',
+  ): ConfirmationRecord {
+    const match = confirmationCustomIdPattern.exec(customId);
+    if (match === null || match[1] === undefined || match[2] !== expectedAction) {
+      throw new InvalidConfirmationTokenError();
+    }
+    const record = this.records.get(match[1]);
+    if (record === undefined) throw new StaleConfirmationError();
+    if (record.initiatorDiscordUserId !== discordUserId) {
+      throw new ConfirmationOwnershipError();
+    }
+    if (record.status !== 'PENDING') throw new ConfirmationAlreadyHandledError();
+    if (now.getTime() >= record.expiresAt.getTime()) {
+      this.expire(record.id, now);
+      throw new StaleConfirmationError();
+    }
+    return record;
+  }
+
+  private context(record: ConfirmationRecord): ConfirmationContext {
+    return {
+      action: record.action,
+      commandName: record.commandName,
+      discordGuildId: record.discordGuildId,
+      initiatorDiscordUserId: record.initiatorDiscordUserId,
+      teamId: record.teamId,
+      ...(record.targetDiscordUserId === undefined
+        ? {}
+        : { targetDiscordUserId: record.targetDiscordUserId }),
+      ...(record.targetStaffRole === undefined ? {} : { targetStaffRole: record.targetStaffRole }),
+    };
+  }
+}

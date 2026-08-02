@@ -10,6 +10,13 @@ import {
   ConfigurationError,
   ConflictError,
   DebugAdministratorPermissionRequiredError,
+  DiscordManageRolesPermissionError,
+  DiscordMemberMissingError,
+  DiscordRoleCompensationFailedError,
+  DiscordRoleHierarchyError,
+  DiscordRoleMissingError,
+  DiscordRoleNotManageableError,
+  DiscordRoleUpdateFailedError,
   DuplicateOfferError,
   DuplicateTeamRoleError,
   EntityNotFoundError,
@@ -17,6 +24,9 @@ import {
   GuildNotConfiguredError,
   InactiveSourceTeamError,
   InvalidOfferMessageError,
+  InvalidConfirmationTokenError,
+  InvalidDemotionTargetError,
+  InvalidPromotionPathError,
   InvalidStateTransitionError,
   InvalidTeamEmojiError,
   LeagueSetupRequiredError,
@@ -24,6 +34,20 @@ import {
   NoTeamChangesProvidedError,
   OfferDeliveryError,
   OfferExpiredError,
+  ConfirmationAlreadyHandledError,
+  ConfirmationOwnershipError,
+  InsufficientStaffRankError,
+  MemberAlreadySignedError,
+  MemberIsFreeAgentError,
+  MemberNotOnTeamError,
+  SelfActionForbiddenError,
+  StaffSlotOccupiedError,
+  StaleConfirmationError,
+  StaleMutationStateError,
+  TargetAlreadyDesiredRankError,
+  TargetNotStaffError,
+  TargetRankNotManageableError,
+  TeamManagerCannotDemandError,
   SquadFullError,
   StaffAlreadyAppointedError,
   StaffChannelNotConfiguredError,
@@ -95,6 +119,42 @@ export function mapDiscordError(error: unknown): MappedErrorResponse {
     description = error.message;
   } else if (error instanceof NoStaffAppointmentError) {
     title = '❌ Staff Appointment Required';
+    description = error.message;
+  } else if (
+    error instanceof DiscordMemberMissingError ||
+    error instanceof DiscordRoleMissingError ||
+    error instanceof DiscordManageRolesPermissionError ||
+    error instanceof DiscordRoleHierarchyError ||
+    error instanceof DiscordRoleNotManageableError ||
+    error instanceof DiscordRoleUpdateFailedError ||
+    error instanceof DiscordRoleCompensationFailedError
+  ) {
+    title = '❌ Discord Role Synchronization Failed';
+    description = error.message;
+  } else if (
+    error instanceof StaleConfirmationError ||
+    error instanceof ConfirmationAlreadyHandledError ||
+    error instanceof ConfirmationOwnershipError ||
+    error instanceof InvalidConfirmationTokenError
+  ) {
+    title = '❌ Confirmation Unavailable';
+    description = error.message;
+  } else if (
+    error instanceof MemberAlreadySignedError ||
+    error instanceof MemberIsFreeAgentError ||
+    error instanceof MemberNotOnTeamError ||
+    error instanceof SelfActionForbiddenError ||
+    error instanceof InsufficientStaffRankError ||
+    error instanceof TargetRankNotManageableError ||
+    error instanceof TeamManagerCannotDemandError ||
+    error instanceof StaffSlotOccupiedError ||
+    error instanceof TargetNotStaffError ||
+    error instanceof TargetAlreadyDesiredRankError ||
+    error instanceof InvalidPromotionPathError ||
+    error instanceof InvalidDemotionTargetError ||
+    error instanceof StaleMutationStateError
+  ) {
+    title = '❌ Roster Action Failed';
     description = error.message;
   } else if (error instanceof AuthorizationError) {
     title = '❌ Permission Denied';

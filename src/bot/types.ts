@@ -46,6 +46,7 @@ export interface CommandInteraction {
   readonly deferred: boolean;
   readonly guildId?: string | undefined;
   readonly guildName?: string | undefined;
+  readonly guildIconUrl?: string | undefined;
   readonly guildOwnerId?: string | undefined;
   readonly userId?: string | undefined;
   readonly channelId?: string | undefined;

@@ -25,7 +25,7 @@ This change establishes the permanent `<emoji> <@&DiscordRoleId>` identity model
 - Removed `/bannerconfig` from registration, policy, services, audit flow, documentation, and tests. Stale cached interactions now receive a safe ephemeral response.
 - Autocomplete now displays only the Discord-cache `@RoleName` (or `Unknown Team Role`), never emoji or raw IDs, and retains internal club ID values.
 - Team list, staff confirmations/directories, roster, limits, offer acknowledgement, private contract DM, and relevant conflicts now display only the permanent identity.
-- Adopted the final roster layout: `<emoji> @RoleName Roster`, no separate `Team` field, exact TM/ATM/PM and player sections, and a footer-safe identity plus server name.
+- Adopted the roster sections and footer-safe identity; the final Stage 4A hotfix later moved `<emoji> <@&roleId> Roster` into the description with no title or separate `Team` field.
 - Team-specific embeds and private offer DMs now use nonzero live Discord role colors, with existing fallbacks for missing/colorless roles and no database persistence.
 - Offer acknowledgements now name the target, actor, and source team in order while remaining ephemeral and creating no public follow-up.
 - Setup view no longer contains team-identity presentation controls. Setup league/channels/roles auditing remains unchanged and best effort.
@@ -42,3 +42,17 @@ This change establishes the permanent `<emoji> <@&DiscordRoleId>` identity model
 - Immutable prior migrations, untouched legacy Python files, and untouched `superleague.db`.
 
 Related notes: [[Architecture]], [[Commands]], [[Testing and Deployment]]
+
+## Stage 4B.1 roster-mutation foundation
+
+- Added the shared guild/team-scoped transaction service and made staff appointment also create/retain the same-team roster membership.
+- Added the active-staff-per-guild/user partial unique index while preserving all historical rows.
+- Added centralized Discord member-role feasibility, minimal role operations, role-first/database-second coordination, and exact compensation with visible failure logging.
+- Added server-side two-minute confirmation registrations with initiator/guild/action/team/target binding and confirmation-time recheck execution.
+- Added Transfer Market movement plans/adaptation and separated critical synchronization from non-critical announcement delivery.
+- Tightened offers to free agents only at creation and acceptance, rechecked capacity/team state, synchronized the team role, and blocked later acceptance of competing pending offers.
+- Kept command registration unchanged: no public Stage 4B movement command is exposed yet. Existing inactive-team checks remain for later focused removal.
+- Applied the focused Stage 4B.1 live correction: roster totals still count TM/ATM/PM while Players excludes active staff; staff removal retains membership/team role and removes the preserved prior global rank; the role-sync title encoding and full hierarchy message were corrected.
+- Replaced plain staff movement lines with Transfer Market-only Appointment/Demotion cards using server/team presentation metadata and readable role titles. The final acceptance correction removed title-leading `@`, added administrative actor mentions and readable avatar/timestamp footers, and introduced structured `✅ Offer Accepted` signing cards with roster/TM lines and signed-player footers. Private offer DMs remain on the existing `Contract Offer` design. Audit policy and command registration remain unchanged.
+- Corrected live `/staff remove` by force-fetching the target member before inspecting roles; this prevents stale cached membership roles from skipping the configured TM/ATM/PM removal while retaining the player membership and team role.
+- Documented production role order as SL Bot, playable administrator roles, TM/ATM/PM, then team roles; Administrator does not bypass hierarchy and the server owner cannot be managed.

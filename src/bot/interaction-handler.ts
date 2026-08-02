@@ -82,6 +82,10 @@ class DiscordCommandInteraction implements CommandInteraction {
     return this.interaction.guild?.name;
   }
 
+  public get guildIconUrl(): string | undefined {
+    return this.interaction.guild?.iconURL() ?? undefined;
+  }
+
   public get guildOwnerId(): string | undefined {
     return this.interaction.guild?.ownerId;
   }

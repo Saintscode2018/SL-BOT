@@ -1000,9 +1000,9 @@ const rosterCommand: CommandDefinition = {
     const pmLine = pmUser ? `<@${pmUser.discordUserId}>` : 'None';
 
     const playerLines =
-      result.players.length === 0
+      result.ordinaryPlayers.length === 0
         ? 'None'
-        : result.players.map(({ user }) => `• <@${user.discordUserId}>`).join('\n');
+        : result.ordinaryPlayers.map(({ user }) => `• <@${user.discordUserId}>`).join('\n');
 
     const leagueName = settings?.guild?.name ?? execution.guildName;
 
@@ -1013,7 +1013,7 @@ const rosterCommand: CommandDefinition = {
       fields: [
         {
           name: '📊 Roster Count',
-          value: `${result.players.length}/${effectiveLimit}`,
+          value: `${result.allActiveMembers.length}/${effectiveLimit}`,
           inline: false,
         },
         { name: '👑 Team Manager', value: tmLine, inline: false },
@@ -1058,7 +1058,12 @@ const offerCommand: CommandDefinition = {
         playerDiscordUserId: player.id,
         playerIsBot: player.bot,
       },
-      { sourceTeamRoleColor: sourcePresentation.role?.color ?? null },
+      {
+        sourceTeamRoleColor: sourcePresentation.role?.color ?? null,
+        sourceTeamRoleName: sourcePresentation.role?.name ?? null,
+        guildName: execution.guildName,
+        guildIconUrl: interaction.guildIconUrl ?? null,
+      },
     );
 
     const club = result.destinationClub;

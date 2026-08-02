@@ -7,6 +7,7 @@ export interface EmbedOptions {
   fields?: APIEmbedField[];
   thumbnail?: string | null;
   footer?: string;
+  footerIconURL?: string | null;
   author?: { name: string; iconURL?: string } | null;
   timestamp?: Date;
 }
@@ -43,7 +44,11 @@ export function createSuccessEmbed(options: EmbedOptions & { title: string }): E
   if (options.description) embed.setDescription(options.description);
   if (options.fields && options.fields.length > 0) embed.addFields(options.fields);
   if (options.thumbnail) embed.setThumbnail(options.thumbnail);
-  if (options.footer) embed.setFooter({ text: options.footer });
+  if (options.footer)
+    embed.setFooter({
+      text: options.footer,
+      ...(options.footerIconURL ? { iconURL: options.footerIconURL } : {}),
+    });
   if (options.timestamp) embed.setTimestamp(options.timestamp);
 
   return embed;
@@ -62,7 +67,11 @@ export function createInfoEmbed(options: EmbedOptions): EmbedBuilder {
   if (options.description) embed.setDescription(options.description);
   if (options.fields && options.fields.length > 0) embed.addFields(options.fields);
   if (options.thumbnail) embed.setThumbnail(options.thumbnail);
-  if (options.footer) embed.setFooter({ text: options.footer });
+  if (options.footer)
+    embed.setFooter({
+      text: options.footer,
+      ...(options.footerIconURL ? { iconURL: options.footerIconURL } : {}),
+    });
   if (options.timestamp) embed.setTimestamp(options.timestamp);
 
   return embed;
@@ -80,7 +89,11 @@ export function createWarningEmbed(options: EmbedOptions & { title: string }): E
   if (options.description) embed.setDescription(options.description);
   if (options.fields && options.fields.length > 0) embed.addFields(options.fields);
   if (options.thumbnail) embed.setThumbnail(options.thumbnail);
-  if (options.footer) embed.setFooter({ text: options.footer });
+  if (options.footer)
+    embed.setFooter({
+      text: options.footer,
+      ...(options.footerIconURL ? { iconURL: options.footerIconURL } : {}),
+    });
   if (options.timestamp) embed.setTimestamp(options.timestamp);
 
   return embed;
@@ -98,7 +111,11 @@ export function createErrorEmbed(options: EmbedOptions & { title: string }): Emb
   if (options.description) embed.setDescription(options.description);
   if (options.fields && options.fields.length > 0) embed.addFields(options.fields);
   if (options.thumbnail) embed.setThumbnail(options.thumbnail);
-  if (options.footer) embed.setFooter({ text: options.footer });
+  if (options.footer)
+    embed.setFooter({
+      text: options.footer,
+      ...(options.footerIconURL ? { iconURL: options.footerIconURL } : {}),
+    });
   if (options.timestamp) embed.setTimestamp(options.timestamp);
 
   return embed;

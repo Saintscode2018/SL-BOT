@@ -2,24 +2,21 @@ import type { Club, ClubMembership, LeagueUser, PrismaClient } from '@prisma/cli
 
 import {
   BotUserNotAllowedError,
-  ClubInactiveError,
   EntityNotFoundError,
   InactiveSourceTeamError,
   NoStaffAppointmentError,
-  StaffAlreadyAppointedError,
-  TeamPositionOccupiedError,
 } from '../domain/errors.js';
 
 import type { MembershipType } from '../domain/enums.js';
+import type { MemberRoleMutationPlan } from '../domain/roster-mutation.js';
 import { formatTeamIdentity } from '../domain/team-label.js';
-import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { ClubRepository } from '../repositories/club-repository.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
 import { MembershipRepository } from '../repositories/membership-repository.js';
-import { LeagueTransactionRepository } from '../repositories/transaction-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
 import type { AuthorizationInput } from './authorization-service.js';
 import { AuthorizationService } from './authorization-service.js';
+import { RosterMutationService } from './roster-mutation-service.js';
 
 export type StaffType = Exclude<MembershipType, 'PLAYER'>;
 export const staffAppointedAuditEventType = 'staff.appointed';
@@ -55,90 +52,36 @@ export interface StaffRemovalResult {
   membership: ClubMembership;
   user: LeagueUser;
   club: Club;
+  previousStaffType: StaffType;
+  roleMutation: MemberRoleMutationPlan;
+  announcementDelivered?: boolean | null;
 }
 
 export class StaffManagementService {
-  public constructor(private readonly database: PrismaClient) {}
+  public constructor(
+    private readonly database: PrismaClient,
+    private readonly mutations = new RosterMutationService(database),
+  ) {}
 
   public async appoint(input: AppointStaffInput): Promise<StaffAppointmentResult> {
     if (input.staffIsBot) throw new BotUserNotAllowedError('bots cannot hold staff positions');
     const authorization = await new AuthorizationService(
       this.database,
     ).authorizeLeagueAdministration(input.authorization);
-    return this.database.$transaction(async (transaction) => {
-      const club = await new ClubRepository(transaction).getByIdInGuild(
-        input.clubId,
-        authorization.guild.id,
-      );
-      if (club === null) throw new EntityNotFoundError('team was not found');
-      if (!club.active) throw new ClubInactiveError('team is inactive');
-      const users = new UserRepository(transaction);
-      const actor = await users.getOrCreateByDiscordUserId(input.authorization.discordUserId);
-      const user = await users.getOrCreateByDiscordUserId(input.staffDiscordUserId);
-      const memberships = new MembershipRepository(transaction);
-
-      // check for an existing staff appointment
-      const existingUserStaff = await memberships.getActiveStaffMembershipForUserInGuild(
-        authorization.guild.id,
-        user.id,
-      );
-      if (existingUserStaff !== null) {
-        const posName = getFriendlyPositionName(existingUserStaff.membershipType as StaffType);
-        throw new StaffAlreadyAppointedError(
-          input.staffDiscordUserId,
-          posName,
-          formatTeamIdentity(existingUserStaff.club, 'message'),
-        );
-      }
-
-      // check whether the team position is occupied
-      const existingPositionStaff = await memberships.getActiveStaffAppointment(
-        club.id,
-        input.staffType,
-      );
-      if (existingPositionStaff !== null) {
-        const holderUser = await transaction.leagueUser.findUnique({
-          where: { id: existingPositionStaff.userId },
-        });
-        const posName = getFriendlyPositionName(input.staffType);
-        throw new TeamPositionOccupiedError(
-          posName,
-          formatTeamIdentity(club, 'message'),
-          holderUser?.discordUserId ?? existingPositionStaff.userId,
-        );
-      }
-
-      const membership = await memberships.createActive({
-        guildId: authorization.guild.id,
-        clubId: club.id,
-        userId: user.id,
-        membershipType: input.staffType,
-        ...(input.appointedAt === undefined ? {} : { joinedAt: input.appointedAt }),
-        createdByUserId: actor.id,
-      });
-      const leagueTransaction = await new LeagueTransactionRepository(transaction).create({
-        guildId: authorization.guild.id,
-        userId: user.id,
-        transactionType: 'STAFF_APPOINTMENT',
-        destinationClubId: club.id,
-        performedByUserId: actor.id,
-      });
-      await new AuditEventRepository(transaction).create({
-        guildId: authorization.guild.id,
-        actorUserId: actor.id,
-        eventType: staffAppointedAuditEventType,
-        entityType: 'membership',
-        entityId: membership.id,
-        afterState: {
-          clubId: club.id,
-          userId: user.id,
-          membershipType: membership.membershipType,
-          status: membership.status,
-        },
-        metadata: { transactionId: leagueTransaction.id },
-      });
-      return { membership, user, club };
+    const result = await this.mutations.appointStaffImmediately({
+      discordGuildId: authorization.guild.discordGuildId,
+      clubId: input.clubId,
+      actorDiscordUserId: input.authorization.discordUserId,
+      targetDiscordUserId: input.staffDiscordUserId,
+      staffType: input.staffType,
+      ...(input.appointedAt === undefined ? {} : { occurredAt: input.appointedAt }),
     });
+    if (result.staffMembership === null) throw new EntityNotFoundError('staff appointment missing');
+    return {
+      membership: result.staffMembership,
+      user: result.user,
+      club: result.club,
+    };
   }
 
   public async remove(
@@ -150,35 +93,35 @@ export class StaffManagementService {
     const authorization = await new AuthorizationService(
       this.database,
     ).authorizeLeagueAdministration(authorizationInput);
-    return this.database.$transaction(async (transaction) => {
-      const club = await new ClubRepository(transaction).getByIdInGuild(
-        clubId,
-        authorization.guild.id,
-      );
-      if (club === null) throw new EntityNotFoundError('team was not found');
-      const memberships = new MembershipRepository(transaction);
-      const appointment = await memberships.getActiveStaffAppointment(club.id, staffType);
-      if (appointment === null) throw new EntityNotFoundError('active staff appointment not found');
-      const user = await transaction.leagueUser.findUnique({ where: { id: appointment.userId } });
-      if (user === null) throw new EntityNotFoundError('appointed staff user was not found');
-      const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
-        authorizationInput.discordUserId,
-      );
-      const ended = await memberships.end(appointment.id, {
-        leftAt: removedAt,
-        endedByUserId: actor.id,
-      });
-      await new AuditEventRepository(transaction).create({
-        guildId: authorization.guild.id,
-        actorUserId: actor.id,
-        eventType: staffRemovedAuditEventType,
-        entityType: 'membership',
-        entityId: appointment.id,
-        beforeState: { status: 'ACTIVE', membershipType: appointment.membershipType },
-        afterState: { status: 'ENDED', leftAt: removedAt.toISOString() },
-      });
-      return { membership: ended, user, club };
+    const appointment = await new MembershipRepository(this.database).getActiveStaffAppointment(
+      clubId,
+      staffType,
+    );
+    if (appointment === null) throw new EntityNotFoundError('active staff appointment not found');
+    const user = await new UserRepository(this.database).getById(appointment.userId);
+    if (user === null) throw new EntityNotFoundError('appointed staff user was not found');
+    const result = await this.mutations.removeStaffAppointmentImmediately({
+      discordGuildId: authorization.guild.discordGuildId,
+      clubId,
+      actorDiscordUserId: authorizationInput.discordUserId,
+      targetDiscordUserId: user.discordUserId,
+      staffType,
+      occurredAt: removedAt,
     });
+    if (result.staffMembership === null) throw new EntityNotFoundError('staff appointment missing');
+    if (result.previousStaffType === null) {
+      throw new EntityNotFoundError('previous staff rank missing');
+    }
+    return {
+      membership: result.staffMembership,
+      user: result.user,
+      club: result.club,
+      previousStaffType: result.previousStaffType,
+      roleMutation: result.roleMutation,
+      ...(result.announcementDelivered === undefined
+        ? {}
+        : { announcementDelivered: result.announcementDelivered }),
+    };
   }
 
   public async list(

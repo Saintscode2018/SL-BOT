@@ -18,6 +18,7 @@ import type {
 } from '../../src/bot/types.js';
 import type { AuthorizationInput } from '../../src/services/authorization-service.js';
 import {
+  DiscordRoleUpdateFailedError,
   DuplicateTeamRoleError,
   NoTeamChangesProvidedError,
   StaffMemberCannotReceiveOffersError,
@@ -226,7 +227,14 @@ function createContext(): CommandContext {
     rosterManagementService: {
       add: () => Promise.reject(new Error('unused')),
       remove: () => Promise.reject(new Error('unused')),
-      list: () => Promise.resolve({ club: team, players: [], staff: [] }),
+      list: () =>
+        Promise.resolve({
+          club: team,
+          allActiveMembers: [],
+          activeStaffUserIds: new Set<string>(),
+          ordinaryPlayers: [],
+          staff: [],
+        }),
     },
     limitManagementService: {
       setDefaultLimit: () => Promise.resolve({ defaultSquadLimit: 20 }),
@@ -304,6 +312,11 @@ describe('final Stage 4A command UI', () => {
     const mapped = mapDiscordError(new NoTeamChangesProvidedError());
     expect(mapped.title).toBe('❌ No Team Changes Provided');
     expect(mapped.description).toBe('Choose a new team role or team emoji to update.');
+  });
+
+  it('maps Discord role synchronization failures with the correctly encoded title', () => {
+    const mapped = mapDiscordError(new DiscordRoleUpdateFailedError());
+    expect(mapped.title).toBe('❌ Discord Role Synchronization Failed');
   });
 
   it('maps a duplicate role to the exact identity-only error', () => {
@@ -481,7 +494,13 @@ describe('final Stage 4A command UI', () => {
     };
     const context = createContext();
     context.rosterManagementService.list = () =>
-      Promise.resolve({ club: customTeam, players: [], staff: [] });
+      Promise.resolve({
+        club: customTeam,
+        allActiveMembers: [],
+        activeStaffUserIds: new Set<string>(),
+        ordinaryPlayers: [],
+        staff: [],
+      });
     const interaction = new TestInteraction('roster', { team: customTeam.id }, 'bot-channel', {
       id: customTeam.discordRoleId,
       name: 'T2',

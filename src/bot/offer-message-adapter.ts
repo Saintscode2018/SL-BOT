@@ -30,11 +30,13 @@ function offerComponents(offerId: string, disabled = false): ActionRowBuilder<Bu
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setCustomId(createOfferCustomId('accept', offerId))
+        .setEmoji('✅')
         .setLabel('Sign Contract')
         .setStyle(ButtonStyle.Success)
         .setDisabled(disabled),
       new ButtonBuilder()
         .setCustomId(createOfferCustomId('decline', offerId))
+        .setEmoji('❌')
         .setLabel('Decline Offer')
         .setStyle(ButtonStyle.Danger)
         .setDisabled(disabled),
@@ -47,26 +49,34 @@ function offerEmbed(
   presentation: OfferPresentationMetadata = {},
 ): EmbedBuilder {
   const expiresAt = Math.floor(result.offer.expiresAt.getTime() / 1000);
-  const remainingSpots = Math.max(0, result.effectiveSquadLimit - result.activePlayerCount);
+  const sourceTeam = {
+    ...result.destinationClub,
+    discordRoleName: presentation.sourceTeamRoleName ?? null,
+  };
   const embed = new EmbedBuilder()
     .setColor(resolveTeamRoleColor(presentation.sourceTeamRoleColor, neutralColor))
-    .setTitle(`${result.leagueName || 'SL League'} Contract Offer`)
-    .setDescription('Professional First Team')
+    .setAuthor({
+      name: presentation.guildName?.trim() || result.leagueName || 'SL League',
+      ...(presentation.guildIconUrl ? { iconURL: presentation.guildIconUrl } : {}),
+    })
+    .setTitle('Contract Offer')
     .addFields(
       {
         name: 'Source Team',
-        value: formatTeamIdentity(result.destinationClub, 'message'),
-        inline: true,
+        value: formatTeamIdentity(sourceTeam, 'title'),
+        inline: false,
       },
-      { name: 'Offered Player', value: `<@${result.player.discordUserId}>`, inline: true },
-      { name: 'Offering Manager', value: `<@${result.offeredBy.discordUserId}>`, inline: true },
       {
-        name: 'Squad',
-        value: `${result.activePlayerCount}/${result.effectiveSquadLimit}`,
-        inline: true,
+        name: 'Team Manager',
+        value: `<@${result.offeredBy.discordUserId}>`,
+        inline: false,
       },
-      { name: 'Remaining Spots', value: String(remainingSpots), inline: true },
-      { name: 'Expires', value: `<t:${expiresAt}:F>\n<t:${expiresAt}:R>` },
+      {
+        name: '📊 Squad',
+        value: `${result.activePlayerCount}/${result.effectiveSquadLimit}`,
+        inline: false,
+      },
+      { name: '⏰ Expires', value: `<t:${expiresAt}:R>`, inline: false },
     );
   const thumbnail = getTeamThumbnail(result.destinationClub.emoji);
   if (thumbnail !== null) {

@@ -18,6 +18,9 @@ export interface OfferMessageReference {
 
 export interface OfferPresentationMetadata {
   sourceTeamRoleColor?: number | null;
+  sourceTeamRoleName?: string | null;
+  guildName?: string | null;
+  guildIconUrl?: string | null;
 }
 
 export interface OfferMessageAdapter {

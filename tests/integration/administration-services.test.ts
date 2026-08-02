@@ -8,9 +8,9 @@ import {
   ConflictError,
   DuplicateOfferError,
   InvalidOfferMessageError,
+  MemberAlreadySignedError,
   OfferDeliveryError,
   SquadFullError,
-  StaffMemberCannotReceiveOffersError,
   UnauthorizedOfferAcceptanceError,
 } from '../../src/domain/errors.js';
 import { ClubRepository } from '../../src/repositories/club-repository.js';
@@ -229,7 +229,12 @@ describe('administration services', () => {
       });
       expect(removed.user.discordUserId).toBe(appointed.user.discordUserId);
       expect(removed.club.id).toBe(club.id);
-      await expect(database.client.clubMembership.count()).resolves.toBe(1);
+      await expect(database.client.clubMembership.count()).resolves.toBe(2);
+      await expect(
+        database.client.clubMembership.findFirstOrThrow({
+          where: { userId: appointed.user.id, membershipType: 'PLAYER' },
+        }),
+      ).resolves.toMatchObject({ status: 'ACTIVE', clubId: club.id });
       await expect(
         database.client.auditEvent.count({ where: { eventType: staffAppointedAuditEventType } }),
       ).resolves.toBe(1);
@@ -413,7 +418,7 @@ describe('administration services', () => {
     ).resolves.toMatchObject({ club: { id: club.id } });
   });
 
-  it('creates offers with configured timeout source club and atomic audit', async () => {
+  it('rejects creating an offer for a player already signed to a source club', async () => {
     const destination = await createClub();
     const source = await createClub('930000000000000002');
     await new RosterManagementService(database.client).add({
@@ -422,26 +427,21 @@ describe('administration services', () => {
       playerDiscordUserId: playerId,
       playerIsBot: false,
     });
-    const before = Date.now();
-    const result = await new OfferCreationService(database.client).createOffer({
-      authorization: authorization(),
-      destinationClubId: destination.id,
-      playerDiscordUserId: playerId,
-      playerIsBot: false,
-    });
-    expect(result.sourceClub?.id).toBe(source.id);
-    expect(result.offer.expiresAt.getTime()).toBeGreaterThanOrEqual(before + 3_599_000);
-    expect(result).toMatchObject({
-      leagueName: 'Development League',
-      activePlayerCount: 0,
-    });
+    await expect(
+      new OfferCreationService(database.client).createOffer({
+        authorization: authorization(),
+        destinationClubId: destination.id,
+        playerDiscordUserId: playerId,
+        playerIsBot: false,
+      }),
+    ).rejects.toBeInstanceOf(MemberAlreadySignedError);
     await expect(
       database.client.auditEvent.count({ where: { eventType: offerCreatedAuditEventType } }),
-    ).resolves.toBe(1);
+    ).resolves.toBe(0);
   });
 
   it('authorizes team staff offers and rejects duplicates and full destinations', async () => {
-    const destination = await createClub('930000000000000001', 1);
+    const destination = await createClub('930000000000000001', 2);
     await new StaffManagementService(database.client).appoint({
       authorization: authorization(),
       clubId: destination.id,
@@ -533,19 +533,7 @@ describe('administration services', () => {
         playerIsBot: false,
       });
 
-      await expect(failure).rejects.toMatchObject({
-        positionName:
-          targetType === 'TEAM_MANAGER'
-            ? 'Team Manager'
-            : targetType === 'ASSISTANT_MANAGER'
-              ? 'Assistant Team Manager'
-              : 'Player Manager',
-        teamName:
-          targetTeam === 'source'
-            ? `⚽ <@&${source.discordRoleId}>`
-            : `<:Other:987654321098765432> <@&${other.discordRoleId}>`,
-      });
-      await expect(failure).rejects.toBeInstanceOf(StaffMemberCannotReceiveOffersError);
+      await expect(failure).rejects.toBeInstanceOf(MemberAlreadySignedError);
       expect(sendOffer).not.toHaveBeenCalled();
       await expect(database.client.offer.count()).resolves.toBe(0);
       await expect(database.client.auditEvent.count()).resolves.toBe(beforeAuditCount);
@@ -553,7 +541,7 @@ describe('administration services', () => {
     },
   );
 
-  it('allows a removed former staff member to receive a private offer', async () => {
+  it('keeps removed former staff rostered and unable to receive an offer', async () => {
     const source = await createClub('930000000000000010', 5, '⚽');
     const formerTeam = await createClub('930000000000000011', 5, '🔵');
     const staff = new StaffManagementService(database.client);
@@ -591,9 +579,9 @@ describe('administration services', () => {
         playerDiscordUserId: playerId,
         playerIsBot: false,
       }),
-    ).resolves.toMatchObject({ destinationClub: { id: source.id } });
-    expect(sendOffer).toHaveBeenCalledOnce();
-    await expect(database.client.offer.count({ where: { status: 'PENDING' } })).resolves.toBe(1);
+    ).rejects.toBeInstanceOf(MemberAlreadySignedError);
+    expect(sendOffer).not.toHaveBeenCalled();
+    await expect(database.client.offer.count({ where: { status: 'PENDING' } })).resolves.toBe(0);
   });
 
   it('declines atomically without membership or league transaction writes', async () => {

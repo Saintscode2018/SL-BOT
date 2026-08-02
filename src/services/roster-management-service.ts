@@ -144,6 +144,13 @@ export class RosterManagementService {
         leftAt: removedAt,
         endedByUserId: actor.id,
       });
+      const activeStaff = await memberships.getActiveStaffMembershipForUser(club.id, player.id);
+      if (activeStaff !== null) {
+        await memberships.end(activeStaff.id, {
+          leftAt: removedAt,
+          endedByUserId: actor.id,
+        });
+      }
       const leagueTransaction = await new LeagueTransactionRepository(transaction).create({
         guildId: authorization.guild.id,
         userId: player.id,
@@ -171,7 +178,9 @@ export class RosterManagementService {
     clubId: string,
   ): Promise<{
     club: Club;
-    players: Array<ClubMembership & { user: LeagueUser }>;
+    allActiveMembers: Array<ClubMembership & { user: LeagueUser }>;
+    activeStaffUserIds: Set<string>;
+    ordinaryPlayers: Array<ClubMembership & { user: LeagueUser }>;
     staff: Array<ClubMembership & { user: LeagueUser }>;
   }> {
     return this.database.$transaction(async (transaction) => {
@@ -181,11 +190,15 @@ export class RosterManagementService {
       if (club === null) throw new TeamNotFoundError('team was not found in this server');
       if (!club.active) throw new ClubInactiveError('team is inactive');
       const memberships = new MembershipRepository(transaction);
-      const [players, staff] = await Promise.all([
+      const [allActiveMembers, staff] = await Promise.all([
         memberships.listActivePlayersWithUsers(club.id),
         memberships.listActiveStaffWithUsers(club.id),
       ]);
-      return { club, players, staff };
+      const activeStaffUserIds = new Set(staff.map(({ userId }) => userId));
+      const ordinaryPlayers = allActiveMembers.filter(
+        ({ userId }) => !activeStaffUserIds.has(userId),
+      );
+      return { club, allActiveMembers, activeStaffUserIds, ordinaryPlayers, staff };
     });
   }
 }

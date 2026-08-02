@@ -214,6 +214,7 @@ class OfferCommandInteraction implements CommandInteraction {
   public readonly commandName = 'offer';
   public readonly guildId = '100000000000000001';
   public readonly guildName = 'Test Guild';
+  public readonly guildIconUrl = 'https://cdn.discordapp.com/icons/guild/icon.png';
   public readonly guildOwnerId = '100000000000000002';
   public readonly userId = '100000000000000002';
   public readonly memberRoleIds: readonly string[] = [];
@@ -396,7 +397,9 @@ describe('stage three command registry and deployment', () => {
             createdAt: now,
             updatedAt: now,
           },
-          players: [],
+          allActiveMembers: [],
+          activeStaffUserIds: new Set<string>(),
+          ordinaryPlayers: [],
           staff: [],
         }),
     };
@@ -462,6 +465,9 @@ describe('stage three command registry and deployment', () => {
     expect(interaction.edits[0]?.embeds?.[0]?.data?.color).toBe(0xf97316);
     expect(delivery).toHaveBeenCalledWith(expect.any(Object), {
       sourceTeamRoleColor: 0xf97316,
+      sourceTeamRoleName: 'T2',
+      guildName: 'Test Guild',
+      guildIconUrl: 'https://cdn.discordapp.com/icons/guild/icon.png',
     });
     expect(JSON.stringify(interaction.edits[0])).not.toContain('Destination Team');
     expect(JSON.stringify(interaction.edits[0])).not.toContain('**<@&');
@@ -484,8 +490,13 @@ describe('stage three command registry and deployment', () => {
     expect(JSON.stringify(interaction.edits)).not.toContain('private delivery detail');
   });
 
-  it('builds a private contract card without broad mentions', () => {
-    const payload = createOfferMessagePayload(offerCreationResult());
+  it('builds the exact private contract card with readable team metadata and persistent buttons', () => {
+    const payload = createOfferMessagePayload(offerCreationResult(), {
+      sourceTeamRoleColor: 0xf97316,
+      sourceTeamRoleName: 'T2',
+      guildName: 'Test Guild',
+      guildIconUrl: 'https://cdn.discordapp.com/icons/guild/icon.png',
+    });
     expect(payload.content).toBeUndefined();
     const serialized = JSON.parse(JSON.stringify(payload)) as {
       allowedMentions: {
@@ -496,12 +507,20 @@ describe('stage three command registry and deployment', () => {
       };
       embeds: Array<{
         title: string;
-        description: string;
+        description?: string;
+        author?: { name: string; icon_url?: string };
+        color: number;
         fields: Array<{ name: string; value: string }>;
         thumbnail?: { url: string };
       }>;
       components: Array<{
-        components: Array<{ custom_id: string; label: string; disabled: boolean }>;
+        components: Array<{
+          custom_id: string;
+          emoji: { name: string };
+          label: string;
+          style: number;
+          disabled: boolean;
+        }>;
       }>;
     };
     expect(serialized.allowedMentions).toEqual({
@@ -511,28 +530,33 @@ describe('stage three command registry and deployment', () => {
       repliedUser: false,
     });
     expect(serialized.embeds[0]).toMatchObject({
-      title: 'Test League Contract Offer',
-      description: 'Professional First Team',
+      author: {
+        name: 'Test Guild',
+        icon_url: 'https://cdn.discordapp.com/icons/guild/icon.png',
+      },
+      title: 'Contract Offer',
+      color: 0xf97316,
     });
+    expect(serialized.embeds[0]?.description).toBeUndefined();
     expect(serialized.embeds[0]?.thumbnail?.url).toContain('twemoji');
-    expect(
-      Object.fromEntries(
-        serialized.embeds[0]?.fields.map(({ name, value }) => [name, value]) ?? [],
-      ),
-    ).toMatchObject({
-      'Source Team': '🔵 <@&100000000000000007>',
-      'Offered Player': '<@100000000000000003>',
-      'Offering Manager': '<@100000000000000004>',
-      Squad: '4/10',
-      'Remaining Spots': '6',
-    });
-    expect(serialized.embeds[0]?.fields.find(({ name }) => name === 'Expires')?.value).toMatch(
-      /^<t:\d+:F>\n<t:\d+:R>$/,
+    expect(serialized.embeds[0]?.fields.map(({ name }) => name)).toEqual([
+      'Source Team',
+      'Team Manager',
+      '📊 Squad',
+      '⏰ Expires',
+    ]);
+    expect(serialized.embeds[0]?.fields[0]?.value).toBe('🔵 @T2');
+    expect(serialized.embeds[0]?.fields[1]?.value).toBe('<@100000000000000004>');
+    expect(serialized.embeds[0]?.fields[2]?.value).toBe('4/10');
+    expect(serialized.embeds[0]?.fields[3]?.value).toMatch(/^<t:\d+:R>$/);
+    expect(JSON.stringify(serialized.embeds[0])).not.toMatch(
+      /Professional First Team|Offered Player|Offering Manager|Remaining Spots|<@&|@unknown-role|<t:\d+:F>/,
     );
     expect(serialized.components[0]?.components).toEqual([
       {
         type: 2,
         custom_id: `offer:accept:${offerId}`,
+        emoji: { animated: false, name: '✅' },
         label: 'Sign Contract',
         style: 3,
         disabled: false,
@@ -540,6 +564,7 @@ describe('stage three command registry and deployment', () => {
       {
         type: 2,
         custom_id: `offer:decline:${offerId}`,
+        emoji: { animated: false, name: '❌' },
         label: 'Decline Offer',
         style: 4,
         disabled: false,
@@ -566,7 +591,9 @@ describe('stage three command registry and deployment', () => {
     const result = offerCreationResult();
     result.destinationClub.emoji = '<:Newcastle:987654321098765432>';
 
-    const payload = JSON.parse(JSON.stringify(createOfferMessagePayload(result))) as {
+    const payload = JSON.parse(
+      JSON.stringify(createOfferMessagePayload(result, { sourceTeamRoleName: 'Newcastle' })),
+    ) as {
       embeds: Array<{
         fields: Array<{ name: string; value: string }>;
         thumbnail?: { url: string };
@@ -574,7 +601,7 @@ describe('stage three command registry and deployment', () => {
     };
 
     expect(payload.embeds[0]?.fields.find(({ name }) => name === 'Source Team')?.value).toBe(
-      '<:Newcastle:987654321098765432> <@&100000000000000007>',
+      '<:Newcastle:987654321098765432> @Newcastle',
     );
     expect(payload.embeds[0]?.thumbnail?.url).toBe(
       'https://cdn.discordapp.com/emojis/987654321098765432.png',
@@ -582,12 +609,17 @@ describe('stage three command registry and deployment', () => {
   });
 
   it.each([
-    ['supplied role color', { sourceTeamRoleColor: 0xf97316 }, 0xf97316],
-    ['zero-color fallback', { sourceTeamRoleColor: 0 }, 0x5865f2],
-    ['missing metadata fallback', {}, 0x5865f2],
+    [
+      'supplied role color',
+      { sourceTeamRoleColor: 0xf97316, sourceTeamRoleName: 'T2' },
+      0xf97316,
+      '🔵 @T2',
+    ],
+    ['zero-color fallback', { sourceTeamRoleColor: 0 }, 0x5865f2, '🔵 Team'],
+    ['missing metadata fallback', {}, 0x5865f2, '🔵 Team'],
   ] as const)(
-    'uses the %s for the private offer DM without changing its content',
-    (_, metadata, color) => {
+    'uses the %s for the private offer DM with a safe readable identity',
+    (_, metadata, color, expectedIdentity) => {
       const payload = JSON.parse(
         JSON.stringify(createOfferMessagePayload(offerCreationResult(), metadata)),
       ) as {
@@ -597,8 +629,9 @@ describe('stage three command registry and deployment', () => {
 
       expect(payload.embeds[0]?.color).toBe(color);
       expect(payload.embeds[0]?.fields.find(({ name }) => name === 'Source Team')?.value).toBe(
-        '🔵 <@&100000000000000007>',
+        expectedIdentity,
       );
+      expect(JSON.stringify(payload.embeds[0])).not.toMatch(/<@&|@unknown-role/);
       expect(payload.components[0]?.components.map(({ label }) => label)).toEqual([
         'Sign Contract',
         'Decline Offer',
@@ -728,6 +761,13 @@ describe('persistent offer buttons', () => {
         reversedByUserId: null,
       },
       transactionType: 'SIGNING',
+      roleMutation: {
+        discordGuildId: '100000000000000001',
+        discordUserId: '100000000000000003',
+        addRoles: [],
+        removeRoles: [],
+      },
+      announcement: null,
     };
     const order: string[] = [];
     const responses = {

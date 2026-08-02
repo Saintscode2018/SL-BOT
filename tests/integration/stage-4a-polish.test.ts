@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Client } from 'discord.js';
 
 import { commandDefinitions } from '../../src/bot/commands.js';
 import type { CommandRegistry } from '../../src/bot/command-registry.js';
+import { DiscordMemberRoleAdapter } from '../../src/bot/discord-member-role-adapter.js';
 import { mapDiscordError } from '../../src/bot/error-mapper.js';
 import { handleInteractionCreate } from '../../src/bot/interaction-handler.js';
 import type {
@@ -22,7 +24,10 @@ import { CommandChannelPolicyService } from '../../src/services/command-channel-
 import { GuildConfigurationService } from '../../src/services/guild-configuration-service.js';
 import { GuildSetupService } from '../../src/services/guild-setup-service.js';
 import { LimitManagementService } from '../../src/services/limit-management-service.js';
+import { MemberRoleSynchronizationService } from '../../src/services/member-role-synchronization-service.js';
+import { RoleSynchronizedMutationService } from '../../src/services/role-synchronized-mutation-service.js';
 import { RosterManagementService } from '../../src/services/roster-management-service.js';
+import { RosterMutationService } from '../../src/services/roster-mutation-service.js';
 import { StaffManagementService } from '../../src/services/staff-management-service.js';
 import { ClubRepository } from '../../src/repositories/club-repository.js';
 import { GuildRepository } from '../../src/repositories/guild-repository.js';
@@ -262,6 +267,14 @@ describe('Stage 4A Polish Verification', () => {
       transferChannelId: '333333333333333333',
       auditChannelId: '444444444444444444',
     });
+    await guildSetupService.setupRoles({
+      authorization: adminAuth,
+      guildName: 'Development League',
+      botPermissionsRoleId: '555555555555555555',
+      teamManagerRoleId: '666666666666666666',
+      assistantManagerRoleId: '777777777777777777',
+      playerManagerRoleId: '888888888888888888',
+    });
   });
 
   describe('1. Specific Team-Conflict Errors', () => {
@@ -284,6 +297,136 @@ describe('Stage 4A Polish Verification', () => {
   });
 
   describe('2. Staff Appointment Conflict Errors', () => {
+    it.each([
+      ['TEAM_MANAGER', '666666666666666666'],
+      ['ASSISTANT_MANAGER', '777777777777777777'],
+      ['PLAYER_MANAGER', '888888888888888888'],
+    ] as const)(
+      'executes /staff remove through Discord synchronization for %s',
+      async (staffType, globalStaffRoleId) => {
+        const club = await commandContext.clubManagementService.create({
+          authorization: adminAuth,
+          discordRoleId: '300000000000000001',
+          emoji: '⚽',
+        });
+        const targetDiscordUserId = '700000000000000001';
+        await new StaffManagementService(context.client).appoint({
+          authorization: adminAuth,
+          clubId: club.id,
+          staffDiscordUserId: targetDiscordUserId,
+          staffType,
+          staffIsBot: false,
+        });
+
+        let completeRoleRemoval: (() => void) | undefined;
+        const roleRemovalPending = new Promise<void>((resolve) => {
+          completeRoleRemoval = resolve;
+        });
+        const remove = vi.fn((roleId: string) => {
+          void roleId;
+          return roleRemovalPending;
+        });
+        const member = {
+          manageable: true,
+          roles: {
+            cache: new Map([
+              [club.discordRoleId, {}],
+              [globalStaffRoleId, {}],
+            ]),
+            remove,
+            add: vi.fn(() => Promise.resolve()),
+          },
+        };
+        const fetchMember = vi.fn(() => Promise.resolve(member));
+        const roleCache = new Map([
+          [club.discordRoleId, { managed: false, position: 10 }],
+          [globalStaffRoleId, { managed: false, position: 20 }],
+        ]);
+        const guild = {
+          members: {
+            fetch: fetchMember,
+            fetchMe: vi.fn(),
+            me: {
+              permissions: { has: () => true },
+              roles: { highest: { position: 100 } },
+            },
+          },
+          roles: { cache: roleCache, fetch: vi.fn() },
+        };
+        const discord = {
+          guilds: {
+            cache: new Map([[guildId, guild]]),
+            fetch: vi.fn(),
+          },
+        } as unknown as Client;
+        const announcements = { publish: vi.fn(() => Promise.resolve(true)) };
+        const synchronization = new RoleSynchronizedMutationService(
+          new MemberRoleSynchronizationService(new DiscordMemberRoleAdapter(discord), logger),
+          announcements,
+          logger,
+        );
+        commandContext.staffManagementService = new StaffManagementService(
+          context.client,
+          new RosterMutationService(context.client, synchronization),
+        );
+        const interaction = new MockCommandInteraction(
+          'staff',
+          { subcommand: 'remove', team: club.id, staff_type: staffType },
+          staffChannel,
+          adminAuth,
+        );
+        const registry = {
+          resolve: (name: string) =>
+            commandDefinitions.find((candidate) => candidate.data.name === name) ?? null,
+        } as unknown as CommandRegistry;
+
+        const commandExecution = handleInteractionCreate(
+          interaction,
+          registry,
+          commandContext,
+          logger,
+        );
+        await vi.waitFor(() =>
+          expect(remove).toHaveBeenCalledWith(globalStaffRoleId, 'SL Bot roster synchronization'),
+        );
+        expect(interaction.edits).toHaveLength(0);
+        expect(announcements.publish).not.toHaveBeenCalled();
+        await expect(
+          context.client.clubMembership.findFirstOrThrow({
+            where: { clubId: club.id, membershipType: staffType },
+          }),
+        ).resolves.toMatchObject({ status: 'ACTIVE' });
+
+        completeRoleRemoval?.();
+        await commandExecution;
+
+        expect(fetchMember).toHaveBeenCalledWith({
+          user: targetDiscordUserId,
+          force: true,
+        });
+        expect(remove).toHaveBeenCalledTimes(1);
+        expect(remove).not.toHaveBeenCalledWith(club.discordRoleId);
+        expect(announcements.publish).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'DEMOTED',
+            discordUserId: targetDiscordUserId,
+            actorDiscordUserId: adminAuth.discordUserId,
+          }),
+        );
+        expect(interaction.edits).toHaveLength(1);
+        await expect(
+          context.client.clubMembership.findFirstOrThrow({
+            where: { clubId: club.id, membershipType: 'PLAYER' },
+          }),
+        ).resolves.toMatchObject({ status: 'ACTIVE' });
+        await expect(
+          context.client.clubMembership.findFirstOrThrow({
+            where: { clubId: club.id, membershipType: staffType },
+          }),
+        ).resolves.toMatchObject({ status: 'ENDED' });
+      },
+    );
+
     it('enforces one active staff appointment per user league-wide', async () => {
       const clubService = new ClubManagementService(context.client);
       const staffService = new StaffManagementService(context.client);
@@ -460,7 +603,12 @@ describe('Stage 4A Polish Verification', () => {
 
       expect(commandContext.offerDeliveryService.createAndDeliver).toHaveBeenCalledWith(
         expect.objectContaining({ destinationClubId: club.id }),
-        { sourceTeamRoleColor: 0xf97316 },
+        {
+          sourceTeamRoleColor: 0xf97316,
+          sourceTeamRoleName: 'T1',
+          guildName: 'Development League',
+          guildIconUrl: null,
+        },
       );
       expect(interaction.followUps).toEqual([]);
       expect(interaction.edits[0]?.embeds?.[0]?.data.title).toBe('✅ Contract Offer Sent');
@@ -528,6 +676,64 @@ describe('Stage 4A Polish Verification', () => {
   });
 
   describe('5. Roster Reference Formatting', () => {
+    it('counts all staff while showing only non-staff members as ordinary players', async () => {
+      const club = await new ClubManagementService(context.client).create({
+        authorization: adminAuth,
+        discordRoleId: '300000000000000001',
+        emoji: '⚽',
+      });
+      const staffService = new StaffManagementService(context.client);
+      const rosterService = new RosterManagementService(context.client);
+      const staffMembers = [
+        ['700000000000000001', 'TEAM_MANAGER'],
+        ['700000000000000002', 'ASSISTANT_MANAGER'],
+        ['700000000000000003', 'PLAYER_MANAGER'],
+      ] as const;
+      for (const [staffDiscordUserId, staffType] of staffMembers) {
+        await staffService.appoint({
+          authorization: adminAuth,
+          clubId: club.id,
+          staffDiscordUserId,
+          staffType,
+          staffIsBot: false,
+        });
+      }
+      const ordinaryPlayerId = '800000000000000001';
+      await rosterService.add({
+        authorization: adminAuth,
+        clubId: club.id,
+        playerDiscordUserId: ordinaryPlayerId,
+        playerIsBot: false,
+      });
+
+      const active = await rosterService.list(guildId, club.id);
+      expect(active.allActiveMembers).toHaveLength(4);
+      expect(active.activeStaffUserIds.size).toBe(3);
+      expect(active.staff.map(({ membershipType }) => membershipType)).toEqual([
+        'ASSISTANT_MANAGER',
+        'PLAYER_MANAGER',
+        'TEAM_MANAGER',
+      ]);
+      expect(active.ordinaryPlayers.map(({ user }) => user.discordUserId)).toEqual([
+        ordinaryPlayerId,
+      ]);
+
+      await staffService.remove(adminAuth, club.id, 'ASSISTANT_MANAGER');
+      const afterRemoval = await rosterService.list(guildId, club.id);
+      expect(afterRemoval.allActiveMembers).toHaveLength(4);
+      expect(afterRemoval.staff).toHaveLength(2);
+      expect(afterRemoval.ordinaryPlayers.map(({ user }) => user.discordUserId).sort()).toEqual([
+        '700000000000000002',
+        ordinaryPlayerId,
+      ]);
+      expect(
+        new Set([
+          ...afterRemoval.staff.map(({ user }) => user.discordUserId),
+          ...afterRemoval.ordinaryPlayers.map(({ user }) => user.discordUserId),
+        ]).size,
+      ).toBe(4);
+    });
+
     it('formats roster embed to match reference structure', async () => {
       const setupService = new GuildSetupService(context.client);
       await setupService.setupChannels({
@@ -615,6 +821,7 @@ describe('Stage 4A Polish Verification', () => {
 
       const fields = embedData.fields ?? [];
       const fieldNames = fields.map((f) => f.name);
+      const fieldByName = new Map(fields.map(({ name, value }) => [name, value]));
 
       expect(fieldNames).not.toContain('Team');
       expect(
@@ -631,6 +838,10 @@ describe('Stage 4A Polish Verification', () => {
       expect(fieldNames).not.toContain('📋 Assistant Coach(es)');
       expect(fieldNames).toContain('──────── Players ────────');
       expect(fieldNames).toContain('🏃 Players');
+      expect(fieldByName.get('📊 Roster Count')).toBe('2/17');
+      expect(fieldByName.get('👑 Team Manager')).toBe(`<@${tmUserId}>`);
+      expect(fieldByName.get('🏃 Players')).toContain(`<@${playerUserId}>`);
+      expect(fieldByName.get('🏃 Players')).not.toContain(tmUserId);
     });
   });
 });

@@ -1,11 +1,11 @@
 import type { Club, LeagueUser, Offer, PrismaClient } from '@prisma/client';
 
 import {
-  AlreadyMemberOfClubError,
   BotUserNotAllowedError,
   ClubInactiveError,
   DuplicateOfferError,
   EntityNotFoundError,
+  MemberAlreadySignedError,
   SquadFullError,
   StaffMemberCannotReceiveOffersError,
 } from '../domain/errors.js';
@@ -62,6 +62,11 @@ export class OfferCreationService {
       const existingPlayer = await users.getByDiscordUserId(input.playerDiscordUserId);
       const memberships = new MembershipRepository(transaction);
       if (existingPlayer !== null) {
+        const activeMembership = await memberships.getActivePlayerMembership(
+          authorization.guild.id,
+          existingPlayer.id,
+        );
+        if (activeMembership !== null) throw new MemberAlreadySignedError();
         const staffMembership = await memberships.getActiveStaffMembershipForUserInGuild(
           authorization.guild.id,
           existingPlayer.id,
@@ -81,9 +86,7 @@ export class OfferCreationService {
         authorization.guild.id,
         player.id,
       );
-      if (activeMembership?.clubId === destinationClub.id) {
-        throw new AlreadyMemberOfClubError('player is already active on the destination team');
-      }
+      if (activeMembership !== null) throw new MemberAlreadySignedError();
       const playerCount = await memberships.countActivePlayers(destinationClub.id);
       const effectiveSquadLimit = getEffectiveSquadLimit(destinationClub, authorization.settings);
       if (playerCount >= effectiveSquadLimit) {
@@ -102,10 +105,7 @@ export class OfferCreationService {
         offeredByUserId: offeredBy.id,
         expiresAt,
       });
-      const sourceClub =
-        activeMembership === null
-          ? null
-          : await clubs.getByIdInGuild(activeMembership.clubId, authorization.guild.id);
+      const sourceClub = null;
       await new AuditEventRepository(transaction).create({
         guildId: authorization.guild.id,
         actorUserId: offeredBy.id,
@@ -118,7 +118,7 @@ export class OfferCreationService {
           playerUserId: player.id,
           expiresAt: offer.expiresAt.toISOString(),
         },
-        metadata: { sourceClubId: sourceClub?.id ?? null },
+        metadata: { sourceClubId: null },
       });
       return {
         offer,
