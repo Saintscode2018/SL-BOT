@@ -36,8 +36,8 @@ describe('team identity formatter', () => {
   });
 
   it('renders footer-safe Unicode/custom identities without mention markup or raw IDs', () => {
-    expect(formatTeamIdentity(unicodeTeam, 'footer')).toBe('🔥 @T1');
-    expect(formatTeamIdentity(customTeam, 'footer')).toBe('.Newcastle. @T2');
+    expect(formatTeamIdentity(unicodeTeam, 'footer')).toBe('🔥 T1');
+    expect(formatTeamIdentity(customTeam, 'footer')).toBe('.Newcastle. T2');
     const footer = formatTeamIdentity(customTeam, 'footer');
     expect(footer).not.toMatch(/<a?:|<@&|\d{17,20}/u);
   });

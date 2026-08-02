@@ -1,6 +1,7 @@
 import type { Client } from 'discord.js';
 import { describe, expect, it, vi } from 'vitest';
 
+import { TransferAnnouncementDeliveryError } from '../../src/domain/errors.js';
 import type { TransferAnnouncementPlan } from '../../src/domain/roster-mutation.js';
 import { DiscordTransferAnnouncementAdapter } from '../../src/bot/transfer-announcement-adapter.js';
 import { DiscordTransferAnnouncementPresentationProvider } from '../../src/bot/transfer-announcement-presentation.js';
@@ -13,11 +14,11 @@ const announcement: TransferAnnouncementPlan = {
   channelId: '200000000000000001',
   type: 'SIGNED',
   discordUserId: '300000000000000001',
-  occurredAt: new Date('2026-08-02T12:00:00.000Z'),
   teamIdentity: {
     emoji: '⚽',
     discordRoleId: '400000000000000001',
   },
+  occurredAt: new Date('2026-08-02T12:00:00Z'),
   roster: {
     currentSize: 4,
     maximumSize: 17,
@@ -32,16 +33,20 @@ const announcement: TransferAnnouncementPlan = {
       username: 'ARDA2',
       avatarUrl: 'https://cdn.discordapp.com/avatars/player/avatar.png',
     },
+    teamManager: {
+      username: 'Manager',
+      avatarUrl: 'https://cdn.discordapp.com/avatars/tm/avatar.png',
+    },
   },
 };
 
 describe('transfer-market announcements', () => {
-  it('renders the structured Offer Accepted transaction from supplied presentation data', async () => {
+  it('renders a structured accepted offer announcement into the target channel', async () => {
     const send = vi.fn((payload: unknown) => {
       void payload;
       return Promise.resolve();
     });
-    const fetch = vi.fn(() =>
+    const fetchChannel = vi.fn(() =>
       Promise.resolve({
         guildId: announcement.discordGuildId,
         isSendable: () => true,
@@ -49,22 +54,28 @@ describe('transfer-market announcements', () => {
       }),
     );
     const client = {
-      channels: { fetch },
+      channels: {
+        fetch: fetchChannel,
+      },
     } as unknown as Client;
+
     await new DiscordTransferAnnouncementAdapter(client).send(announcement);
-    expect(fetch).toHaveBeenCalledWith(announcement.channelId);
+
+    expect(fetchChannel).toHaveBeenCalledWith('200000000000000001');
     const payload = vi.mocked(send).mock.calls[0]![0] as {
+      allowedMentions: { parse: string[] };
       embeds: Array<{
         toJSON(): {
           author?: { name: string; icon_url?: string };
+          title?: string;
           description?: string;
           color?: number;
-          title?: string;
           footer?: { text: string; icon_url?: string };
           thumbnail?: { url: string };
         };
       }>;
     };
+    expect(payload.allowedMentions).toEqual({ parse: [] });
     expect(payload.embeds[0]!.toJSON()).toMatchObject({
       author: {
         name: 'Stage 4B League',
@@ -72,7 +83,7 @@ describe('transfer-market announcements', () => {
       },
       title: '✅ Offer Accepted - T1',
       description:
-        '<@300000000000000001> has accepted the offer from ⚽ <@&400000000000000001>\n\n📊 Roster: 4/17\n\n👑 Team Manager: <@300000000000000009>',
+        '> <@300000000000000001> `ARDA2` has accepted the offer from ⚽ <@&400000000000000001>\n> 📊 Roster: 4/17\n> 👑 Team Manager: <@300000000000000009> `Manager`',
       color: 0x123456,
       footer: {
         text: 'Player: ARDA2 • 02.08.2026 12:00 UTC',
@@ -152,8 +163,8 @@ describe('transfer-market announcements', () => {
       color: 0xf97316,
       fields: [
         {
-          name: 'Appointment',
-          value: `<@${plan.discordUserId}> has been appointed as <@&${staffRoleId}> for <:T1:987654321098765432> <@&${plan.teamIdentity.discordRoleId}> by <@300000000000000099>!`,
+          name: '👑 Appointment',
+          value: `> <@${plan.discordUserId}> \`Unknown User\` has been appointed as <@&${staffRoleId}> for <:T1:987654321098765432> <@&${plan.teamIdentity.discordRoleId}> by <@300000000000000099> \`ardaryusz\`!`,
         },
       ],
       footer: {
@@ -219,8 +230,8 @@ describe('transfer-market announcements', () => {
       color: 0x3498db,
       fields: [
         {
-          name: 'Demotion',
-          value: `<@${plan.discordUserId}> has been demoted to player for ⚽ <@&${plan.teamIdentity.discordRoleId}> by <@300000000000000099>!`,
+          name: '📉 Demotion',
+          value: `> <@${plan.discordUserId}> \`Unknown User\` has been demoted to player for ⚽ <@&${plan.teamIdentity.discordRoleId}> by <@300000000000000099> \`ardaryusz\`!`,
         },
       ],
       footer: {
@@ -268,7 +279,7 @@ describe('transfer-market announcements', () => {
     const embed = payload.embeds[0]!.toJSON();
     expect(embed.title).toBe('Team Transaction (Demotion)');
     expect(embed.fields?.[0]?.value).toBe(
-      `<@${plan.discordUserId}> has been demoted to player for ⚽ <@&400000000000000001> by <@300000000000000099>!`,
+      `> <@${plan.discordUserId}> \`Unknown User\` has been demoted to player for ⚽ <@&400000000000000001> by <@300000000000000099> \`ardaryusz\`!`,
     );
     expect(embed.title).not.toMatch(/@|400000000000000001/u);
   });
@@ -326,6 +337,18 @@ describe('transfer-market announcements', () => {
         },
       },
     });
+  });
+
+  it('fails with a delivery error when the configured channel is missing, cross-guild, or non-sendable', async () => {
+    const client = {
+      channels: {
+        fetch: vi.fn(() => Promise.resolve(null)),
+      },
+    } as unknown as Client;
+
+    await expect(new DiscordTransferAnnouncementAdapter(client).send(announcement)).rejects.toThrow(
+      TransferAnnouncementDeliveryError,
+    );
   });
 
   it('logs delivery failure and keeps the completed state successful', async () => {

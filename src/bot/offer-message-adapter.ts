@@ -26,7 +26,9 @@ import {
   BOT_EMOJIS,
   BOT_LABELS,
   createGuildAuthor,
+  formatBlockquote,
   formatDiscordRelative,
+  formatUserWithVisibleName,
   resolveTeamRoleColor,
 } from './presentation/index.js';
 
@@ -61,32 +63,29 @@ function offerEmbed(
     guildName: presentation.guildName?.trim() || result.leagueName || 'SL League',
     guildIconUrl: presentation.guildIconUrl,
   });
+
+  const managerFormatted = formatUserWithVisibleName(
+    result.offeredBy.discordUserId,
+    presentation.offeredByUsername || 'Unknown User',
+  );
+
+  const detailsPanel = formatBlockquote([
+    `${BOT_EMOJIS.teamManager} ${BOT_LABELS.teamManager}: ${managerFormatted}`,
+    `${BOT_EMOJIS.roster} ${BOT_LABELS.roster}: ${result.activePlayerCount}/${result.effectiveSquadLimit}`,
+    `${BOT_EMOJIS.expiry} ${BOT_LABELS.expires}: ${formatDiscordRelative(result.offer.expiresAt)}`,
+  ]);
+
   const embed = new EmbedBuilder()
     .setColor(resolveTeamRoleColor(presentation.sourceTeamRoleColor, BOT_COLORS.info))
     .setAuthor(author)
     .setTitle(BOT_LABELS.contractOffer)
-    .addFields(
-      {
-        name: BOT_LABELS.sourceTeam,
-        value: formatTeamIdentity(sourceTeam, 'title'),
-        inline: false,
-      },
-      {
-        name: BOT_LABELS.teamManager,
-        value: `<@${result.offeredBy.discordUserId}>`,
-        inline: false,
-      },
-      {
-        name: `${BOT_EMOJIS.roster} ${BOT_LABELS.squad}`,
-        value: `${result.activePlayerCount}/${result.effectiveSquadLimit}`,
-        inline: false,
-      },
-      {
-        name: `${BOT_EMOJIS.expiry} ${BOT_LABELS.expires}`,
-        value: formatDiscordRelative(result.offer.expiresAt),
-        inline: false,
-      },
-    );
+    .addFields({
+      name: BOT_LABELS.sourceTeam,
+      value: formatTeamIdentity(sourceTeam, 'title'),
+      inline: false,
+    })
+    .setDescription(detailsPanel);
+
   const thumbnail = getTeamThumbnail(result.destinationClub.emoji);
   if (thumbnail !== null) {
     embed.setThumbnail(thumbnail);

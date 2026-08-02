@@ -44,9 +44,18 @@ class DiscordCommandOptions implements CommandInteractionOptions {
     return this.interaction.options.getInteger(name);
   }
 
-  public getUser(name: string): { id: string; bot: boolean } | null {
+  public getUser(name: string): { id: string; bot: boolean; displayName?: string } | null {
     const user = this.interaction.options.getUser(name);
-    return user === null ? null : { id: user.id, bot: user.bot };
+    if (user === null) return null;
+    const member = this.interaction.options.getMember(name);
+    const displayName =
+      member &&
+      typeof member === 'object' &&
+      'displayName' in member &&
+      typeof member.displayName === 'string'
+        ? member.displayName.trim()
+        : user.globalName || user.username;
+    return { id: user.id, bot: user.bot, displayName: displayName || 'Unknown User' };
   }
 
   public getRole(name: string): { id: string } | null {
@@ -95,6 +104,23 @@ class DiscordCommandInteraction implements CommandInteraction {
     return this.interaction.user.id;
   }
 
+  public get userDisplayName(): string {
+    const member = this.interaction.member;
+    if (
+      member &&
+      typeof member === 'object' &&
+      'displayName' in member &&
+      typeof member.displayName === 'string'
+    ) {
+      return (
+        member.displayName.trim() ||
+        this.interaction.user.globalName ||
+        this.interaction.user.username
+      );
+    }
+    return this.interaction.user.globalName || this.interaction.user.username;
+  }
+
   public get channelId(): string | undefined {
     return this.interaction.channelId;
   }
@@ -130,6 +156,18 @@ class DiscordCommandInteraction implements CommandInteraction {
   } | null {
     const role = this.interaction.guild?.roles.cache.get(roleId);
     return role === undefined ? null : { id: role.id, name: role.name, color: role.color };
+  }
+
+  public getGuildMemberDisplayName(userId: string): string | null {
+    const member = this.interaction.guild?.members.cache.get(userId);
+    if (member) {
+      return member.displayName.trim() || member.user.globalName || member.user.username;
+    }
+    const user = this.interaction.client.users.cache.get(userId);
+    if (user) {
+      return user.globalName || user.username;
+    }
+    return null;
   }
 
   public async executeDebugReset(database: CommandContext['database']): Promise<void> {

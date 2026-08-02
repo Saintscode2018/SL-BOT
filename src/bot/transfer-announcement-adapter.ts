@@ -13,12 +13,15 @@ import {
   createActorFooter,
   createGuildAuthor,
   createPlayerFooter,
+  formatBlockquote,
   formatTeamPlainRoleName,
+  formatUserWithVisibleName,
   resolveTeamRoleColor,
 } from './presentation/index.js';
 
 function announcementDescription(plan: TransferAnnouncementPlan): string {
-  const member = `<@${plan.discordUserId}>`;
+  const subjectName = plan.presentation?.subject?.username || 'Unknown User';
+  const member = formatUserWithVisibleName(plan.discordUserId, subjectName);
   const team = formatTeamIdentity(plan.teamIdentity, 'message');
   switch (plan.type) {
     case 'SIGNED':
@@ -60,11 +63,18 @@ export class DiscordTransferAnnouncementAdapter implements TransferAnnouncementA
       discordRoleId: plan.teamIdentity.discordRoleId,
       discordRoleName: plan.presentation?.teamRoleName,
     });
-    const member = `<@${plan.discordUserId}>`;
+    const subjectName = plan.presentation?.subject?.username || 'Unknown User';
+    const memberFormatted = formatUserWithVisibleName(plan.discordUserId, subjectName);
     const team = formatTeamIdentity(plan.teamIdentity, 'message');
     const thumbnail = getTeamThumbnail(plan.teamIdentity.emoji);
-    const actorMention =
-      plan.actorDiscordUserId === undefined ? 'an administrator' : `<@${plan.actorDiscordUserId}>`;
+
+    const actorFormatted =
+      plan.actorDiscordUserId === undefined
+        ? 'an administrator'
+        : formatUserWithVisibleName(
+            plan.actorDiscordUserId,
+            plan.presentation?.actor?.username || 'Unknown User',
+          );
     const actorUsername = plan.presentation?.actor?.username.trim() || 'Unknown User';
     const actorAvatarUrl = plan.presentation?.actor?.avatarUrl ?? null;
     const author = createGuildAuthor({ guildName: serverName, guildIconUrl: serverIconUrl });
@@ -72,23 +82,33 @@ export class DiscordTransferAnnouncementAdapter implements TransferAnnouncementA
     const embed =
       plan.type === 'APPOINTED' || plan.type === 'DEMOTED'
         ? (() => {
+            const isAppointed = plan.type === 'APPOINTED';
             const footer = createActorFooter({
-              verb: plan.type === 'APPOINTED' ? 'Appointed' : 'Demoted',
+              verb: isAppointed ? 'Appointed' : 'Demoted',
               username: actorUsername,
               avatarUrl: actorAvatarUrl,
               timestamp: plan.occurredAt,
             });
+
+            const staffRoleMention =
+              plan.staffRoleId === undefined
+                ? (plan.staffRole ?? 'staff')
+                : `<@&${plan.staffRoleId}>`;
+
+            const panelText = isAppointed
+              ? `${memberFormatted} has been appointed as ${staffRoleMention} for ${team} by ${actorFormatted}!`
+              : `${memberFormatted} has been demoted to player for ${team} by ${actorFormatted}!`;
+
             return createInfoEmbed({
               author,
-              title: `${teamRoleName} Transaction (${plan.type === 'APPOINTED' ? BOT_LABELS.appointment : BOT_LABELS.demotion})`,
+              title: `${teamRoleName} Transaction (${isAppointed ? BOT_LABELS.appointment : BOT_LABELS.demotion})`,
               color: resolveTeamRoleColor(roleColor, BOT_COLORS.info),
               fields: [
                 {
-                  name: plan.type === 'APPOINTED' ? BOT_LABELS.appointment : BOT_LABELS.demotion,
-                  value:
-                    plan.type === 'APPOINTED'
-                      ? `${member} has been appointed as ${plan.staffRoleId === undefined ? (plan.staffRole ?? 'staff') : `<@&${plan.staffRoleId}>`} for ${team} by ${actorMention}!`
-                      : `${member} has been demoted to player for ${team} by ${actorMention}!`,
+                  name: isAppointed
+                    ? `${BOT_EMOJIS.appointment} ${BOT_LABELS.appointment}`
+                    : `${BOT_EMOJIS.demotion} ${BOT_LABELS.demotion}`,
+                  value: formatBlockquote([panelText]),
                   inline: false,
                 },
               ],
@@ -104,10 +124,23 @@ export class DiscordTransferAnnouncementAdapter implements TransferAnnouncementA
                 avatarUrl: plan.presentation?.subject?.avatarUrl ?? null,
                 timestamp: plan.occurredAt,
               });
+
+              const tmUserId = plan.roster?.teamManagerDiscordUserId;
+              const tmUsername = plan.presentation?.teamManager?.username;
+              const tmFormatted = tmUserId
+                ? formatUserWithVisibleName(tmUserId, tmUsername || 'Unknown User')
+                : BOT_LABELS.vacant;
+
+              const description = formatBlockquote([
+                `${memberFormatted} has accepted the offer from ${team}`,
+                `${BOT_EMOJIS.roster} ${BOT_LABELS.roster}: ${plan.roster?.currentSize ?? 0}/${plan.roster?.maximumSize ?? 0}`,
+                `${BOT_EMOJIS.teamManager} ${BOT_LABELS.teamManager}: ${tmFormatted}`,
+              ]);
+
               return createInfoEmbed({
                 author,
                 title: `${BOT_EMOJIS.success} ${BOT_LABELS.offerAccepted} - ${teamRoleName}`,
-                description: `${member} has accepted the offer from ${team}\n\n${BOT_EMOJIS.roster} ${BOT_LABELS.roster}: ${plan.roster?.currentSize ?? 0}/${plan.roster?.maximumSize ?? 0}\n\n${BOT_EMOJIS.teamManager} ${BOT_LABELS.teamManager}: ${plan.roster?.teamManagerDiscordUserId ? `<@${plan.roster.teamManagerDiscordUserId}>` : BOT_LABELS.vacant}`,
+                description,
                 color: resolveTeamRoleColor(roleColor, BOT_COLORS.info),
                 thumbnail,
                 footer: footer.text,

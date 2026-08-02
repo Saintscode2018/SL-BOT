@@ -65,7 +65,8 @@ export function formatTeamIdentity(team: TeamIdentitySource, mode: TeamIdentityM
   }
 
   if (mode === 'footer') {
-    return `${renderPlainTextEmoji(emoji)} ${role}`;
+    const roleNameWithoutAt = roleName ? roleName.replace(/^@+/u, '') : unknownTeamRoleLabel;
+    return `${renderPlainTextEmoji(emoji)} ${roleNameWithoutAt}`;
   }
 
   return limitAutocompleteIdentity(role);

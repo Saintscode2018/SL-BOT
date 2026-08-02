@@ -38,6 +38,8 @@ describe('Presentation System Foundation', () => {
       expect(BOT_EMOJIS.success).toBe('✅');
       expect(BOT_EMOJIS.error).toBe('❌');
       expect(BOT_EMOJIS.warning).toBe('⚠️');
+      expect(BOT_EMOJIS.appointment).toBe('👑');
+      expect(BOT_EMOJIS.demotion).toBe('📉');
     });
   });
 
@@ -180,7 +182,7 @@ describe('Presentation System Foundation', () => {
       expect(formatTeamMessageIdentity(sampleTeam)).toBe('⚽ <@&400000000000000001>');
       expect(formatTeamReadableTitle(sampleTeam)).toBe('⚽ @Chelsea FC');
       expect(formatTeamPlainRoleName(sampleTeam)).toBe('Chelsea FC');
-      expect(formatTeamFooterIdentity(sampleTeam)).toBe('⚽ @Chelsea FC');
+      expect(formatTeamFooterIdentity(sampleTeam)).toBe('⚽ Chelsea FC');
       expect(formatTeamAutocompleteIdentity(sampleTeam)).toBe('@Chelsea FC');
     });
 

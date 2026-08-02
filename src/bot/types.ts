@@ -49,12 +49,14 @@ export interface CommandInteraction {
   readonly guildIconUrl?: string | undefined;
   readonly guildOwnerId?: string | undefined;
   readonly userId?: string | undefined;
+  readonly userDisplayName?: string | undefined;
   readonly channelId?: string | undefined;
   readonly memberRoleIds?: readonly string[] | undefined;
   readonly hasAdministratorPermission?: boolean | undefined;
   readonly options?: CommandInteractionOptions | undefined;
   getGuildEmojis?(): readonly GuildEmoji[];
   getGuildRoleMetadata?(roleId: string): GuildRoleMetadata | null;
+  getGuildMemberDisplayName?(userId: string): string | null;
   executeDebugReset?(database: PrismaClient): Promise<void>;
   reply(response: SafeInteractionResponse): Promise<void>;
 
@@ -68,7 +70,7 @@ export interface CommandInteractionOptions {
   getSubcommand(): string | null;
   getString(name: string): string | null;
   getInteger(name: string): number | null;
-  getUser(name: string): { id: string; bot: boolean } | null;
+  getUser(name: string): { id: string; bot: boolean; displayName?: string } | null;
   getRole(name: string): { id: string } | null;
   getChannel(name: string): { id: string; type: number } | null;
 }

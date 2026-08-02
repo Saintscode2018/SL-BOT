@@ -1,4 +1,4 @@
-import type { Client } from 'discord.js';
+import type { Client, GuildMember, User } from 'discord.js';
 
 import type {
   SetupAuditMessage,
@@ -15,12 +15,26 @@ export class DiscordSetupAuditMessageAdapter implements SetupAuditMessageAdapter
       throw new Error('configured audit channel is not sendable');
     }
 
+    const guild = 'guild' in channel && channel.guild ? channel.guild : null;
+    const member: GuildMember | null =
+      guild && 'members' in guild && guild.members?.cache
+        ? (guild.members.cache.get(message.actorDiscordUserId) ?? null)
+        : null;
+    const user: User | null = this.client.users?.cache?.get(message.actorDiscordUserId) ?? null;
+    const actorDisplayName =
+      member?.displayName?.trim() ||
+      member?.user?.globalName ||
+      member?.user?.username ||
+      user?.globalName ||
+      user?.username ||
+      'Unknown User';
+
     const embed = createSuccessEmbed({
       title: message.title,
       description: message.description,
       fields: [
         ...message.fields.map((field) => ({ ...field, inline: field.inline ?? false })),
-        createActorField('Configured', message.actorDiscordUserId),
+        createActorField('Configured', message.actorDiscordUserId, actorDisplayName),
       ],
       timestamp: message.timestamp,
     });

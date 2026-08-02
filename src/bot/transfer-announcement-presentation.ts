@@ -11,13 +11,27 @@ function resolveUser(
   discordUserId: string | undefined,
 ): TransferUserPresentation | null {
   if (discordUserId === undefined) return null;
-  const member = guild.members.cache.get(discordUserId);
-  if (member === undefined) return null;
-  const username = member.displayName.trim() || member.user.globalName || member.user.username;
-  return {
-    username,
-    avatarUrl: member.displayAvatarURL(),
-  };
+  const member = guild.members?.cache?.get(discordUserId);
+  if (member !== undefined && member !== null) {
+    const username = member.displayName?.trim() || member.user?.globalName || member.user?.username;
+    if (username) {
+      return {
+        username,
+        avatarUrl: typeof member.displayAvatarURL === 'function' ? member.displayAvatarURL() : null,
+      };
+    }
+  }
+  const user = guild.client?.users?.cache?.get(discordUserId);
+  if (user !== undefined && user !== null) {
+    const username = user.globalName || user.username;
+    if (username) {
+      return {
+        username,
+        avatarUrl: typeof user.displayAvatarURL === 'function' ? user.displayAvatarURL() : null,
+      };
+    }
+  }
+  return null;
 }
 
 export class DiscordTransferAnnouncementPresentationProvider implements TransferAnnouncementPresentationProvider {
@@ -31,11 +45,12 @@ export class DiscordTransferAnnouncementPresentationProvider implements Transfer
       ...plan,
       presentation: {
         serverName: guild.name,
-        serverIconUrl: guild.iconURL(),
+        serverIconUrl: typeof guild.iconURL === 'function' ? guild.iconURL() : null,
         teamRoleName: teamRole?.name ?? null,
         teamRoleColor: teamRole?.color ?? null,
         subject: resolveUser(guild, plan.discordUserId),
         actor: resolveUser(guild, plan.actorDiscordUserId),
+        teamManager: resolveUser(guild, plan.roster?.teamManagerDiscordUserId ?? undefined),
       },
     });
   }

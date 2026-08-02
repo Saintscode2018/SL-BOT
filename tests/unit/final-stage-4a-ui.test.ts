@@ -438,7 +438,7 @@ describe('final Stage 4A command UI', () => {
 
       expect(interaction.deferrals[0]?.flags).toBe(MessageFlags.Ephemeral);
       expect(responseText(interaction)).toContain(
-        `Successfully ${verb} <@player-1> as the Team Manager of 🔵 <@&${team.discordRoleId}>.`,
+        `Successfully ${verb} <@player-1> \`Unknown User\` as the Team Manager of 🔵 <@&${team.discordRoleId}>.`,
       );
       const fields = interaction.edits[0]?.embeds?.[0]?.data.fields;
       expect(interaction.edits[0]?.embeds?.[0]?.data.color).toBe(0xf97316);
@@ -473,7 +473,7 @@ describe('final Stage 4A command UI', () => {
     expect(embed?.title).toBeUndefined();
     expect(embed?.description).toBe(`🔵 <@&${team.discordRoleId}> Roster`);
     expect(embed?.color).toBe(0xf97316);
-    expect(embed?.footer?.text).toBe('Roster for 🔵 @T1, Development League');
+    expect(embed?.footer?.text).toBe('Roster for 🔵 T1, Development League');
     expect(embed?.fields?.map(({ name }) => name)).toEqual([
       '📊 Roster Count',
       '👑 Team Manager',
@@ -515,7 +515,7 @@ describe('final Stage 4A command UI', () => {
       '<:Newcastle:987654321098765432> <@&300000000000000002> Roster',
     );
     expect(embed?.color).toBe(0x3498db);
-    expect(embed?.footer?.text).toBe('Roster for .Newcastle. @T2, Development League');
+    expect(embed?.footer?.text).toBe('Roster for .Newcastle. T2, Development League');
     expect(embed?.footer?.text).not.toMatch(/<:|<@&|\d{17,20}/u);
   });
 
@@ -573,9 +573,8 @@ describe('final Stage 4A command UI', () => {
     expect(offer.followUps).toEqual([]);
     expect(offer.edits[0]?.embeds?.[0]?.data.color).toBe(0xf97316);
     expect(offer.edits[0]?.embeds?.[0]?.data.description).toBe(
-      `A private contract offer has been sent to <@player-1> by <@${authorization.discordUserId}> on behalf of 🔵 <@&${team.discordRoleId}>.`,
+      `A private contract offer has been sent to <@player-1> \`Unknown User\` by <@${authorization.discordUserId}> \`Unknown User\` on behalf of 🔵 <@&${team.discordRoleId}>.`,
     );
-    expect(responseText(offer)).toContain('"name":"Source Team"');
     expect(responseText(offer)).not.toMatch(/Destination Team|Destination Club/);
   });
 

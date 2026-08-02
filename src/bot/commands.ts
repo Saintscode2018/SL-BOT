@@ -11,7 +11,10 @@ import {
   BOT_COLORS,
   BOT_EMOJIS,
   BOT_LABELS,
+  createGuildAuthor,
   formatTeamFooterIdentity,
+  formatUserWithVisibleName,
+  getUserDisplayName,
 } from './presentation/index.js';
 import { getTeamEmbedColor, resolveTeamPresentation } from './team-presentation.js';
 import type {
@@ -120,12 +123,19 @@ const staffPositions = [
 
 function staffDirectoryBlock(
   staff: ReadonlyArray<{ membershipType: string; user: { discordUserId: string } }>,
+  interaction?: CommandInteraction,
 ): string {
   const byType = new Map(staff.map((membership) => [membership.membershipType, membership.user]));
   return staffPositions
     .map(({ type, emoji, name }) => {
       const user = byType.get(type);
-      return `${emoji} ${name}: ${user ? `<@${user.discordUserId}>` : BOT_LABELS.vacant}`;
+      const userFormatted = user
+        ? formatUserWithVisibleName(
+            user.discordUserId,
+            interaction ? getUserDisplayName(interaction, user.discordUserId) : 'Unknown User',
+          )
+        : BOT_LABELS.vacant;
+      return `${emoji} ${name}: ${userFormatted}`;
     })
     .join('\n');
 }
@@ -153,7 +163,7 @@ function chunkStaffDirectoryFields(
 function requiredUser(
   options: CommandInteractionOptions,
   name: string,
-): { id: string; bot: boolean } {
+): { id: string; bot: boolean; displayName?: string } {
   const value = options.getUser(name);
   if (value === null) throw new ConfigurationError(`${name} is required`);
   return value;
@@ -187,18 +197,22 @@ async function autocompleteTeam(
   interaction: CommandAutocompleteInteraction,
   context: CommandContext,
 ): Promise<void> {
-  if (interaction.guildId === null || interaction.focusedName !== 'team') {
+  if (!interaction.guildId) {
     await interaction.respond([]);
     return;
   }
-  await interaction.respond(
-    await context.clubManagementService.autocomplete(
-      interaction.guildId,
-      interaction.focusedValue,
-      25,
-      Object.fromEntries((interaction.getGuildRoles?.() ?? []).map((role) => [role.id, role.name])),
-    ),
+
+  const roleMetadata = interaction.getGuildRoles?.() ?? [];
+  const roleNamesById = Object.fromEntries(roleMetadata.map((role) => [role.id, role.name]));
+
+  const choices = await context.clubManagementService.autocomplete(
+    interaction.guildId,
+    interaction.focusedValue,
+    25,
+    roleNamesById,
   );
+
+  await interaction.respond(choices);
 }
 
 const healthCommand: CommandDefinition = {
@@ -305,6 +319,7 @@ const setupCommand: CommandDefinition = {
   async execute(interaction, context) {
     const execution = await enforceChannelPolicy(interaction, context);
     const subcommand = execution.options.getSubcommand();
+    const actorDisplayName = getUserDisplayName(interaction, execution.authorization.discordUserId);
 
     if (subcommand === 'league') {
       const timeoutMinutes = execution.options.getInteger('offer_timeout_minutes');
@@ -335,7 +350,7 @@ const setupCommand: CommandDefinition = {
         description: withAuditWarning(description, auditPublished),
         fields: [
           ...auditFields,
-          createActorField('Configured', execution.authorization.discordUserId),
+          createActorField('Configured', execution.authorization.discordUserId, actorDisplayName),
         ],
       });
       await interaction.editReply({ embeds: [embed] });
@@ -385,7 +400,7 @@ const setupCommand: CommandDefinition = {
         description: withAuditWarning(description, auditPublished),
         fields: [
           ...auditFields,
-          createActorField('Configured', execution.authorization.discordUserId),
+          createActorField('Configured', execution.authorization.discordUserId, actorDisplayName),
         ],
       });
       await interaction.editReply({ embeds: [embed] });
@@ -430,7 +445,7 @@ const setupCommand: CommandDefinition = {
         description: withAuditWarning(description, auditPublished),
         fields: [
           ...auditFields,
-          createActorField('Configured', execution.authorization.discordUserId),
+          createActorField('Configured', execution.authorization.discordUserId, actorDisplayName),
         ],
       });
       await interaction.editReply({ embeds: [embed] });
@@ -530,6 +545,7 @@ const teamCommand: CommandDefinition = {
     const execution = await enforceChannelPolicy(interaction, context);
     const subcommand = execution.options.getSubcommand();
     const guildEmojis = interaction.getGuildEmojis?.() ?? [];
+    const actorDisplayName = getUserDisplayName(interaction, execution.authorization.discordUserId);
 
     if (subcommand === 'add') {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -552,7 +568,7 @@ const teamCommand: CommandDefinition = {
         fields: [
           { name: 'Role', value: `<@&${club.discordRoleId}>`, inline: true },
           { name: 'Emoji', value: club.emoji, inline: true },
-          createActorField('Added', execution.authorization.discordUserId),
+          createActorField('Added', execution.authorization.discordUserId, actorDisplayName),
         ],
         thumbnail,
       });
@@ -586,7 +602,9 @@ const teamCommand: CommandDefinition = {
         title: `${BOT_EMOJIS.success} Team Updated`,
         description: `Successfully updated ${formatTeamIdentity(presentation.team, 'message')}.`,
         color: getTeamEmbedColor(presentation, BOT_COLORS.success),
-        fields: [createActorField('Edited', execution.authorization.discordUserId)],
+        fields: [
+          createActorField('Edited', execution.authorization.discordUserId, actorDisplayName),
+        ],
         thumbnail,
       });
 
@@ -613,7 +631,7 @@ const teamCommand: CommandDefinition = {
               'Historical memberships, staff appointments, offers, transactions, and audit records are preserved.',
             inline: false,
           },
-          createActorField('Removed', execution.authorization.discordUserId),
+          createActorField('Removed', execution.authorization.discordUserId, actorDisplayName),
         ],
         thumbnail,
       });
@@ -699,6 +717,7 @@ const limitCommand: CommandDefinition = {
   async execute(interaction, context) {
     const execution = await enforceChannelPolicy(interaction, context);
     const subcommand = execution.options.getSubcommand();
+    const actorDisplayName = getUserDisplayName(interaction, execution.authorization.discordUserId);
 
     if (subcommand === 'default') {
       const amount = requiredInteger(execution.options, 'amount');
@@ -711,7 +730,9 @@ const limitCommand: CommandDefinition = {
       const embed = createSuccessEmbed({
         title: `${BOT_EMOJIS.success} Squad Limit Updated`,
         description: `Guild-wide default squad limit set to **${result.defaultSquadLimit}** players.`,
-        fields: [createActorField('Updated', execution.authorization.discordUserId)],
+        fields: [
+          createActorField('Updated', execution.authorization.discordUserId, actorDisplayName),
+        ],
       });
 
       await interaction.editReply({ embeds: [embed] });
@@ -733,7 +754,9 @@ const limitCommand: CommandDefinition = {
         title: `${BOT_EMOJIS.success} Team Squad Limit Updated`,
         description: `Updated squad limit for ${formatTeamIdentity(presentation.team, 'message')} to **${result.override}** players.`,
         color: getTeamEmbedColor(presentation, BOT_COLORS.success),
-        fields: [createActorField('Updated', execution.authorization.discordUserId)],
+        fields: [
+          createActorField('Updated', execution.authorization.discordUserId, actorDisplayName),
+        ],
       });
 
       await interaction.editReply({ embeds: [embed] });
@@ -753,7 +776,9 @@ const limitCommand: CommandDefinition = {
         title: `${BOT_EMOJIS.success} Team Squad Limit Reset`,
         description: `Reset squad limit for ${formatTeamIdentity(presentation.team, 'message')} to the guild default (**${result.effectiveLimit}** players).`,
         color: getTeamEmbedColor(presentation, BOT_COLORS.success),
-        fields: [createActorField('Reset', execution.authorization.discordUserId)],
+        fields: [
+          createActorField('Reset', execution.authorization.discordUserId, actorDisplayName),
+        ],
       });
 
       await interaction.editReply({ embeds: [embed] });
@@ -862,11 +887,14 @@ const staffCommand: CommandDefinition = {
   async execute(interaction, context) {
     const execution = await enforceChannelPolicy(interaction, context);
     const subcommand = execution.options.getSubcommand();
+    const actorDisplayName = getUserDisplayName(interaction, execution.authorization.discordUserId);
 
     if (subcommand === 'appoint') {
       const teamId = requiredString(execution.options, 'team');
       const user = requiredUser(execution.options, 'user');
       const staffType = requiredString(execution.options, 'staff_type') as StaffType;
+      const targetDisplayName = user.displayName || getUserDisplayName(interaction, user.id);
+
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.staffManagementService.appoint({
         authorization: execution.authorization,
@@ -878,11 +906,17 @@ const staffCommand: CommandDefinition = {
 
       const positionName = getFriendlyPositionName(staffType);
       const presentation = resolveTeamPresentation(interaction, result.club);
+      const targetFormatted = formatUserWithVisibleName(
+        result.user.discordUserId,
+        targetDisplayName,
+      );
       const embed = createSuccessEmbed({
         title: `${BOT_EMOJIS.success} Staff Member Appointed`,
-        description: `Successfully appointed <@${result.user.discordUserId}> as the ${positionName} of ${formatTeamIdentity(presentation.team, 'message')}.`,
+        description: `Successfully appointed ${targetFormatted} as the ${positionName} of ${formatTeamIdentity(presentation.team, 'message')}.`,
         color: getTeamEmbedColor(presentation, BOT_COLORS.success),
-        fields: [createActorField('Appointed', execution.authorization.discordUserId)],
+        fields: [
+          createActorField('Appointed', execution.authorization.discordUserId, actorDisplayName),
+        ],
       });
 
       await interaction.editReply({ embeds: [embed] });
@@ -899,13 +933,20 @@ const staffCommand: CommandDefinition = {
         staffType,
       );
 
+      const targetDisplayName = getUserDisplayName(interaction, result.user.discordUserId);
+      const targetFormatted = formatUserWithVisibleName(
+        result.user.discordUserId,
+        targetDisplayName,
+      );
       const positionName = getFriendlyPositionName(staffType);
       const presentation = resolveTeamPresentation(interaction, result.club);
       const embed = createSuccessEmbed({
         title: `${BOT_EMOJIS.success} Staff Member Removed`,
-        description: `Successfully removed <@${result.user.discordUserId}> as the ${positionName} of ${formatTeamIdentity(presentation.team, 'message')}.`,
+        description: `Successfully removed ${targetFormatted} as the ${positionName} of ${formatTeamIdentity(presentation.team, 'message')}.`,
         color: getTeamEmbedColor(presentation, BOT_COLORS.success),
-        fields: [createActorField('Removed', execution.authorization.discordUserId)],
+        fields: [
+          createActorField('Removed', execution.authorization.discordUserId, actorDisplayName),
+        ],
       });
 
       await interaction.editReply({ embeds: [embed] });
@@ -916,7 +957,7 @@ const staffCommand: CommandDefinition = {
     const selectedTeamId = execution.options.getString('team');
     if (selectedTeamId) {
       const staff = await context.staffManagementService.list(execution.guildId, selectedTeamId);
-      const activeTeams = await context.clubManagementService.listActive(execution.guildId);
+      const activeTeams = (await context.clubManagementService.listActive(execution.guildId)) ?? [];
       const selectedClubItem = activeTeams.find((item) => item.club.id === selectedTeamId);
       const presentation = selectedClubItem
         ? resolveTeamPresentation(interaction, selectedClubItem.club)
@@ -931,7 +972,7 @@ const staffCommand: CommandDefinition = {
               fields: [
                 {
                   name: '\u200b',
-                  value: `${formatTeamIdentity(selectedClubItem.club, 'message')}\n\n${staffDirectoryBlock(staff)}`,
+                  value: `${formatTeamIdentity(selectedClubItem.club, 'message')}\n\n${staffDirectoryBlock(staff, interaction)}`,
                   inline: false,
                 },
               ],
@@ -944,7 +985,7 @@ const staffCommand: CommandDefinition = {
       return;
     }
 
-    const activeTeams = await context.clubManagementService.listActive(execution.guildId);
+    const activeTeams = (await context.clubManagementService.listActive(execution.guildId)) ?? [];
     if (activeTeams.length === 0) {
       const embed = createInfoEmbed({
         title: 'Team Staff Directory',
@@ -959,7 +1000,7 @@ const staffCommand: CommandDefinition = {
         const staff = await context.staffManagementService.list(execution.guildId, club.id);
         return {
           name: '\u200b',
-          value: `${formatTeamIdentity(club, 'message')}\n\n${staffDirectoryBlock(staff)}`,
+          value: `${formatTeamIdentity(club, 'message')}\n\n${staffDirectoryBlock(staff, interaction)}`,
           inline: false,
         };
       }),
@@ -1008,19 +1049,46 @@ const rosterCommand: CommandDefinition = {
     const atmUser = staffByType.get('ASSISTANT_MANAGER');
     const pmUser = staffByType.get('PLAYER_MANAGER');
 
-    const tmLine = tmUser ? `<@${tmUser.discordUserId}>` : BOT_LABELS.none;
-    const atmLine = atmUser ? `<@${atmUser.discordUserId}>` : BOT_LABELS.none;
-    const pmLine = pmUser ? `<@${pmUser.discordUserId}>` : BOT_LABELS.none;
+    const tmLine = tmUser
+      ? formatUserWithVisibleName(
+          tmUser.discordUserId,
+          getUserDisplayName(interaction, tmUser.discordUserId),
+        )
+      : BOT_LABELS.none;
+    const atmLine = atmUser
+      ? formatUserWithVisibleName(
+          atmUser.discordUserId,
+          getUserDisplayName(interaction, atmUser.discordUserId),
+        )
+      : BOT_LABELS.none;
+    const pmLine = pmUser
+      ? formatUserWithVisibleName(
+          pmUser.discordUserId,
+          getUserDisplayName(interaction, pmUser.discordUserId),
+        )
+      : BOT_LABELS.none;
 
     const playerLines =
       result.ordinaryPlayers.length === 0
         ? BOT_LABELS.none
-        : result.ordinaryPlayers.map(({ user }) => `• <@${user.discordUserId}>`).join('\n');
+        : result.ordinaryPlayers
+            .map(
+              ({ user }) =>
+                `• ${formatUserWithVisibleName(
+                  user.discordUserId,
+                  getUserDisplayName(interaction, user.discordUserId),
+                )}`,
+            )
+            .join('\n');
 
     const leagueName = settings?.guild?.name ?? execution.guildName;
+    const author = createGuildAuthor({
+      guildName: leagueName,
+      guildIconUrl: interaction.guildIconUrl ?? null,
+    });
 
     const embed = createInfoEmbed({
-      author: { name: leagueName },
+      author,
       description: `${formatTeamIdentity(presentation.team, 'message')} Roster`,
       color: getTeamEmbedColor(presentation, BOT_COLORS.info),
       fields: [
@@ -1070,6 +1138,8 @@ const offerCommand: CommandDefinition = {
   async execute(interaction, context) {
     const execution = await enforceChannelPolicy(interaction, context);
     const player = requiredUser(execution.options, 'player');
+    const targetDisplayName = player.displayName || getUserDisplayName(interaction, player.id);
+    const actorDisplayName = getUserDisplayName(interaction, execution.authorization.discordUserId);
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
@@ -1092,24 +1162,23 @@ const offerCommand: CommandDefinition = {
         sourceTeamRoleName: sourcePresentation.role?.name ?? null,
         guildName: execution.guildName,
         guildIconUrl: interaction.guildIconUrl ?? null,
+        offeredByUsername: actorDisplayName,
       },
     );
 
     const club = result.destinationClub;
     const presentation = resolveTeamPresentation(interaction, club ?? destinationClub);
     const thumbnail = getTeamThumbnail(club?.emoji);
+
+    const targetFormatted = formatUserWithVisibleName(player.id, targetDisplayName);
+    const actorFormatted = formatUserWithVisibleName(
+      execution.authorization.discordUserId,
+      actorDisplayName,
+    );
     const embed = createSuccessEmbed({
       title: `${BOT_EMOJIS.success} Contract Offer Sent`,
-      description: `A private contract offer has been sent to <@${result.player.discordUserId}> by <@${execution.authorization.discordUserId}> on behalf of ${formatTeamIdentity(presentation.team, 'message')}.`,
+      description: `A private contract offer has been sent to ${targetFormatted} by ${actorFormatted} on behalf of ${formatTeamIdentity(presentation.team, 'message')}.`,
       color: getTeamEmbedColor(presentation, BOT_COLORS.success),
-      fields: [
-        { name: 'Target Player', value: `<@${result.player.discordUserId}>`, inline: true },
-        {
-          name: BOT_LABELS.sourceTeam,
-          value: formatTeamIdentity(presentation.team, 'message'),
-          inline: true,
-        },
-      ],
       thumbnail,
     });
 
@@ -1130,6 +1199,16 @@ export const debugResetCommand: CommandDefinition = {
     await interaction.executeDebugReset(context.database);
   },
 };
+
+export const commands: readonly CommandDefinition[] = [
+  healthCommand,
+  setupCommand,
+  teamCommand,
+  limitCommand,
+  staffCommand,
+  rosterCommand,
+  offerCommand,
+];
 
 export const commandDefinitions = [
   healthCommand,

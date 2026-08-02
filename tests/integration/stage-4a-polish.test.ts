@@ -603,16 +603,15 @@ describe('Stage 4A Polish Verification', () => {
 
       expect(commandContext.offerDeliveryService.createAndDeliver).toHaveBeenCalledWith(
         expect.objectContaining({ destinationClubId: club.id }),
-        {
+        expect.objectContaining({
           sourceTeamRoleColor: 0xf97316,
           sourceTeamRoleName: 'T1',
           guildName: 'Development League',
           guildIconUrl: null,
-        },
+        }),
       );
       expect(interaction.followUps).toEqual([]);
       expect(interaction.edits[0]?.embeds?.[0]?.data.title).toBe('✅ Contract Offer Sent');
-      expect(interaction.edits[0]?.embeds?.[0]?.data.fields?.[1]?.name).toBe('Source Team');
     });
 
     it('rejects global bot permission without an active staff appointment', async () => {
@@ -817,7 +816,7 @@ describe('Stage 4A Polish Verification', () => {
       expect(embedData.title).toBeUndefined();
       expect(embedData.description).toBe(`⚽ <@&${club.discordRoleId}> Roster`);
       expect(embedData.color).toBe(0xf97316);
-      expect(embedData.footer?.text).toBe('Roster for ⚽ @T1, Development League');
+      expect(embedData.footer?.text).toBe('Roster for ⚽ T1, Development League');
 
       const fields = embedData.fields ?? [];
       const fieldNames = fields.map((f) => f.name);
@@ -839,7 +838,7 @@ describe('Stage 4A Polish Verification', () => {
       expect(fieldNames).toContain('──────── Players ────────');
       expect(fieldNames).toContain('🏃 Players');
       expect(fieldByName.get('📊 Roster Count')).toBe('2/17');
-      expect(fieldByName.get('👑 Team Manager')).toBe(`<@${tmUserId}>`);
+      expect(fieldByName.get('👑 Team Manager')).toContain(`<@${tmUserId}>`);
       expect(fieldByName.get('🏃 Players')).toContain(`<@${playerUserId}>`);
       expect(fieldByName.get('🏃 Players')).not.toContain(tmUserId);
     });

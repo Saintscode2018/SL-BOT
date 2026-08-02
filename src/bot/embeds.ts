@@ -1,6 +1,7 @@
 import { EmbedBuilder, type APIEmbedField } from 'discord.js';
 
 import { BOT_COLORS, EMBED_COLORS } from './presentation/colors.js';
+import { formatUserWithVisibleName } from './presentation/index.js';
 
 export { EMBED_COLORS };
 
@@ -19,10 +20,13 @@ export interface EmbedOptions {
 export function createActorField(
   verb: 'Configured' | 'Updated' | 'Added' | 'Removed' | 'Appointed' | 'Edited' | 'Reset',
   userId: string,
+  displayName?: string | null,
 ): APIEmbedField {
+  const safeName =
+    displayName && displayName.trim().length > 0 ? displayName.trim() : 'Unknown User';
   return {
     name: `${verb} by`,
-    value: `<@${userId}>`,
+    value: formatUserWithVisibleName(userId, safeName),
     inline: false,
   };
 }

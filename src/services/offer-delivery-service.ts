@@ -21,6 +21,7 @@ export interface OfferPresentationMetadata {
   sourceTeamRoleName?: string | null;
   guildName?: string | null;
   guildIconUrl?: string | null;
+  offeredByUsername?: string | null;
 }
 
 export interface OfferMessageAdapter {

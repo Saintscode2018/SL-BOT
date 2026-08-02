@@ -213,7 +213,7 @@ describe('roster autocomplete command correlation', () => {
       expect(embed?.fields?.some(({ name }) => name === 'Team')).toBe(false);
       expect(embed?.description?.match(new RegExp(`<@&${roleId}>`, 'g'))).toHaveLength(1);
       expect(embed?.footer?.text).toBe(
-        `Roster for ${emoji.startsWith('<:') ? '.Newcastle.' : emoji} @${roleName}, Roster League`,
+        `Roster for ${emoji.startsWith('<:') ? '.Newcastle.' : emoji} ${roleName}, Roster League`,
       );
     },
   );

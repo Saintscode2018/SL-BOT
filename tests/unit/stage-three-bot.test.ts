@@ -438,7 +438,7 @@ describe('stage three command registry and deployment', () => {
     expect(embed?.description).toBe('🔴 <@&r-1> Roster');
     expect(embed?.color).toBe(0x3498db);
     expect(embed?.fields?.some(({ name }) => name === 'Team')).toBe(false);
-    expect(embed?.footer?.text).toBe('Roster for 🔴 @T1, Test Guild');
+    expect(embed?.footer?.text).toBe('Roster for 🔴 T1, Test Guild');
   });
 
   it('defers and edits the same private response after successful offer delivery', async () => {
@@ -455,12 +455,8 @@ describe('stage three command registry and deployment', () => {
     expect(interaction.followUps).toEqual([]);
     expect(interaction.edits).toHaveLength(1);
     expect(interaction.edits[0]?.embeds?.[0]?.data?.title).toBe('✅ Contract Offer Sent');
-    expect(interaction.edits[0]?.embeds?.[0]?.data?.fields?.[1]?.name).toBe('Source Team');
-    expect(interaction.edits[0]?.embeds?.[0]?.data?.fields?.[1]?.value).toBe(
-      '🔵 <@&100000000000000007>',
-    );
     expect(interaction.edits[0]?.embeds?.[0]?.data?.description).toBe(
-      'A private contract offer has been sent to <@100000000000000003> by <@100000000000000002> on behalf of 🔵 <@&100000000000000007>.',
+      'A private contract offer has been sent to <@100000000000000003> `Unknown User` by <@100000000000000002> `Unknown User` on behalf of 🔵 <@&100000000000000007>.',
     );
     expect(interaction.edits[0]?.embeds?.[0]?.data?.color).toBe(0xf97316);
     expect(delivery).toHaveBeenCalledWith(expect.any(Object), {
@@ -468,6 +464,7 @@ describe('stage three command registry and deployment', () => {
       sourceTeamRoleName: 'T2',
       guildName: 'Test Guild',
       guildIconUrl: 'https://cdn.discordapp.com/icons/guild/icon.png',
+      offeredByUsername: 'Unknown User',
     });
     expect(JSON.stringify(interaction.edits[0])).not.toContain('Destination Team');
     expect(JSON.stringify(interaction.edits[0])).not.toContain('**<@&');
@@ -537,18 +534,14 @@ describe('stage three command registry and deployment', () => {
       title: 'Contract Offer',
       color: 0xf97316,
     });
-    expect(serialized.embeds[0]?.description).toBeUndefined();
+    expect(serialized.embeds[0]?.description).toContain(
+      '> 👑 Team Manager: <@100000000000000004> `Unknown User`',
+    );
+    expect(serialized.embeds[0]?.description).toContain('> 📊 Roster: 4/10');
+    expect(serialized.embeds[0]?.description).toContain('> ⏰ Expires: <t:');
     expect(serialized.embeds[0]?.thumbnail?.url).toContain('twemoji');
-    expect(serialized.embeds[0]?.fields.map(({ name }) => name)).toEqual([
-      'Source Team',
-      'Team Manager',
-      '📊 Squad',
-      '⏰ Expires',
-    ]);
+    expect(serialized.embeds[0]?.fields.map(({ name }) => name)).toEqual(['Source Team']);
     expect(serialized.embeds[0]?.fields[0]?.value).toBe('🔵 @T2');
-    expect(serialized.embeds[0]?.fields[1]?.value).toBe('<@100000000000000004>');
-    expect(serialized.embeds[0]?.fields[2]?.value).toBe('4/10');
-    expect(serialized.embeds[0]?.fields[3]?.value).toMatch(/^<t:\d+:R>$/);
     expect(JSON.stringify(serialized.embeds[0])).not.toMatch(
       /Professional First Team|Offered Player|Offering Manager|Remaining Spots|<@&|@unknown-role|<t:\d+:F>/,
     );

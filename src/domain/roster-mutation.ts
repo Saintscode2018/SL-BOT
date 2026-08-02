@@ -37,6 +37,7 @@ export interface TransferAnnouncementPresentation {
   teamRoleColor?: number | null;
   subject?: TransferUserPresentation | null;
   actor?: TransferUserPresentation | null;
+  teamManager?: TransferUserPresentation | null;
 }
 
 export interface TransferRosterPresentation {
