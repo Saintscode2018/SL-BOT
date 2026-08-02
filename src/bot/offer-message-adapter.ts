@@ -21,23 +21,28 @@ import type {
 import type { OfferCreationResult } from '../services/offer-creation-service.js';
 import { createOfferCustomId } from './offer-custom-id.js';
 import { getTeamThumbnail } from './emoji-helper.js';
-import { resolveTeamRoleColor } from './team-presentation.js';
-
-const neutralColor = 0x5865f2;
+import {
+  BOT_COLORS,
+  BOT_EMOJIS,
+  BOT_LABELS,
+  createGuildAuthor,
+  formatDiscordRelative,
+  resolveTeamRoleColor,
+} from './presentation/index.js';
 
 function offerComponents(offerId: string, disabled = false): ActionRowBuilder<ButtonBuilder>[] {
   return [
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setCustomId(createOfferCustomId('accept', offerId))
-        .setEmoji('✅')
-        .setLabel('Sign Contract')
+        .setEmoji(BOT_EMOJIS.success)
+        .setLabel(BOT_LABELS.signContract)
         .setStyle(ButtonStyle.Success)
         .setDisabled(disabled),
       new ButtonBuilder()
         .setCustomId(createOfferCustomId('decline', offerId))
-        .setEmoji('❌')
-        .setLabel('Decline Offer')
+        .setEmoji(BOT_EMOJIS.error)
+        .setLabel(BOT_LABELS.declineOffer)
         .setStyle(ButtonStyle.Danger)
         .setDisabled(disabled),
     ),
@@ -48,35 +53,39 @@ function offerEmbed(
   result: OfferCreationResult,
   presentation: OfferPresentationMetadata = {},
 ): EmbedBuilder {
-  const expiresAt = Math.floor(result.offer.expiresAt.getTime() / 1000);
   const sourceTeam = {
     ...result.destinationClub,
     discordRoleName: presentation.sourceTeamRoleName ?? null,
   };
+  const author = createGuildAuthor({
+    guildName: presentation.guildName?.trim() || result.leagueName || 'SL League',
+    guildIconUrl: presentation.guildIconUrl,
+  });
   const embed = new EmbedBuilder()
-    .setColor(resolveTeamRoleColor(presentation.sourceTeamRoleColor, neutralColor))
-    .setAuthor({
-      name: presentation.guildName?.trim() || result.leagueName || 'SL League',
-      ...(presentation.guildIconUrl ? { iconURL: presentation.guildIconUrl } : {}),
-    })
-    .setTitle('Contract Offer')
+    .setColor(resolveTeamRoleColor(presentation.sourceTeamRoleColor, BOT_COLORS.info))
+    .setAuthor(author)
+    .setTitle(BOT_LABELS.contractOffer)
     .addFields(
       {
-        name: 'Source Team',
+        name: BOT_LABELS.sourceTeam,
         value: formatTeamIdentity(sourceTeam, 'title'),
         inline: false,
       },
       {
-        name: 'Team Manager',
+        name: BOT_LABELS.teamManager,
         value: `<@${result.offeredBy.discordUserId}>`,
         inline: false,
       },
       {
-        name: '📊 Squad',
+        name: `${BOT_EMOJIS.roster} ${BOT_LABELS.squad}`,
         value: `${result.activePlayerCount}/${result.effectiveSquadLimit}`,
         inline: false,
       },
-      { name: '⏰ Expires', value: `<t:${expiresAt}:R>`, inline: false },
+      {
+        name: `${BOT_EMOJIS.expiry} ${BOT_LABELS.expires}`,
+        value: formatDiscordRelative(result.offer.expiresAt),
+        inline: false,
+      },
     );
   const thumbnail = getTeamThumbnail(result.destinationClub.emoji);
   if (thumbnail !== null) {
@@ -125,8 +134,14 @@ export class DiscordOfferMessageAdapter implements OfferMessageAdapter {
     detail?: string,
   ): Promise<void> {
     const message = await this.fetchMessage(reference);
+    const embedColor =
+      state === 'ACCEPTED'
+        ? BOT_COLORS.success
+        : state === 'DECLINED'
+          ? BOT_COLORS.error
+          : BOT_COLORS.neutral;
     const embed = new EmbedBuilder()
-      .setColor(state === 'ACCEPTED' ? 0x57f287 : state === 'DECLINED' ? 0xed4245 : 0x747f8d)
+      .setColor(embedColor)
       .setTitle(`Offer ${state.toLowerCase()}`)
       .setDescription(detail ?? `This offer is now ${state.toLowerCase()}.`);
     await message.edit({ embeds: [embed], components: disabledComponents(message) });

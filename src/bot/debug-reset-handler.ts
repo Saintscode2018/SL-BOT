@@ -11,6 +11,7 @@ import {
 
 import { AuthorizationError, ConfigurationError } from '../domain/errors.js';
 import { createErrorEmbed, createSuccessEmbed, createWarningEmbed } from './embeds.js';
+import { BOT_EMOJIS } from './presentation/index.js';
 
 export const DEBUG_RESET_CONFIRM_CUSTOM_ID_PREFIX = 'debugreset_confirm_';
 export const DEBUG_RESET_CANCEL_CUSTOM_ID_PREFIX = 'debugreset_cancel_';
@@ -43,7 +44,7 @@ export async function sendDebugResetPrompt(
   );
 
   const embed = createWarningEmbed({
-    title: '❌ Reset Debug Database?',
+    title: `${BOT_EMOJIS.error} Reset Debug Database?`,
     description:
       'This will permanently delete all SL Bot league data for this server, including teams, memberships, staff appointments, offers, transactions, settings and audit history.\n\nThis action cannot be undone.',
   });
@@ -66,7 +67,7 @@ export async function sendDebugResetPrompt(
       await confirmation.reply({
         embeds: [
           createErrorEmbed({
-            title: '❌ Permission Denied',
+            title: `${BOT_EMOJIS.error} Permission Denied`,
             description: 'Only the user who initiated /debugreset can confirm it.',
           }),
         ],
@@ -79,7 +80,7 @@ export async function sendDebugResetPrompt(
       await confirmation.update({
         embeds: [
           createErrorEmbed({
-            title: '❌ Debug Reset Cancelled',
+            title: `${BOT_EMOJIS.error} Debug Reset Cancelled`,
             description: 'No data was deleted.',
           }),
         ],
@@ -93,7 +94,7 @@ export async function sendDebugResetPrompt(
       await confirmation.update({
         embeds: [
           createErrorEmbed({
-            title: '❌ Permission Denied',
+            title: `${BOT_EMOJIS.error} Permission Denied`,
             description: 'Administrator permission is required.',
           }),
         ],
@@ -112,7 +113,7 @@ export async function sendDebugResetPrompt(
     await confirmation.update({
       embeds: [
         createSuccessEmbed({
-          title: '✅ Debug Data Reset',
+          title: `${BOT_EMOJIS.success} Debug Data Reset`,
           description:
             'All SL Bot data for this server has been removed.\n\nThe server can now be configured again with /setup league.',
         }),
@@ -124,7 +125,7 @@ export async function sendDebugResetPrompt(
       .editReply({
         embeds: [
           createErrorEmbed({
-            title: '❌ Reset Confirmation Expired',
+            title: `${BOT_EMOJIS.error} Reset Confirmation Expired`,
             description: 'The debug reset confirmation timed out with no action taken.',
           }),
         ],

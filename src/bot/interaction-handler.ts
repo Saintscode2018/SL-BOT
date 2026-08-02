@@ -11,6 +11,7 @@ import type { Logger } from '../logging/logger.js';
 import type { CommandRegistry } from './command-registry.js';
 import { createErrorEmbed } from './embeds.js';
 import { mapDiscordError } from './error-mapper.js';
+import { BOT_EMOJIS } from './presentation/index.js';
 import type { OfferButtonInteraction } from './offer-button-handler.js';
 import { sendDebugResetPrompt } from './debug-reset-handler.js';
 import type { GuildEmoji } from './emoji-helper.js';
@@ -170,7 +171,7 @@ export async function handleInteractionCreate(
       .reply({
         embeds: [
           createErrorEmbed({
-            title: '❌ Command Unavailable',
+            title: `${BOT_EMOJIS.error} Command Unavailable`,
             description: 'This command is no longer available. Refresh your Discord commands.',
           }),
         ],

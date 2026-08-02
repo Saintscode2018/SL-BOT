@@ -56,3 +56,12 @@ Related notes: [[Architecture]], [[Commands]], [[Testing and Deployment]]
 - Replaced plain staff movement lines with Transfer Market-only Appointment/Demotion cards using server/team presentation metadata and readable role titles. The final acceptance correction removed title-leading `@`, added administrative actor mentions and readable avatar/timestamp footers, and introduced structured `✅ Offer Accepted` signing cards with roster/TM lines and signed-player footers. Private offer DMs remain on the existing `Contract Offer` design. Audit policy and command registration remain unchanged.
 - Corrected live `/staff remove` by force-fetching the target member before inspecting roles; this prevents stale cached membership roles from skipping the configured TM/ATM/PM removal while retaining the player membership and team role.
 - Documented production role order as SL Bot, playable administrator roles, TM/ATM/PM, then team roles; Administrator does not bypass hierarchy and the server owner cannot be managed.
+
+## Stage 4B.1 presentation system foundation
+
+- Centralized all presentation constants, emojis, labels, colors, timestamps, user formatting, role presentation, blockquotes, authors, and footers under `src/bot/presentation/`.
+- Established `BOT_EMOJIS` with canonical staff meanings (`👑` Team Manager, `👔` Assistant Team Manager, `🧠` Player Manager, `⚡` Bot Permissions, `📊` Roster, `⏰` Expiry).
+- Established `BOT_LABELS` with exact canonical capitalization and `BOT_COLORS` with standard numeric hex values (`success: 0x57f287`, `info: 0x5865f2`, `warning: 0xfee75c`, `error: 0xed4245`, `neutral: 0x747f8d`).
+- Built reusable formatters (`formatDiscordRelative`, `formatUtcFooterTimestamp`, `formatUserMention`, `formatUserWithVisibleName`, `formatTeamMessageIdentity`, `formatBlockquote`, `createGuildAuthor`, `createActorFooter`, `createPlayerFooter`).
+- Refactored `commands.ts`, `error-mapper.ts`, `transfer-announcement-adapter.ts`, `offer-message-adapter.ts`, `setup-audit-message-adapter.ts`, `debug-reset-handler.ts`, and `interaction-handler.ts` to use presentation modules.
+- Added comprehensive unit test coverage (`tests/unit/presentation.test.ts`) bringing the test suite to 318 passed tests across 24 files with 0 failures.

@@ -1,5 +1,9 @@
 import { EmbedBuilder, type APIEmbedField } from 'discord.js';
 
+import { BOT_COLORS, EMBED_COLORS } from './presentation/colors.js';
+
+export { EMBED_COLORS };
+
 export interface EmbedOptions {
   title?: string;
   color?: number;
@@ -11,13 +15,6 @@ export interface EmbedOptions {
   author?: { name: string; iconURL?: string } | null;
   timestamp?: Date;
 }
-
-export const EMBED_COLORS = {
-  SUCCESS: 0x57f287, // discord green
-  INFO: 0x5865f2, // discord blurple
-  WARNING: 0xfee75c, // discord yellow
-  ERROR: 0xed4245, // discord red
-} as const;
 
 export function createActorField(
   verb: 'Configured' | 'Updated' | 'Added' | 'Removed' | 'Appointed' | 'Edited' | 'Reset',
@@ -33,7 +30,7 @@ export function createActorField(
 export function createSuccessEmbed(options: EmbedOptions & { title: string }): EmbedBuilder {
   const embed = new EmbedBuilder()
     .setTitle(options.title)
-    .setColor(options.color ?? EMBED_COLORS.SUCCESS);
+    .setColor(options.color ?? BOT_COLORS.success);
 
   if (options.author) {
     embed.setAuthor({
@@ -55,7 +52,7 @@ export function createSuccessEmbed(options: EmbedOptions & { title: string }): E
 }
 
 export function createInfoEmbed(options: EmbedOptions): EmbedBuilder {
-  const embed = new EmbedBuilder().setColor(options.color ?? EMBED_COLORS.INFO);
+  const embed = new EmbedBuilder().setColor(options.color ?? BOT_COLORS.info);
 
   if (options.title) embed.setTitle(options.title);
   if (options.author) {
@@ -78,7 +75,7 @@ export function createInfoEmbed(options: EmbedOptions): EmbedBuilder {
 }
 
 export function createWarningEmbed(options: EmbedOptions & { title: string }): EmbedBuilder {
-  const embed = new EmbedBuilder().setTitle(options.title).setColor(EMBED_COLORS.WARNING);
+  const embed = new EmbedBuilder().setTitle(options.title).setColor(BOT_COLORS.warning);
 
   if (options.author) {
     embed.setAuthor({
@@ -100,7 +97,7 @@ export function createWarningEmbed(options: EmbedOptions & { title: string }): E
 }
 
 export function createErrorEmbed(options: EmbedOptions & { title: string }): EmbedBuilder {
-  const embed = new EmbedBuilder().setTitle(options.title).setColor(EMBED_COLORS.ERROR);
+  const embed = new EmbedBuilder().setTitle(options.title).setColor(BOT_COLORS.error);
 
   if (options.author) {
     embed.setAuthor({

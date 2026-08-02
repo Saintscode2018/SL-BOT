@@ -34,6 +34,7 @@ tags:
 - Transfer Market announcement adapter and signed-only offer safety corrections.
 - Focused live presentation correction: staff remain capacity-counted but appear once, `/staff remove` removes the prior global staff role only, and hierarchy guidance uses the production bot/admin/staff/team order with no owner or Administrator bypass.
 - Structured Transfer Market staff Appointment/Demotion cards use role-name titles without `@`, actor-attributed bodies/footers, and force-refreshed live role removal. Accepted signings use `✅ Offer Accepted - TeamRole`, roster/TM lines, and a signed-player footer. Private `Contract Offer` DMs retain resolved readable team roles, server author/icon, four ordered fields, relative expiry, and ✅/❌ persistent-button emoji.
+- Centralized presentation system foundation under `src/bot/presentation/` (`emojis.ts`, `labels.ts`, `colors.ts`, `timestamps.ts`, `users.ts`, `roles.ts`, `blockquotes.ts`, `authors.ts`, `footers.ts`) establishing unified `BOT_EMOJIS`, `BOT_LABELS`, `BOT_COLORS`, timestamp helpers, and embed author/footer builders; global cosmetic pass is deferred.
 
 ## Stage 4B.2–4B.4 and later
 

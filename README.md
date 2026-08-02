@@ -66,6 +66,21 @@ Team creation requires a Unicode emoji or a custom emoji belonging to the curren
 
 Single-team success and informational embeds use the current Discord team-role color. A missing role or a role whose color is `0` uses the existing success/info fallback color. Private offer DMs receive the already-resolved source-role name/color and guild author metadata from the command boundary; the DM adapter performs no guild lookup. The final card is titled `Contract Offer` and contains, in order, Source Team, Team Manager, `📊 Squad`, and a relative-only `⏰ Expires` timestamp. Persistent `✅ Sign Contract` and `❌ Decline Offer` buttons retain their original labels, styles, and custom IDs. Role names and colors are read from the live Discord guild cache and are never stored in Prisma.
 
+## Presentation system foundation
+
+Presentation logic is centralized under `src/bot/presentation/`:
+
+- `emojis.ts`: Canonical `BOT_EMOJIS` dictionary (`teamManager: '👑'`, `assistantTeamManager: '👔'`, `playerManager: '🧠'`, `botPermissions: '⚡'`, `roster: '📊'`, `expiry: '⏰'`, `success: '✅'`, `error: '❌'`, `warning: '⚠️'`).
+- `labels.ts`: Canonical `BOT_LABELS` dictionary (`Team Manager`, `Assistant Team Manager`, `Player Manager`, `Roster`, `Roster Count`, `Squad`, `Expires`, `Sign Contract`, `Decline Offer`, `Vacant`, `None`, `Unknown Team Role`).
+- `colors.ts`: Canonical `BOT_COLORS` palette (`success: 0x57f287`, `info: 0x5865f2`, `warning: 0xfee75c`, `error: 0xed4245`, `neutral: 0x747f8d`) and `resolveTeamRoleColor`.
+- `timestamps.ts`: Canonical timestamp formatters (`formatDiscordRelative`, `formatDiscordShortDateTime`, `formatDiscordLongDateTime`, `formatUtcFooterTimestamp`).
+- `users.ts`: User presentation helpers (`formatUserMention`, `formatUserWithVisibleName`, `formatUserFooterName`, `sanitizeInlineCode`).
+- `roles.ts`: Bot-layer team identity presentation wrappers (`formatTeamMessageIdentity`, `formatTeamReadableTitle`, `formatTeamPlainRoleName`, `formatTeamFooterIdentity`, `formatTeamAutocompleteIdentity`).
+- `blockquotes.ts`: Blockquote helpers (`formatBlockquote`, `blockquoteLine`).
+- `authors.ts` & `footers.ts`: Standardized embed author (`createGuildAuthor`) and footer builders (`createActorFooter`, `createPlayerFooter`, `createTimestampedFooter`).
+
+Existing output is preserved while establishing single canonical meanings for emojis, labels, colors, and timestamps. Full cosmetic changes (such as global `@Mention \`username\`` or blockquotes across all embeds) are deferred to a later cosmetic pass. No new commands were added.
+
 ## Database and migrations
 
 The Stage 4B.1 migration adds a partial unique index for one active staff appointment per guild/user. It complements the existing one-active-player-per-guild/user and one-holder-per-team/staff-slot indexes without changing or deleting historical rows. Prisma migrations remain the schema authority.

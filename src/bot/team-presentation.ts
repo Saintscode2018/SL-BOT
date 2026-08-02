@@ -1,5 +1,8 @@
 import type { TeamIdentitySource } from '../domain/team-label.js';
+import { resolveTeamRoleColor } from './presentation/colors.js';
 import type { CommandInteraction, GuildRoleMetadata } from './types.js';
+
+export { resolveTeamRoleColor };
 
 export interface ResolvedTeamPresentation<T extends TeamIdentitySource> {
   team: T & { discordRoleName: string | null };
@@ -22,13 +25,4 @@ export function getTeamEmbedColor(
   fallbackColor: number,
 ): number {
   return resolveTeamRoleColor(presentation.role?.color, fallbackColor);
-}
-
-export function resolveTeamRoleColor(
-  roleColor: number | null | undefined,
-  fallbackColor: number,
-): number {
-  return roleColor === undefined || roleColor === null || roleColor === 0
-    ? fallbackColor
-    : roleColor;
 }

@@ -5,8 +5,14 @@ import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { formatTeamIdentity } from '../domain/team-label.js';
 import type { AuthorizationInput } from '../services/authorization-service.js';
 import { getFriendlyPositionName, type StaffType } from '../services/staff-management-service.js';
-import { createActorField, createInfoEmbed, createSuccessEmbed, EMBED_COLORS } from './embeds.js';
+import { createActorField, createInfoEmbed, createSuccessEmbed } from './embeds.js';
 import { getTeamThumbnail, validateTeamEmoji } from './emoji-helper.js';
+import {
+  BOT_COLORS,
+  BOT_EMOJIS,
+  BOT_LABELS,
+  formatTeamFooterIdentity,
+} from './presentation/index.js';
 import { getTeamEmbedColor, resolveTeamPresentation } from './team-presentation.js';
 import type {
   CommandAutocompleteInteraction,
@@ -63,8 +69,7 @@ async function enforceChannelPolicy(
   return execution;
 }
 
-const auditDeliveryWarning =
-  '⚠️ Configuration was saved, but the audit message could not be delivered.';
+const auditDeliveryWarning = `${BOT_EMOJIS.warning} Configuration was saved, but the audit message could not be delivered.`;
 
 async function publishSetupAudit(
   context: CommandContext,
@@ -104,9 +109,13 @@ function requiredInteger(options: CommandInteractionOptions, name: string): numb
 }
 
 const staffPositions = [
-  { type: 'TEAM_MANAGER', emoji: '👑', name: 'Team Manager' },
-  { type: 'ASSISTANT_MANAGER', emoji: '👔', name: 'Assistant Team Manager' },
-  { type: 'PLAYER_MANAGER', emoji: '🧠', name: 'Player Manager' },
+  { type: 'TEAM_MANAGER', emoji: BOT_EMOJIS.teamManager, name: BOT_LABELS.teamManager },
+  {
+    type: 'ASSISTANT_MANAGER',
+    emoji: BOT_EMOJIS.assistantTeamManager,
+    name: BOT_LABELS.assistantTeamManager,
+  },
+  { type: 'PLAYER_MANAGER', emoji: BOT_EMOJIS.playerManager, name: BOT_LABELS.playerManager },
 ] as const;
 
 function staffDirectoryBlock(
@@ -116,7 +125,7 @@ function staffDirectoryBlock(
   return staffPositions
     .map(({ type, emoji, name }) => {
       const user = byType.get(type);
-      return `${emoji} ${name}: ${user ? `<@${user.discordUserId}>` : 'Vacant'}`;
+      return `${emoji} ${name}: ${user ? `<@${user.discordUserId}>` : BOT_LABELS.vacant}`;
     })
     .join('\n');
 }
@@ -203,8 +212,12 @@ const healthCommand: CommandDefinition = {
       title: 'SL Bot System Health',
       description: 'System operational status and services status.',
       fields: [
-        { name: 'Bot Status', value: 'Online ✅', inline: true },
-        { name: 'Database', value: connected ? 'Connected ✅' : 'Unavailable ❌', inline: true },
+        { name: 'Bot Status', value: `Online ${BOT_EMOJIS.success}`, inline: true },
+        {
+          name: 'Database',
+          value: connected ? `Connected ${BOT_EMOJIS.success}` : `Unavailable ${BOT_EMOJIS.error}`,
+          inline: true,
+        },
       ],
     });
     await interaction.reply({
@@ -301,11 +314,11 @@ const setupCommand: CommandDefinition = {
         guildName: execution.guildName,
         ...(timeoutMinutes === null ? {} : { offerTimeoutSeconds: timeoutMinutes * 60 }),
       });
-      const title = '✅ League Settings Updated';
+      const title = `${BOT_EMOJIS.success} League Settings Updated`;
       const description = `League configuration ${result.created ? 'initialized' : 'updated'} for **${result.guild.name}**.`;
       const auditFields = [
         {
-          name: '⏰ Offer Timeout',
+          name: `${BOT_EMOJIS.expiry} Offer Timeout`,
           value: `${Math.round(result.settings.offerTimeoutSeconds / 60)} minutes`,
           inline: false,
         },
@@ -351,13 +364,13 @@ const setupCommand: CommandDefinition = {
       });
 
       const channelBlock = [
-        `🤖 Bot Commands: <#${botCmds.id}>`,
-        `🛡️ Staff Commands: <#${staff.id}>`,
-        `🔄 Transfers: <#${transfer.id}>`,
-        `📋 Audit Logs: <#${audit.id}>`,
+        `${BOT_EMOJIS.botCommandsChannel} Bot Commands: <#${botCmds.id}>`,
+        `${BOT_EMOJIS.staffCommandsChannel} Staff Commands: <#${staff.id}>`,
+        `${BOT_EMOJIS.transferMarketChannel} Transfers: <#${transfer.id}>`,
+        `${BOT_EMOJIS.auditChannel} Audit Logs: <#${audit.id}>`,
       ].join('\n');
 
-      const title = '✅ System Channels Configured';
+      const title = `${BOT_EMOJIS.success} System Channels Configured`;
       const description = 'Successfully updated channel configuration for the league.';
       const auditFields = [{ name: 'Channels', value: channelBlock, inline: false }];
       const auditPublished = await publishSetupAudit(context, {
@@ -396,13 +409,13 @@ const setupCommand: CommandDefinition = {
       });
 
       const roleBlock = [
-        `🧠 Bot Permissions: <@&${botPerms.id}>`,
-        `👑 Team Manager: <@&${tm.id}>`,
-        `👔 Assistant Team Manager: <@&${atm.id}>`,
-        `👤 Player Manager: <@&${pm.id}>`,
+        `${BOT_EMOJIS.botPermissions} Bot Permissions: <@&${botPerms.id}>`,
+        `${BOT_EMOJIS.teamManager} ${BOT_LABELS.teamManager}: <@&${tm.id}>`,
+        `${BOT_EMOJIS.assistantTeamManager} ${BOT_LABELS.assistantTeamManager}: <@&${atm.id}>`,
+        `${BOT_EMOJIS.playerManager} ${BOT_LABELS.playerManager}: <@&${pm.id}>`,
       ].join('\n');
 
-      const title = '✅ League Roles Configured';
+      const title = `${BOT_EMOJIS.success} League Roles Configured`;
       const description = 'Successfully updated role configuration for the league.';
       const auditFields = [{ name: 'Roles', value: roleBlock, inline: false }];
       const auditPublished = await publishSetupAudit(context, {
@@ -429,32 +442,32 @@ const setupCommand: CommandDefinition = {
       const view = await context.guildSetupService.getView(execution.guildId);
 
       const channelLines = [
-        `🤖 Bot Commands: ${view.channels.botCommandsChannelId ? `<#${view.channels.botCommandsChannelId}>` : 'Not configured'}`,
-        `🛡️ Staff Commands: ${view.channels.staffChannelId ? `<#${view.channels.staffChannelId}>` : 'Not configured'}`,
-        `🔄 Transfers: ${view.channels.transferChannelId ? `<#${view.channels.transferChannelId}>` : 'Not configured'}`,
-        `📋 Audit Logs: ${view.channels.auditChannelId ? `<#${view.channels.auditChannelId}>` : 'Not configured'}`,
+        `${BOT_EMOJIS.botCommandsChannel} Bot Commands: ${view.channels.botCommandsChannelId ? `<#${view.channels.botCommandsChannelId}>` : 'Not configured'}`,
+        `${BOT_EMOJIS.staffCommandsChannel} Staff Commands: ${view.channels.staffChannelId ? `<#${view.channels.staffChannelId}>` : 'Not configured'}`,
+        `${BOT_EMOJIS.transferMarketChannel} Transfers: ${view.channels.transferChannelId ? `<#${view.channels.transferChannelId}>` : 'Not configured'}`,
+        `${BOT_EMOJIS.auditChannel} Audit Logs: ${view.channels.auditChannelId ? `<#${view.channels.auditChannelId}>` : 'Not configured'}`,
       ].join('\n');
 
       const roleLines = [
-        `🧠 Bot Permissions: ${view.roles.botPermissionsRoleId ? `<@&${view.roles.botPermissionsRoleId}>` : 'Not configured'}`,
-        `👑 Team Manager: ${view.roles.teamManagerRoleId ? `<@&${view.roles.teamManagerRoleId}>` : 'Not configured'}`,
-        `👔 Assistant Team Manager: ${view.roles.assistantManagerRoleId ? `<@&${view.roles.assistantManagerRoleId}>` : 'Not configured'}`,
-        `👤 Player Manager: ${view.roles.playerManagerRoleId ? `<@&${view.roles.playerManagerRoleId}>` : 'Not configured'}`,
+        `${BOT_EMOJIS.botPermissions} Bot Permissions: ${view.roles.botPermissionsRoleId ? `<@&${view.roles.botPermissionsRoleId}>` : 'Not configured'}`,
+        `${BOT_EMOJIS.teamManager} ${BOT_LABELS.teamManager}: ${view.roles.teamManagerRoleId ? `<@&${view.roles.teamManagerRoleId}>` : 'Not configured'}`,
+        `${BOT_EMOJIS.assistantTeamManager} ${BOT_LABELS.assistantTeamManager}: ${view.roles.assistantManagerRoleId ? `<@&${view.roles.assistantManagerRoleId}>` : 'Not configured'}`,
+        `${BOT_EMOJIS.playerManager} ${BOT_LABELS.playerManager}: ${view.roles.playerManagerRoleId ? `<@&${view.roles.playerManagerRoleId}>` : 'Not configured'}`,
       ].join('\n');
 
       const missingText =
         view.missingConfigurations.length === 0
-          ? 'None (Complete)'
+          ? `${BOT_LABELS.none} (Complete)`
           : view.missingConfigurations.join(', ');
 
       const embed = createSuccessEmbed({
-        title: `✅ League Configuration — ${view.guildName}`,
+        title: `${BOT_EMOJIS.success} League Configuration — ${view.guildName}`,
         fields: [
           { name: 'Channels', value: channelLines, inline: false },
           { name: 'Roles', value: roleLines, inline: false },
           {
             name: 'Settings',
-            value: `👥 Default Squad Limit: ${view.defaultSquadLimit}\n⏰ Offer Lifetime: ${view.offerTimeoutMinutes} minutes`,
+            value: `👥 Default Squad Limit: ${view.defaultSquadLimit}\n${BOT_EMOJIS.expiry} Offer Lifetime: ${view.offerTimeoutMinutes} minutes`,
             inline: false,
           },
           { name: 'Missing Configuration', value: missingText, inline: false },
@@ -533,9 +546,9 @@ const teamCommand: CommandDefinition = {
       const presentation = resolveTeamPresentation(interaction, club);
       const thumbnail = getTeamThumbnail(club.emoji);
       const embed = createSuccessEmbed({
-        title: '✅ Team Added',
+        title: `${BOT_EMOJIS.success} Team Added`,
         description: `Successfully added ${formatTeamIdentity(presentation.team, 'message')}.`,
-        color: getTeamEmbedColor(presentation, EMBED_COLORS.SUCCESS),
+        color: getTeamEmbedColor(presentation, BOT_COLORS.success),
         fields: [
           { name: 'Role', value: `<@&${club.discordRoleId}>`, inline: true },
           { name: 'Emoji', value: club.emoji, inline: true },
@@ -570,9 +583,9 @@ const teamCommand: CommandDefinition = {
       const presentation = resolveTeamPresentation(interaction, club);
       const thumbnail = getTeamThumbnail(club.emoji);
       const embed = createSuccessEmbed({
-        title: '✅ Team Updated',
+        title: `${BOT_EMOJIS.success} Team Updated`,
         description: `Successfully updated ${formatTeamIdentity(presentation.team, 'message')}.`,
-        color: getTeamEmbedColor(presentation, EMBED_COLORS.SUCCESS),
+        color: getTeamEmbedColor(presentation, BOT_COLORS.success),
         fields: [createActorField('Edited', execution.authorization.discordUserId)],
         thumbnail,
       });
@@ -589,9 +602,9 @@ const teamCommand: CommandDefinition = {
       const presentation = resolveTeamPresentation(interaction, club);
       const thumbnail = getTeamThumbnail(club.emoji);
       const embed = createSuccessEmbed({
-        title: '✅ Team Removed',
+        title: `${BOT_EMOJIS.success} Team Removed`,
         description: `Successfully deactivated ${formatTeamIdentity(presentation.team, 'message')}. The team is now inactive.`,
-        color: getTeamEmbedColor(presentation, EMBED_COLORS.SUCCESS),
+        color: getTeamEmbedColor(presentation, BOT_COLORS.success),
         fields: [
           { name: 'Status', value: 'Inactive', inline: true },
           {
@@ -696,7 +709,7 @@ const limitCommand: CommandDefinition = {
       });
 
       const embed = createSuccessEmbed({
-        title: '✅ Squad Limit Updated',
+        title: `${BOT_EMOJIS.success} Squad Limit Updated`,
         description: `Guild-wide default squad limit set to **${result.defaultSquadLimit}** players.`,
         fields: [createActorField('Updated', execution.authorization.discordUserId)],
       });
@@ -717,9 +730,9 @@ const limitCommand: CommandDefinition = {
 
       const presentation = resolveTeamPresentation(interaction, result.club);
       const embed = createSuccessEmbed({
-        title: '✅ Team Squad Limit Updated',
+        title: `${BOT_EMOJIS.success} Team Squad Limit Updated`,
         description: `Updated squad limit for ${formatTeamIdentity(presentation.team, 'message')} to **${result.override}** players.`,
-        color: getTeamEmbedColor(presentation, EMBED_COLORS.SUCCESS),
+        color: getTeamEmbedColor(presentation, BOT_COLORS.success),
         fields: [createActorField('Updated', execution.authorization.discordUserId)],
       });
 
@@ -737,9 +750,9 @@ const limitCommand: CommandDefinition = {
 
       const presentation = resolveTeamPresentation(interaction, result.club);
       const embed = createSuccessEmbed({
-        title: '✅ Team Squad Limit Reset',
+        title: `${BOT_EMOJIS.success} Team Squad Limit Reset`,
         description: `Reset squad limit for ${formatTeamIdentity(presentation.team, 'message')} to the guild default (**${result.effectiveLimit}** players).`,
-        color: getTeamEmbedColor(presentation, EMBED_COLORS.SUCCESS),
+        color: getTeamEmbedColor(presentation, BOT_COLORS.success),
         fields: [createActorField('Reset', execution.authorization.discordUserId)],
       });
 
@@ -757,12 +770,12 @@ const limitCommand: CommandDefinition = {
       const embed = createInfoEmbed({
         title: 'Squad Limit',
         description: formatTeamIdentity(presentation.team, 'message'),
-        color: getTeamEmbedColor(presentation, EMBED_COLORS.INFO),
+        color: getTeamEmbedColor(presentation, BOT_COLORS.info),
         fields: [
           { name: 'Guild Default', value: `${view.defaultSquadLimit}`, inline: true },
           {
             name: 'Team Override',
-            value: view.selectedClub.override ? `${view.selectedClub.override}` : 'None',
+            value: view.selectedClub.override ? `${view.selectedClub.override}` : BOT_LABELS.none,
             inline: true,
           },
           { name: 'Effective Limit', value: `${view.selectedClub.effectiveLimit}`, inline: true },
@@ -775,7 +788,7 @@ const limitCommand: CommandDefinition = {
 
     const overrideLines =
       view.clubsWithOverrides.length === 0
-        ? 'None'
+        ? BOT_LABELS.none
         : view.clubsWithOverrides
             .map(({ club, override }) => `- ${formatTeamIdentity(club, 'message')}: ${override}`)
             .join('\n');
@@ -812,9 +825,9 @@ const staffCommand: CommandDefinition = {
             .setName('staff_type')
             .setDescription('Staff position')
             .addChoices(
-              { name: 'Team Manager', value: 'TEAM_MANAGER' },
-              { name: 'Assistant Team Manager', value: 'ASSISTANT_MANAGER' },
-              { name: 'Player Manager', value: 'PLAYER_MANAGER' },
+              { name: BOT_LABELS.teamManager, value: 'TEAM_MANAGER' },
+              { name: BOT_LABELS.assistantTeamManager, value: 'ASSISTANT_MANAGER' },
+              { name: BOT_LABELS.playerManager, value: 'PLAYER_MANAGER' },
             )
             .setRequired(true),
         ),
@@ -831,9 +844,9 @@ const staffCommand: CommandDefinition = {
             .setName('staff_type')
             .setDescription('Staff position')
             .addChoices(
-              { name: 'Team Manager', value: 'TEAM_MANAGER' },
-              { name: 'Assistant Team Manager', value: 'ASSISTANT_MANAGER' },
-              { name: 'Player Manager', value: 'PLAYER_MANAGER' },
+              { name: BOT_LABELS.teamManager, value: 'TEAM_MANAGER' },
+              { name: BOT_LABELS.assistantTeamManager, value: 'ASSISTANT_MANAGER' },
+              { name: BOT_LABELS.playerManager, value: 'PLAYER_MANAGER' },
             )
             .setRequired(true),
         ),
@@ -866,9 +879,9 @@ const staffCommand: CommandDefinition = {
       const positionName = getFriendlyPositionName(staffType);
       const presentation = resolveTeamPresentation(interaction, result.club);
       const embed = createSuccessEmbed({
-        title: '✅ Staff Member Appointed',
+        title: `${BOT_EMOJIS.success} Staff Member Appointed`,
         description: `Successfully appointed <@${result.user.discordUserId}> as the ${positionName} of ${formatTeamIdentity(presentation.team, 'message')}.`,
-        color: getTeamEmbedColor(presentation, EMBED_COLORS.SUCCESS),
+        color: getTeamEmbedColor(presentation, BOT_COLORS.success),
         fields: [createActorField('Appointed', execution.authorization.discordUserId)],
       });
 
@@ -889,9 +902,9 @@ const staffCommand: CommandDefinition = {
       const positionName = getFriendlyPositionName(staffType);
       const presentation = resolveTeamPresentation(interaction, result.club);
       const embed = createSuccessEmbed({
-        title: '✅ Staff Member Removed',
+        title: `${BOT_EMOJIS.success} Staff Member Removed`,
         description: `Successfully removed <@${result.user.discordUserId}> as the ${positionName} of ${formatTeamIdentity(presentation.team, 'message')}.`,
-        color: getTeamEmbedColor(presentation, EMBED_COLORS.SUCCESS),
+        color: getTeamEmbedColor(presentation, BOT_COLORS.success),
         fields: [createActorField('Removed', execution.authorization.discordUserId)],
       });
 
@@ -912,7 +925,7 @@ const staffCommand: CommandDefinition = {
 
       const embed = createInfoEmbed({
         title: 'Team Staff',
-        ...(presentation ? { color: getTeamEmbedColor(presentation, EMBED_COLORS.INFO) } : {}),
+        ...(presentation ? { color: getTeamEmbedColor(presentation, BOT_COLORS.info) } : {}),
         ...(selectedClubItem
           ? {
               fields: [
@@ -995,13 +1008,13 @@ const rosterCommand: CommandDefinition = {
     const atmUser = staffByType.get('ASSISTANT_MANAGER');
     const pmUser = staffByType.get('PLAYER_MANAGER');
 
-    const tmLine = tmUser ? `<@${tmUser.discordUserId}>` : 'None';
-    const atmLine = atmUser ? `<@${atmUser.discordUserId}>` : 'None';
-    const pmLine = pmUser ? `<@${pmUser.discordUserId}>` : 'None';
+    const tmLine = tmUser ? `<@${tmUser.discordUserId}>` : BOT_LABELS.none;
+    const atmLine = atmUser ? `<@${atmUser.discordUserId}>` : BOT_LABELS.none;
+    const pmLine = pmUser ? `<@${pmUser.discordUserId}>` : BOT_LABELS.none;
 
     const playerLines =
       result.ordinaryPlayers.length === 0
-        ? 'None'
+        ? BOT_LABELS.none
         : result.ordinaryPlayers.map(({ user }) => `• <@${user.discordUserId}>`).join('\n');
 
     const leagueName = settings?.guild?.name ?? execution.guildName;
@@ -1009,21 +1022,37 @@ const rosterCommand: CommandDefinition = {
     const embed = createInfoEmbed({
       author: { name: leagueName },
       description: `${formatTeamIdentity(presentation.team, 'message')} Roster`,
-      color: getTeamEmbedColor(presentation, EMBED_COLORS.INFO),
+      color: getTeamEmbedColor(presentation, BOT_COLORS.info),
       fields: [
         {
-          name: '📊 Roster Count',
+          name: `${BOT_EMOJIS.roster} ${BOT_LABELS.rosterCount}`,
           value: `${result.allActiveMembers.length}/${effectiveLimit}`,
           inline: false,
         },
-        { name: '👑 Team Manager', value: tmLine, inline: false },
-        { name: '👔 Assistant Team Manager', value: atmLine, inline: false },
-        { name: '🧠 Player Manager', value: pmLine, inline: false },
-        { name: '──────── Players ────────', value: '\u200b', inline: false },
-        { name: '🏃 Players', value: playerLines.slice(0, 1024), inline: false },
+        {
+          name: `${BOT_EMOJIS.teamManager} ${BOT_LABELS.teamManager}`,
+          value: tmLine,
+          inline: false,
+        },
+        {
+          name: `${BOT_EMOJIS.assistantTeamManager} ${BOT_LABELS.assistantTeamManager}`,
+          value: atmLine,
+          inline: false,
+        },
+        {
+          name: `${BOT_EMOJIS.playerManager} ${BOT_LABELS.playerManager}`,
+          value: pmLine,
+          inline: false,
+        },
+        { name: `──────── ${BOT_LABELS.players} ────────`, value: '\u200b', inline: false },
+        {
+          name: `${BOT_EMOJIS.player} ${BOT_LABELS.players}`,
+          value: playerLines.slice(0, 1024),
+          inline: false,
+        },
       ],
       thumbnail,
-      footer: `Roster for ${formatTeamIdentity(presentation.team, 'footer')}, ${leagueName}`,
+      footer: `Roster for ${formatTeamFooterIdentity(presentation.team)}, ${leagueName}`,
     });
 
     await interaction.reply({ embeds: [embed] });
@@ -1070,13 +1099,13 @@ const offerCommand: CommandDefinition = {
     const presentation = resolveTeamPresentation(interaction, club ?? destinationClub);
     const thumbnail = getTeamThumbnail(club?.emoji);
     const embed = createSuccessEmbed({
-      title: '✅ Contract Offer Sent',
+      title: `${BOT_EMOJIS.success} Contract Offer Sent`,
       description: `A private contract offer has been sent to <@${result.player.discordUserId}> by <@${execution.authorization.discordUserId}> on behalf of ${formatTeamIdentity(presentation.team, 'message')}.`,
-      color: getTeamEmbedColor(presentation, EMBED_COLORS.SUCCESS),
+      color: getTeamEmbedColor(presentation, BOT_COLORS.success),
       fields: [
         { name: 'Target Player', value: `<@${result.player.discordUserId}>`, inline: true },
         {
-          name: 'Source Team',
+          name: BOT_LABELS.sourceTeam,
           value: formatTeamIdentity(presentation.team, 'message'),
           inline: true,
         },

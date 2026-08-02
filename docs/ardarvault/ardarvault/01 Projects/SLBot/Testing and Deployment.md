@@ -28,6 +28,7 @@ Integration tests use isolated file-backed SQLite databases and apply committed 
 - Populated Stage 4A migration preserving settings, club keys/role/emoji/state/limit, player and staff memberships, offer, transaction, and audit.
 - Foreign-key integrity, composite references, role uniqueness, and removed indexes.
 - Formatter behavior for Unicode/custom message, title, footer, and role-only autocomplete modes, fallback labels, whitespace, raw-ID exclusion, and 100-character limit.
+- Presentation unit coverage (`tests/unit/presentation.test.ts`) for `BOT_EMOJIS`, `BOT_LABELS`, `BOT_COLORS`, timestamp helpers, user formatting, blockquote formatting, author builders, and actor/player footers.
 - Final team command registration and stale-command rejection.
 - Club-ID autocomplete round-trips through roster, staff, and limit execution.
 - Team list, staff wording/directory, final roster title/footer/fields, team-role colors and fallbacks, limit output, exact offer acknowledgement/source/private-DM color, setup view, setup audits, authorization, channel policy, debug reset, and offer-button regressions.

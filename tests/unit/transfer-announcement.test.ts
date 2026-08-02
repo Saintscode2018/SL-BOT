@@ -72,7 +72,7 @@ describe('transfer-market announcements', () => {
       },
       title: '✅ Offer Accepted - T1',
       description:
-        '<@300000000000000001> has accepted the offer from ⚽ <@&400000000000000001>\n\n📁 Roster: 4/17\n\n💼 Team Manager: <@300000000000000009>',
+        '<@300000000000000001> has accepted the offer from ⚽ <@&400000000000000001>\n\n📊 Roster: 4/17\n\n👑 Team Manager: <@300000000000000009>',
       color: 0x123456,
       footer: {
         text: 'Player: ARDA2 • 02.08.2026 12:00 UTC',

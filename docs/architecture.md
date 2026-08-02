@@ -52,6 +52,17 @@ Administrative permission is checked before protected Staff-channel guidance is 
 
 Mutations, health, setup view, offer acknowledgements, and errors are ephemeral. Informational team/staff/limit lists and rosters are public. The central error mapper hides unexpected internal details and retains specific role, emoji, staff, squad, offer, permission, channel, inactive-team, and missing-record errors.
 
+Presentation logic is centralized under `src/bot/presentation/`:
+
+- `emojis.ts`: Defines `BOT_EMOJIS` (canonical emoji mapping: `teamManager: '👑'`, `assistantTeamManager: '👔'`, `playerManager: '🧠'`, `botPermissions: '⚡'`, `roster: '📊'`, `expiry: '⏰'`, `success: '✅'`, `error: '❌'`, `warning: '⚠️'`).
+- `labels.ts`: Defines `BOT_LABELS` (canonical label spelling & capitalization).
+- `colors.ts`: Defines `BOT_COLORS` (`success`, `info`, `warning`, `error`, `neutral`) and `resolveTeamRoleColor`.
+- `timestamps.ts`: Canonical timestamp formatters (`formatDiscordRelative`, `formatDiscordShortDateTime`, `formatDiscordLongDateTime`, `formatUtcFooterTimestamp`).
+- `users.ts`: User mention & visible name formatters (`formatUserMention`, `formatUserWithVisibleName`, `formatUserFooterName`, `sanitizeInlineCode`).
+- `roles.ts`: Bot-layer team identity presentation wrappers (`formatTeamMessageIdentity`, `formatTeamReadableTitle`, `formatTeamPlainRoleName`, `formatTeamFooterIdentity`, `formatTeamAutocompleteIdentity`).
+- `blockquotes.ts`: Blockquote helpers (`formatBlockquote`, `blockquoteLine`).
+- `authors.ts` & `footers.ts`: Standardized embed author (`createGuildAuthor`) and footer builders (`createActorFooter`, `createPlayerFooter`, `createTimestampedFooter`).
+
 `/team list` renders one `identity — current/max` line per active team. Staff directories render one normal-text identity followed by vertical TM/ATM/PM lines and `Vacant` slots. Rosters have no title: the description begins `<emoji> <@&roleId> Roster`, allowing the role mention to render normally, and there is no separate `Team` field. Their footer is `Roster for <footer-safe identity>, <server name>`; custom emoji use `.name.` there. Thumbnails derive only from emoji.
 
 Offer creation still derives the issuing/source team from the caller's active database staff appointment. Creation rejects signed targets. Acceptance transactionally rechecks pending status, target identity, expiry, active team, free-agent state, and current squad capacity. The live acceptance path adds only the destination team role before committing and publishes a signing announcement afterward; stale competing offers remain stored but cannot be accepted once the player is signed.

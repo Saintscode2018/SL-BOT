@@ -72,8 +72,9 @@ Errors are always ephemeral. Stale commands receive an ephemeral `Command Unavai
 - Roster: TM/ATM/PM player rows count toward capacity but active staff appear only under their staff heading, not again under Players. After `/staff remove`, the retained member returns to Players.
 - Staff removal: ends staff history and removes only the matching configured global role; the roster membership and team role remain.
 - Staff Transfer Market cards: titles use the team-role name without `@`; appointment/removal bodies mention the administrative actor and their readable username/avatar appears in the timestamped `Appointed by`/`Demoted by` footer.
-- Accepted signing: `✅ Offer Accepted - TeamRole`, acceptance description, `📁 Roster: current/max`, `💼 Team Manager`, and a timestamped `Player:` footer using the signed player's readable username/avatar.
+- Accepted signing: `✅ Offer Accepted - TeamRole`, acceptance description, `📊 Roster: current/max`, `👑 Team Manager`, and a timestamped `Player:` footer using the signed player's readable username/avatar.
 - Private offer: the command resolves a readable source role and guild author metadata before delivery. The card is `Contract Offer` with Source Team, Team Manager, `📊 Squad`, and relative-only `⏰ Expires`; the persistent buttons render `✅ Sign Contract` and `❌ Decline Offer` with unchanged IDs.
+- Presentation foundation: Presentation strings, emojis (`BOT_EMOJIS`), labels (`BOT_LABELS`), colors (`BOT_COLORS`), and formatters are centralized in `src/bot/presentation/`.
 - Setup view: channels, roles, settings, and missing configuration only; no team-identity configuration and no audit publication.
 
 Single-team team/staff/limit/roster/offer embeds use the current nonzero Discord team-role color. Missing or zero-color roles retain the existing fallback color. Role colors are cache-derived presentation data and are not stored.

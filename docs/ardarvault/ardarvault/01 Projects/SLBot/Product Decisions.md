@@ -75,6 +75,7 @@ tags:
 - Confirmations are random, server-side, initiating-user scoped, two minutes long, atomic, restart-invalid, and require a fresh confirmation-time eligibility callback.
 - Manage Roles/Administrator is necessary but hierarchy still applies. The bot stays above playable admin roles, TM/ATM/PM, team roles, and each target member; the server owner remains unmanageable.
 - Live role inspection is force-refreshed before synchronization so a stale member cache cannot leave the previous global staff role assigned while committing staff removal.
+- Presentation foundation is centralized under `src/bot/presentation/` (`BOT_EMOJIS`, `BOT_LABELS`, `BOT_COLORS`, `timestamps.ts`, `users.ts`, `roles.ts`, `blockquotes.ts`, `authors.ts`, `footers.ts`). Canonical emojis replace conflicting historical usages (`👑` for Team Manager, `🧠` for Player Manager, `⚡` for Bot Permissions, `📊` for Roster, `⏰` for Expiry). Global cosmetic pass is deferred.
 
 ## 9. Explicit exclusions
 
