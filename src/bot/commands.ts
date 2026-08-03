@@ -1,6 +1,6 @@
 import { ChannelType, MessageFlags, SlashCommandBuilder } from 'discord.js';
 
-import { ConfigurationError, ValidationError } from '../domain/errors.js';
+import { ConfigurationError, DiscordRoleMissingError, ValidationError } from '../domain/errors.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { formatTeamIdentity } from '../domain/team-label.js';
 import type { AuthorizationInput } from '../services/authorization-service.js';
@@ -13,12 +13,18 @@ import {
   BOT_COLORS,
   BOT_EMOJIS,
   BOT_LABELS,
+  createActorFooter,
   createGuildAuthor,
   formatTeamPlainRoleName,
   formatUserWithVisibleName,
   getUserDisplayName,
 } from './presentation/index.js';
 import { getTeamEmbedColor, resolveTeamPresentation } from './team-presentation.js';
+import {
+  chunkTeamHealthLines,
+  formatCompactTeamHealthLine,
+  formatDetailedTeamHealthDescription,
+} from './team-health-presentation.js';
 import type {
   CommandAutocompleteInteraction,
   CommandContext,
@@ -1198,6 +1204,120 @@ const rosterCommand: CommandDefinition = {
   autocomplete: autocompleteTeam,
 };
 
+const teamHealthCommand: CommandDefinition = {
+  data: new SlashCommandBuilder()
+    .setName('teamhealth')
+    .setDescription('View active team roster health')
+    .addStringOption((option) =>
+      option
+        .setName('team')
+        .setDescription('View detailed health for a specific team')
+        .setAutocomplete(true),
+    ),
+  async execute(interaction, context) {
+    const execution = await enforceChannelPolicy(interaction, context);
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    const service = context.teamHealthService;
+    if (service === undefined) {
+      throw new ConfigurationError('team health service is unavailable');
+    }
+
+    const selectedTeamId = execution.options.getString('team');
+    const requestedAt = new Date();
+    const actorDisplayName = getUserDisplayName(interaction, execution.authorization.discordUserId);
+    const footer = createActorFooter({
+      verb: 'Requested',
+      username: actorDisplayName,
+      timestamp: requestedAt,
+    });
+
+    if (selectedTeamId !== null) {
+      const result = await service.getDetail(execution.guildId, selectedTeamId);
+      const presentation = await resolveTeamPresentationAsync(interaction, result.team.club);
+      if (presentation.role === null) throw new DiscordRoleMissingError('TEAM');
+
+      const resolvedNames = await resolveUserDisplayNames(
+        interaction,
+        result.team.staff.map(({ user }) => user.discordUserId),
+      );
+      const author = createGuildAuthor({
+        guildName: result.guild.name || execution.guildName,
+        guildIconUrl: interaction.guildIconUrl ?? null,
+      });
+      const embed = createInfoEmbed({
+        author,
+        title: 'Team Health',
+        description: formatDetailedTeamHealthDescription({
+          team: presentation.team,
+          activePlayerCount: result.team.activePlayerCount,
+          effectiveSquadLimit: result.team.effectiveSquadLimit,
+          staff: result.team.staff,
+          resolvedNames,
+        }),
+        color: getTeamEmbedColor(presentation, BOT_COLORS.info),
+        thumbnail: getTeamThumbnail(result.team.club.emoji),
+        footer: footer.text,
+        footerIconURL: footer.iconURL ?? null,
+        timestamp: requestedAt,
+      });
+      await interaction.editReply({ embeds: [embed] });
+      return;
+    }
+
+    const result = await service.getOverview(execution.guildId);
+    const author = createGuildAuthor({
+      guildName: result.guild.name || execution.guildName,
+      guildIconUrl: interaction.guildIconUrl ?? null,
+    });
+    if (result.teams.length === 0) {
+      const embed = createInfoEmbed({
+        author,
+        title: 'Team Health Overview',
+        description: 'No active teams are currently configured.',
+        footer: footer.text,
+        footerIconURL: footer.iconURL ?? null,
+        timestamp: requestedAt,
+      });
+      await interaction.editReply({ embeds: [embed] });
+      return;
+    }
+
+    const presentedTeams = await Promise.all(
+      result.teams.map(async ({ club, activePlayerCount }) => {
+        const presentation = await resolveTeamPresentationAsync(interaction, club);
+        if (presentation.role === null) throw new DiscordRoleMissingError('TEAM');
+        return { presentation, activePlayerCount };
+      }),
+    );
+    const descriptions = chunkTeamHealthLines(
+      presentedTeams.map(({ presentation, activePlayerCount }) =>
+        formatCompactTeamHealthLine(presentation.team, activePlayerCount),
+      ),
+    );
+    const embeds = descriptions.map((description, index) =>
+      createInfoEmbed({
+        author,
+        title: index === 0 ? 'Team Health Overview' : 'Team Health Overview Continued',
+        description,
+        footer: footer.text,
+        footerIconURL: footer.iconURL ?? null,
+        timestamp: requestedAt,
+      }),
+    );
+
+    const firstBatch = embeds.slice(0, 10);
+    await interaction.editReply({ embeds: firstBatch });
+    for (let index = 10; index < embeds.length; index += 10) {
+      await interaction.followUp({
+        embeds: embeds.slice(index, index + 10),
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+  },
+  autocomplete: autocompleteTeam,
+};
+
 const offerCommand: CommandDefinition = {
   data: new SlashCommandBuilder()
     .setName('offer')
@@ -1277,6 +1397,7 @@ export const commands: readonly CommandDefinition[] = [
   limitCommand,
   staffCommand,
   rosterCommand,
+  teamHealthCommand,
   offerCommand,
   demandCommand,
   releaseCommand,
@@ -1291,6 +1412,7 @@ export const commandDefinitions = [
   limitCommand,
   staffCommand,
   rosterCommand,
+  teamHealthCommand,
   offerCommand,
   demandCommand,
   releaseCommand,

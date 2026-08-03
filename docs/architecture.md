@@ -43,14 +43,14 @@ Global authorization is granted to the guild owner, a Discord Administrator, or 
 
 - Bot-or-Staff: `/health`, `/team list`, `/staff list`, `/roster`, `/limit view`, `/offer`, `/demand`, `/release`, `/promote`, and `/demote`. These commands are rejected in Transfer Market, Audit, and arbitrary channels; their own authorization rules still apply.
 - Demand rate limiting is a fixed one-minute in-memory expiry per guild/user. Only an allowed acquisition stores a new expiry; blocked retries do not mutate it, and channel policy runs first so wrong-channel attempts do not consume or refresh it.
-- Administrative Staff-only: `/setup *`, `/team add|edit|remove`, `/limit default|team|reset`, and `/staff appoint|remove`.
+- Administrative Staff-only: `/setup *`, `/team add|edit|remove`, `/limit default|team|reset`, `/staff appoint|remove`, and `/teamhealth [team]`.
 - Debug: `/debugreset`, Discord Administrator only and Staff-restricted once configured.
 
 The scope is selected after reading grouped subcommands. Administrative permission is checked before protected Staff-channel guidance is revealed; non-global callers (including ordinary players and TM/ATM/PM callers without global administrative roles) receive channel guidance mentioning only Bot Commands (`Use this command in <#botCommandsChannelId>.`) to ensure Staff Commands is never disclosed. Globally authorized callers receive concise guidance mentioning both channels for BOT_OR_STAFF commands (`Use this command in <#botCommandsChannelId> or <#staffCommandsChannelId>.`) and staff-channel guidance for STAFF_ONLY commands (`Use this command in <#staffCommandsChannelId>.`). Channel-not-configured errors remain distinct. `/setup` allows Discord-Administrator bootstrap before Staff is configured. Transfer Market and Audit are output-only bot-operation channels. Unknown or stale commands receive a safe ephemeral rejection.
 
 ## Presentation
 
-Mutations, health, setup view, offer acknowledgements, and errors are ephemeral. Informational team/staff/limit lists and rosters are public. The central error mapper hides unexpected internal details and retains specific role, emoji, staff, squad, offer, permission, channel, inactive-team, and missing-record errors.
+Mutations, system health, team health, setup view, offer acknowledgements, and errors are ephemeral. Informational team/staff/limit lists and rosters are public. The central error mapper hides unexpected internal details and retains specific role, emoji, staff, squad, offer, permission, channel, inactive-team, and missing-record errors.
 
 Presentation logic is centralized under `src/bot/presentation/`:
 
@@ -68,6 +68,12 @@ Presentation logic is centralized under `src/bot/presentation/`:
 Offer creation still derives the issuing/source team from the caller's active database staff appointment. Creation rejects signed targets. Acceptance transactionally rechecks pending status, target identity, expiry, active team, free-agent state, and current squad capacity. The live acceptance path adds only the destination team role before committing and publishes a signing announcement afterward; stale competing offers remain stored but cannot be accepted once the player is signed.
 
 The Discord interaction adapter is the single role-metadata boundary and exposes cached `{ id, name, color }`. Single-team embeds use a nonzero role color directly; a missing/zero-color role keeps the existing embed fallback. The command resolves presentation metadata before private offer delivery, so the DM adapter never queries Discord. Role colors are not persisted and require no schema change.
+
+## Team health read model
+
+`TeamHealthService` is a read-only application boundary; Discord handlers contain no Prisma queries. Overview mode reads active clubs through the same `createdAt`, then ID ordering as `/team list`, and uses the existing active-`PLAYER` count. Detailed mode revalidates the selected club against the invoking guild and active state, loads active TM/ATM/PM appointments, and calculates the effective limit through `getEffectiveSquadLimit` (club override, guild default, then 17 fallback). Staff rows do not independently increase the roster count because staff already have `PLAYER` memberships.
+
+`getTeamHealthHeart` maps 0–4 to 🖤, 5–9 to 💛, 10–15 to 💚, and every count from 16 upward to ❤️; invalid negative/non-integer counts are rejected. Compact descriptions are chunked only between full team rows and retain service order. The command defers ephemerally, resolves every configured role through cache-then-fetch, and uses the standard information color. Detailed mode also resolves each unique staff user once through the cold-cache-safe member/user path, uses `formatUserWithVisibleName`, the live team-role color, emoji thumbnail, guild author, actor footer, and UTC timestamp. Missing selected roles and inactive/foreign/unknown clubs use existing mapped domain errors.
 
 ## Roster mutation and Discord consistency
 

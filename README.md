@@ -30,6 +30,7 @@ There is no team display name, abbreviation, or configurable banner. `Club.id` r
 - `/limit default|team|reset|view`: Manage the guild default and team overrides; team output uses only the shared identity.
 - `/staff appoint|remove|list`: Manage TM, ATM, and PM appointments. Appointment also ensures an active player roster row; staff-only removal retains that row and the team role while removing the matching configured global staff role. Public lists use vertical per-team blocks and `Vacant`.
 - `/roster team:<club>`: Public roster whose description begins `<emoji> <@&RoleId> Roster`, with no title or separate `Team` field, followed by effective squad count, TM/ATM/PM fields, and players. Active staff count toward capacity but appear only in their staff field, never again under ordinary Players. Its footer is `Roster for <footer-safe team identity>, <server name>`.
+- `/teamhealth [team:<club>]`: Ephemeral, read-only global-administration view in Staff Commands. Without `team`, it lists every active team as `<emoji> <role mention>: <active players> 👤, <heart>` and chunks complete rows across embeds. With `team`, it shows TM/ATM/PM (or `Vacant`), active roster count/effective limit, and health in one continuous blockquote.
 - `/offer player:<user>`: Send a private contract offer for the team derived from the caller's active database staff appointment. Only free agents can receive or accept one. Acceptance adds the team role and publishes the completed signing to Transfer Market.
 - `/demand`: Leave the caller's current team. Ordinary players may leave completely; ATM/PM callers may instead leave only their staff position and remain on the roster. TM callers are blocked.
 - `/release player:<user>`: TM/ATM/PM callers may release a lower-ranked member of their own team. The target never confirms and receives no DM.
@@ -48,7 +49,7 @@ Global administration requires the server owner, Discord Administrator permissio
 - `/offer` is allowed in Bot Commands or Staff and checks channel policy before resolving the caller's database appointment.
 - `/demand` is ephemeral and uses a fixed one-minute in-memory guild/user cooldown. A permitted first attempt starts the window; blocked retries report the decreasing remainder without extending it, and wrong-channel attempts neither start nor refresh it.
 - `/release` is ephemeral and allowed only in Bot Commands or Staff. Database staff authority—not global bot permission or Discord Administrator—controls access.
-- `/setup *` (including view after setup), `/team add|edit|remove`, `/limit default|team|reset`, `/staff appoint|remove`, and `/debugreset` are Staff-only; the existing pre-configuration setup bootstrap remains. Unauthorized callers on STAFF_ONLY commands receive `Permission Denied` without channel guidance. Authorized callers in wrong channels see concise guidance (`Use this command in <#staffCommandsChannelId>.`).
+- `/setup *` (including view after setup), `/team add|edit|remove`, `/limit default|team|reset`, `/staff appoint|remove`, `/teamhealth`, and `/debugreset` are Staff-only; the existing pre-configuration setup bootstrap remains. `/teamhealth` accepts only the server owner, Discord Administrators, or the configured Bot Permissions role—not ordinary team staff or players. Unauthorized callers receive `Permission Denied` without channel guidance. Authorized callers in wrong channels see concise guidance (`Use this command in <#staffCommandsChannelId>.`).
 - Transfer Market and Audit are output-only for bot operations: completed roster movement is published to Transfer Market and configuration events to Audit, but slash commands are rejected there.
 - Successful mutations, offer acknowledgements, setup view, health, and all handled errors are ephemeral.
 - Setup league/channels/roles mutations publish timestamped actor-attributed audit embeds when configured. Player and staff movements use Transfer Market instead; announcement failure is logged but does not roll back completed state.
@@ -88,6 +89,10 @@ Both commands use initiating-user, guild, action, team, target, and staff-rank-b
 - Enforces `BOT_OR_STAFF` channel policy.
 
 Known limitations: Stage 4B.3 does not implement `/folist` or future commands.
+
+## Stage 4B.4 team health
+
+`TeamHealthService` reads active clubs, active `PLAYER` memberships, active staff appointments, and the effective team/guild squad limit without storing or mutating health state. Health is 🖤 for 0–4, 💛 for 5–9, 💚 for 10–15, and ❤️ for 16 or more; negative counts are rejected. Compact ordering reuses `/team list` repository ordering (`createdAt`, then club ID), excludes inactive teams, never truncates rows, and uses the neutral information color. Detailed mode revalidates guild ownership and active state, rejects a missing configured Discord role, uses the live role color and emoji thumbnail, and fetches role/member/user data after cache misses. Staff names use `<@USER_ID> \`VisibleName\`` and are resolved once per request.
 
 ## Emoji validation and thumbnails
 

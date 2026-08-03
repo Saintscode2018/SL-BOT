@@ -335,6 +335,7 @@ describe('stage three command registry and deployment', () => {
       'limit',
       'staff',
       'roster',
+      'teamhealth',
       'offer',
       'demand',
       'release',

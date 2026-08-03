@@ -18,6 +18,7 @@ import type { OfferDeliveryService } from '../services/offer-delivery-service.js
 import type { RosterManagementService } from '../services/roster-management-service.js';
 import type { StaffManagementService } from '../services/staff-management-service.js';
 import type { SetupAuditService } from '../services/setup-audit-service.js';
+import type { TeamHealthService } from '../services/team-health-service.js';
 import type { OfferButtonHandler } from './offer-button-handler.js';
 import type { RosterDepartureCommandHandler } from './departure-command-handler.js';
 import type { RosterPromotionDemotionCommandHandler } from './promotion-demotion-command-handler.js';
@@ -144,6 +145,7 @@ export interface CommandContext {
     'beginPromote' | 'beginDemote' | 'canHandle' | 'handleButton'
   >;
   setupAuditService: Pick<SetupAuditService, 'publish'>;
+  teamHealthService?: Pick<TeamHealthService, 'getOverview' | 'getDetail'>;
 }
 
 export interface CommandDefinition {
