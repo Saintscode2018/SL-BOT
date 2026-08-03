@@ -1,4 +1,4 @@
-import { Prisma, type Offer, type PrismaClient } from '@prisma/client';
+import { Prisma, type Club, type Offer, type PrismaClient } from '@prisma/client';
 
 import {
   ConflictError,
@@ -8,13 +8,27 @@ import {
   OfferExpiredError,
   UnauthorizedOfferAcceptanceError,
 } from '../domain/errors.js';
+import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { discordSnowflakeSchema } from '../domain/validation.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
+import { ClubRepository } from '../repositories/club-repository.js';
+import { GuildRepository } from '../repositories/guild-repository.js';
+import { MembershipRepository } from '../repositories/membership-repository.js';
 import { OfferRepository } from '../repositories/offer-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
 
 export const offerDeclinedAuditEventType = 'offer.declined';
 export const offerExpiredAuditEventType = 'offer.expired';
+
+export interface OfferDeclineResult {
+  status: 'DECLINED';
+  offer: Offer;
+  destinationClub: Club;
+  teamManagerDiscordUserId: string | null;
+  activePlayerCount: number;
+  effectiveSquadLimit: number;
+  guildName: string;
+}
 
 export class OfferDeclineService {
   public constructor(private readonly database: PrismaClient) {}
@@ -23,10 +37,10 @@ export class OfferDeclineService {
     offerId: string;
     decliningDiscordUserId: string;
     declinedAt?: Date;
-  }): Promise<Offer> {
+  }): Promise<OfferDeclineResult> {
     const respondedAt = input.declinedAt ?? new Date();
     const discordUserId = discordSnowflakeSchema.parse(input.decliningDiscordUserId);
-    let outcome: { kind: 'declined'; offer: Offer } | { kind: 'expired' };
+    let outcome: { kind: 'declined'; result: OfferDeclineResult } | { kind: 'expired' };
     try {
       outcome = await this.database.$transaction(async (transaction) => {
         const offers = new OfferRepository(transaction);
@@ -35,7 +49,8 @@ export class OfferDeclineService {
         if (offer.status !== 'PENDING') {
           throw new InvalidStateTransitionError('offer has already been handled');
         }
-        const player = await new UserRepository(transaction).getById(offer.playerUserId);
+        const userRepo = new UserRepository(transaction);
+        const player = await userRepo.getById(offer.playerUserId);
         if (player === null) throw new EntityNotFoundError('offered player was not found');
         if (player.discordUserId !== discordUserId) {
           throw new UnauthorizedOfferAcceptanceError('only the offered player may respond');
@@ -63,7 +78,34 @@ export class OfferDeclineService {
           beforeState: { status: 'PENDING' },
           afterState: { status: declined.status, respondedAt: respondedAt.toISOString() },
         });
-        return { kind: 'declined', offer: declined } as const;
+
+        const destinationClub = await new ClubRepository(transaction).getById(offer.clubId);
+        if (destinationClub === null) throw new EntityNotFoundError('club was not found');
+
+        const memberships = new MembershipRepository(transaction);
+        const activePlayerCount = await memberships.countActivePlayers(destinationClub.id);
+        const guildSettings = await new GuildRepository(transaction).getSettings(offer.guildId);
+        const effectiveSquadLimit = getEffectiveSquadLimit(destinationClub, guildSettings);
+        const guild = await new GuildRepository(transaction).requireById(offer.guildId);
+
+        const tmMembership = await memberships.getActiveStaffAppointment(
+          destinationClub.id,
+          'TEAM_MANAGER',
+        );
+        const tmUser = tmMembership === null ? null : await userRepo.getById(tmMembership.userId);
+
+        return {
+          kind: 'declined',
+          result: {
+            status: 'DECLINED',
+            offer: declined,
+            destinationClub,
+            teamManagerDiscordUserId: tmUser?.discordUserId ?? null,
+            activePlayerCount,
+            effectiveSquadLimit,
+            guildName: guild.name,
+          },
+        } as const;
       });
     } catch (error: unknown) {
       if (error instanceof DomainError) throw error;
@@ -78,6 +120,6 @@ export class OfferDeclineService {
       throw error;
     }
     if (outcome.kind === 'expired') throw new OfferExpiredError('offer has expired');
-    return outcome.offer;
+    return outcome.result;
   }
 }

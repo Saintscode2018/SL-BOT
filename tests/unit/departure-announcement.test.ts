@@ -131,14 +131,9 @@ describe('Stage 4B.2 transfer announcements', () => {
   it('renders staff-only demand as a self-authored step-down demotion', async () => {
     const { embed } = await render(plan('DEMOTED'));
     expect(embed).toMatchObject({
-      title: 'T1 Transaction (Demotion)',
-      fields: [
-        {
-          name: '⬇️ Demotion',
-          value:
-            '> <@300000000000000001> `Visible Player` has stepped down to player for 🔥 <@&400000000000000001>!',
-        },
-      ],
+      title: '⬇️ Demotion - T1',
+      description:
+        '> <@300000000000000001> `Visible Player` has stepped down to player for 🔥 <@&400000000000000001>!\n> 📊 Roster: 5/17\n> 👑 Team Manager: <@300000000000000009> `Team Manager`',
       footer: {
         text: 'Action by Visible Player • 02.08.2026 12:00 UTC',
       },

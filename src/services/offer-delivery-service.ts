@@ -24,6 +24,21 @@ export interface OfferPresentationMetadata {
   offeredByUsername?: string | null;
 }
 
+export interface TerminalOfferPresentationPayload {
+  state: 'ACCEPTED' | 'DECLINED';
+  guildName?: string | null;
+  guildIconUrl?: string | null;
+  teamRoleName?: string | null;
+  teamEmoji?: string | null;
+  teamDiscordRoleId?: string | null;
+  tmUserId?: string | null;
+  tmUsername?: string | null;
+  activePlayerCount?: number;
+  effectiveSquadLimit?: number;
+}
+
+export type AcceptedOfferPresentationData = TerminalOfferPresentationPayload;
+
 export interface OfferMessageAdapter {
   sendOffer(
     result: OfferCreationResult,
@@ -32,7 +47,7 @@ export interface OfferMessageAdapter {
   setTerminalState(
     reference: OfferMessageReference,
     state: 'ACCEPTED' | 'DECLINED' | 'EXPIRED' | 'VOIDED' | 'CANCELLED',
-    detail?: string,
+    detail?: string | TerminalOfferPresentationPayload,
   ): Promise<void>;
   cleanupOrphan(reference: OfferMessageReference): Promise<void>;
 }

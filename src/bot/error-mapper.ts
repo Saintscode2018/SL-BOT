@@ -114,6 +114,9 @@ export function mapDiscordError(error: unknown): MappedErrorResponse {
   } else if (error instanceof StaffMemberCannotReceiveOffersError) {
     title = `${BOT_EMOJIS.error} Staff Member Cannot Receive Offers`;
     description = error.message;
+  } else if (error instanceof StaffSlotOccupiedError) {
+    title = `${BOT_EMOJIS.error} Staff Position Already Occupied`;
+    description = 'That staff position is already occupied for this team.';
   } else if (error instanceof TeamPositionOccupiedError) {
     title = `${BOT_EMOJIS.error} Position Already Occupied`;
     description = error.message;
@@ -151,12 +154,24 @@ export function mapDiscordError(error: unknown): MappedErrorResponse {
   } else if (error instanceof TeamManagerCannotBeReleasedError) {
     title = `${BOT_EMOJIS.error} Team Manager Cannot Be Released`;
     description = error.message;
+  } else if (error instanceof SelfActionForbiddenError) {
+    title = `${BOT_EMOJIS.error} Cannot Modify Yourself`;
+    description =
+      error.message === 'You cannot perform this action on yourself.'
+        ? 'You cannot promote or demote yourself with this command.'
+        : error.message;
+  } else if (error instanceof InvalidPromotionPathError) {
+    title = `${BOT_EMOJIS.error} Insufficient Staff Authority`;
+    description = 'Assistant Team Managers may only promote ordinary players to Player Manager.';
+  } else if (error instanceof InvalidDemotionTargetError) {
+    title = `${BOT_EMOJIS.error} Player Is Not Staff`;
+    description = 'That player is not currently an Assistant Team Manager or Player Manager.';
   } else if (
     error instanceof InsufficientStaffRankError ||
     error instanceof TargetRankNotManageableError
   ) {
     title = `${BOT_EMOJIS.error} Insufficient Staff Authority`;
-    description = 'Your current staff position cannot release that team member.';
+    description = 'Your current staff position cannot perform that action.';
   } else if (
     error instanceof DiscordMemberMissingError ||
     error instanceof DiscordRoleMissingError ||
@@ -180,12 +195,8 @@ export function mapDiscordError(error: unknown): MappedErrorResponse {
     error instanceof MemberAlreadySignedError ||
     error instanceof MemberIsFreeAgentError ||
     error instanceof MemberNotOnTeamError ||
-    error instanceof SelfActionForbiddenError ||
-    error instanceof StaffSlotOccupiedError ||
     error instanceof TargetNotStaffError ||
     error instanceof TargetAlreadyDesiredRankError ||
-    error instanceof InvalidPromotionPathError ||
-    error instanceof InvalidDemotionTargetError ||
     error instanceof StaleMutationStateError
   ) {
     title = `${BOT_EMOJIS.error} Roster Action Failed`;

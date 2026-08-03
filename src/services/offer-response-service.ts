@@ -1,10 +1,11 @@
-import type { Offer, PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 
 import { EntityNotFoundError, InvalidOfferMessageError } from '../domain/errors.js';
 import { discordSnowflakeSchema } from '../domain/validation.js';
 import { OfferRepository } from '../repositories/offer-repository.js';
 import type { OfferAcceptanceResult } from './offer-acceptance-service.js';
 import { OfferAcceptanceService } from './offer-acceptance-service.js';
+import type { OfferDeclineResult } from './offer-decline-service.js';
 import { OfferDeclineService } from './offer-decline-service.js';
 
 export interface OfferResponseInput {
@@ -29,7 +30,7 @@ export class OfferResponseService {
     });
   }
 
-  public async declineOffer(input: OfferResponseInput): Promise<Offer> {
+  public async declineOffer(input: OfferResponseInput): Promise<OfferDeclineResult> {
     await this.validateMessage(input);
     return this.decline.declineOffer({
       offerId: input.offerId,

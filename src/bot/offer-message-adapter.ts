@@ -17,6 +17,7 @@ import type {
   OfferMessageAdapter,
   OfferMessageReference,
   OfferPresentationMetadata,
+  TerminalOfferPresentationPayload,
 } from '../services/offer-delivery-service.js';
 import type { OfferCreationResult } from '../services/offer-creation-service.js';
 import { createOfferCustomId } from './offer-custom-id.js';
@@ -28,6 +29,7 @@ import {
   createGuildAuthor,
   formatBlockquote,
   formatDiscordRelative,
+  formatTeamPlainRoleName,
   formatUserWithVisibleName,
   resolveTeamRoleColor,
 } from './presentation/index.js';
@@ -114,6 +116,54 @@ function disabledComponents(message: Message): ActionRowBuilder<ButtonBuilder>[]
     );
 }
 
+export function buildTerminalOfferEmbed(payload: TerminalOfferPresentationPayload): EmbedBuilder {
+  const isAccepted = payload.state === 'ACCEPTED';
+  const author = createGuildAuthor({
+    guildName: payload.guildName?.trim() || 'SL League',
+    guildIconUrl: payload.guildIconUrl ?? undefined,
+  });
+
+  const teamRoleName = formatTeamPlainRoleName({
+    emoji: payload.teamEmoji || '',
+    discordRoleId: payload.teamDiscordRoleId || '',
+    discordRoleName: payload.teamRoleName,
+  });
+
+  const tmFormatted = payload.tmUserId
+    ? formatUserWithVisibleName(
+        payload.tmUserId,
+        payload.tmUsername && payload.tmUsername !== 'Unknown User'
+          ? payload.tmUsername
+          : 'Unknown User',
+      )
+    : BOT_LABELS.vacant;
+
+  const rosterCount = `${payload.activePlayerCount ?? '?'}/${payload.effectiveSquadLimit ?? '?'}`;
+  const sentence = isAccepted
+    ? `You have accepted the offer to ${teamRoleName}.`
+    : `You have declined the offer to ${teamRoleName}.`;
+
+  const description = [
+    sentence,
+    '',
+    `> ${BOT_EMOJIS.teamManager} ${BOT_LABELS.teamManager}: ${tmFormatted}`,
+    `> ${BOT_EMOJIS.roster} ${BOT_LABELS.roster}: ${rosterCount}`,
+  ].join('\n');
+
+  const embed = new EmbedBuilder()
+    .setColor(isAccepted ? BOT_COLORS.success : BOT_COLORS.error)
+    .setAuthor(author)
+    .setTitle(isAccepted ? 'Accepted Offer' : 'Declined Offer')
+    .setDescription(description);
+
+  const thumbnail = getTeamThumbnail(payload.teamEmoji || '');
+  if (thumbnail !== null) {
+    embed.setThumbnail(thumbnail);
+  }
+
+  return embed;
+}
+
 export class DiscordOfferMessageAdapter implements OfferMessageAdapter {
   public constructor(private readonly client: Client) {}
 
@@ -130,9 +180,16 @@ export class DiscordOfferMessageAdapter implements OfferMessageAdapter {
   public async setTerminalState(
     reference: OfferMessageReference,
     state: 'ACCEPTED' | 'DECLINED' | 'EXPIRED' | 'VOIDED' | 'CANCELLED',
-    detail?: string,
+    detail?: string | TerminalOfferPresentationPayload,
   ): Promise<void> {
     const message = await this.fetchMessage(reference);
+
+    if (typeof detail === 'object' && detail !== null) {
+      const embed = buildTerminalOfferEmbed(detail);
+      await message.edit({ embeds: [embed], components: [] });
+      return;
+    }
+
     const embedColor =
       state === 'ACCEPTED'
         ? BOT_COLORS.success
@@ -142,7 +199,9 @@ export class DiscordOfferMessageAdapter implements OfferMessageAdapter {
     const embed = new EmbedBuilder()
       .setColor(embedColor)
       .setTitle(`Offer ${state.toLowerCase()}`)
-      .setDescription(detail ?? `This offer is now ${state.toLowerCase()}.`);
+      .setDescription(
+        typeof detail === 'string' ? detail : `This offer is now ${state.toLowerCase()}.`,
+      );
     await message.edit({ embeds: [embed], components: disabledComponents(message) });
   }
 

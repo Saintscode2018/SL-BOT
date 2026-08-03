@@ -77,3 +77,17 @@ Related notes: [[Architecture]], [[Commands]], [[Testing and Deployment]]
 - Replaced the superseded Bot-only demand/any-channel release rules with explicit subcommand-aware scopes: non-admin/team-user and informational commands run in Bot Commands or Staff; admin/configuration commands run in Staff only. Transfer Market and Audit are output-only for bot operations.
 - Added focused command, fixed-window rate-limit, confirmation, hierarchy, database/history/role-plan, channel-policy, error, and announcement tests. Preserved the intentionally selected `📌` appointment and `⬇️` demotion emojis. Final correction verification is 380/380 tests across 30 files.
 - No schema or migration change; no commit or deployment is performed by implementation work.
+
+## Stage 4B.3 promote and demote
+
+**Date**: August 2, 2026
+**Branch**: `stage4b/promote-demote`
+
+- Registered `/promote player:<user> rank:<Assistant Team Manager|Player Manager>` and `/demote staff:<user>`.
+- Built `RosterPromotionDemotionService` for promotion eligibility (TM: Player -> PM, Player -> ATM, PM -> ATM; ATM: Player -> PM) and demotion eligibility (TM: ATM/PM -> Player).
+- Blocked self-action, free agents, other-team members, TM targets, occupied destination slots (`StaffSlotOccupiedError`), and targets already at the desired rank. Enforced no administrative bypass for callers without active team staff appointments.
+- Bound 2-minute initiator-only confirmations under custom ID namespace `promotion-demotion-confirm:*`.
+- Synchronized global staff roles (`TM`, `ATM`, `PM`) while retaining active player membership, team role, and roster count. Preserved ended historical staff appointments.
+- Published structured Transfer Market cards (`⬆️ Promotion - TeamRole` / `⬇️ Demotion - TeamRole`) with single blockquote panel, post-mutation roster line, TM line, actor footer with avatar and UTC timestamp.
+- Verified `BOT_OR_STAFF` channel policy.
+- Verified test suite passes 396/396 tests across 33 test files with zero ESLint errors, typecheck clean, format clean, and git diff check clean. No commits or pushes performed.

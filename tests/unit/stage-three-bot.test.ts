@@ -338,6 +338,8 @@ describe('stage three command registry and deployment', () => {
       'offer',
       'demand',
       'release',
+      'promote',
+      'demote',
     ];
     if (process.env['SLBOT_ENABLE_DEBUG_COMMANDS'] === 'true') expectedNames.push('debugreset');
     expect(registry.toJSON().map(({ name }) => name)).toEqual(expectedNames);
@@ -448,7 +450,7 @@ describe('stage three command registry and deployment', () => {
     expect(embed?.description).toBe('🔴 <@&r-1> Roster');
     expect(embed?.color).toBe(0x3498db);
     expect(embed?.fields?.some(({ name }) => name === 'Team')).toBe(false);
-    expect(embed?.footer?.text).toBe('Roster for 🔴 T1, Test Guild');
+    expect(embed?.footer?.text).toBe('Roster for T1, Test Guild');
   });
 
   it('defers and edits the same private response after successful offer delivery', async () => {
@@ -839,13 +841,24 @@ describe('persistent offer buttons', () => {
       acceptOffer: vi.fn(() => Promise.reject(new Error('unused'))),
       declineOffer: vi.fn(() => {
         order.push('database');
-        return Promise.resolve(declinedOffer);
+        return Promise.resolve({
+          status: 'DECLINED' as const,
+          offer: declinedOffer,
+          destinationClub: result.destinationClub,
+          teamManagerDiscordUserId: null,
+          activePlayerCount: 0,
+          effectiveSquadLimit: 17,
+          guildName: 'Test Guild',
+        });
       }),
     };
     const recovery = { recordMessageUpdateFailure: vi.fn(() => Promise.resolve()) };
     const messages: OfferMessageAdapter = {
       sendOffer: vi.fn(() => Promise.reject(new Error('unused'))),
-      setTerminalState: vi.fn(() => Promise.resolve()),
+      setTerminalState: vi.fn(() => {
+        order.push('terminal');
+        return Promise.resolve();
+      }),
       cleanupOrphan: vi.fn(() => Promise.resolve()),
     };
     const handler = new OfferButtonHandler(responses, recovery, messages, new MemoryLogger());
@@ -867,6 +880,11 @@ describe('persistent offer buttons', () => {
         interaction.deferred = true;
         return Promise.resolve();
       },
+      deferUpdate: () => {
+        order.push('defer');
+        interaction.deferred = true;
+        return Promise.resolve();
+      },
       editReply: (response) => {
         order.push('edit');
         replies.push({ ...response, flags: MessageFlags.Ephemeral });
@@ -880,9 +898,9 @@ describe('persistent offer buttons', () => {
       },
     };
     await expect(handler.handle(interaction)).resolves.toBe(true);
-    expect(order).toEqual(['defer', 'database', 'edit']);
+    expect(order).toEqual(['defer', 'database', 'terminal']);
     expect(responses.declineOffer).toHaveBeenCalledOnce();
-    expect(replies).toEqual([{ content: 'Offer declined.', flags: MessageFlags.Ephemeral }]);
+    expect(replies).toEqual([]);
   });
 });
 

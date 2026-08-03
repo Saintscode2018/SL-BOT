@@ -816,7 +816,7 @@ describe('Stage 4A Polish Verification', () => {
       expect(embedData.title).toBeUndefined();
       expect(embedData.description).toBe(`⚽ <@&${club.discordRoleId}> Roster`);
       expect(embedData.color).toBe(0xf97316);
-      expect(embedData.footer?.text).toBe('Roster for ⚽ T1, Development League');
+      expect(embedData.footer?.text).toBe('Roster for T1, Development League');
 
       const fields = embedData.fields ?? [];
       const fieldNames = fields.map((f) => f.name);

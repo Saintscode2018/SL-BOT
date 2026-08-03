@@ -31,6 +31,8 @@ import { LeagueTransactionRepository } from '../repositories/transaction-reposit
 import { UserRepository } from '../repositories/user-repository.js';
 import type { RoleSynchronizedMutationService } from './role-synchronized-mutation-service.js';
 
+import type { AcceptedOfferPresentationData } from './offer-delivery-service.js';
+
 export const offerAcceptedAuditEventType = 'offer.accepted';
 
 export interface AcceptOfferInput {
@@ -48,6 +50,7 @@ export interface OfferAcceptanceResult extends MutationPlans {
   transaction: LeagueTransaction;
   transactionType: 'SIGNING';
   announcementDelivered?: boolean | null;
+  acceptedPresentation?: AcceptedOfferPresentationData;
 }
 
 export interface OfferAcceptanceRepositories {
@@ -302,6 +305,18 @@ export class OfferAcceptanceService {
           discordUserId: player.discordUserId,
           addRoles: [{ id: destinationClub.discordRoleId, purpose: 'TEAM' }],
           removeRoles: [],
+        },
+        acceptedPresentation: {
+          state: 'ACCEPTED',
+          guildName: guild.name,
+          guildIconUrl: null,
+          teamRoleName: null,
+          teamEmoji: destinationClub.emoji,
+          teamDiscordRoleId: destinationClub.discordRoleId,
+          tmUserId: teamManager !== null ? teamManager.discordUserId : null,
+          tmUsername: null,
+          activePlayerCount: activePlayerCount + 1,
+          effectiveSquadLimit: effectiveLimit,
         },
         announcement:
           settings?.transferChannelId === null || settings?.transferChannelId === undefined

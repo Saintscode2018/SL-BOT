@@ -33,6 +33,8 @@ There is no team display name, abbreviation, or configurable banner. `Club.id` r
 - `/offer player:<user>`: Send a private contract offer for the team derived from the caller's active database staff appointment. Only free agents can receive or accept one. Acceptance adds the team role and publishes the completed signing to Transfer Market.
 - `/demand`: Leave the caller's current team. Ordinary players may leave completely; ATM/PM callers may instead leave only their staff position and remain on the roster. TM callers are blocked.
 - `/release player:<user>`: TM/ATM/PM callers may release a lower-ranked member of their own team. The target never confirms and receives no DM.
+- `/promote player:<user> rank:<Assistant Team Manager|Player Manager>`: TM and ATM callers may promote team members. TM callers may promote Player -> PM, Player -> ATM, or PM -> ATM. ATM callers may promote Player -> PM only.
+- `/demote staff:<user>`: TM callers may demote ATM or PM staff members back to ordinary players.
 - `/health`: Ephemeral bot/database health.
 - `/debugreset`: Development-only, Discord-Administrator reset flow when `SLBOT_ENABLE_DEBUG_COMMANDS=true`.
 
@@ -73,7 +75,19 @@ Accepted signings use a structured `✅ Offer Accepted - RoleName` Transfer Mark
 
 Both commands use initiating-user, guild, action, team, target, and staff-rank-bound two-minute confirmations. Confirmation consumption is atomic and all eligibility plus forced Discord role feasibility is checked again. Critical role synchronization happens before the repeated database transaction; no success or public message occurs until both succeed. Completed movements publish only to Transfer Market. Full-demand cards use `📣 Demand - TeamRole` and an exact two-line blockquote (departure sentence, post-departure `📊 Roster`); staff-only demand uses the structured step-down Demotion card. Release cards use `🚪 Release - TeamRole` and an exact three-line blockquote (release sentence, post-release roster, current TM) plus a neutral `Player:` footer that does not reveal the acting manager. Missing role names fall back to `Team`. Announcement failure is logged and returned as a private warning without rolling back state.
 
-Stage 4B.2 does not implement `/promote`, `/demote`, `/folist`, release reasons, target confirmation/DMs, demand counts, offer cancellation, retry queues, or team-inactivation removal.
+## Stage 4B.3 promote and demote
+
+`/promote player:<user> rank:<Assistant Team Manager|Player Manager>` and `/demote staff:<user>` provide team-controlled staff management.
+
+- Authorization requires holding an active team staff appointment (TM/ATM for promote; TM for demote). Discord Administrators or Bot Permission holders without an active team staff appointment cannot run these commands (no administrative bypass).
+- **`/promote`**: Allowed caller paths are TM (Player -> PM, Player -> ATM, PM -> ATM) and ATM (Player -> PM). ATM promoting to ATM or PM to ATM is blocked. There is no Team Manager choice registered or allowed. Self-promotion, free agents, other-team members, TM targets, occupied destination staff slots (`StaffSlotOccupiedError`), and targets already at the desired rank are rejected.
+- **`/demote`**: TM callers may demote ATM or PM targets back to ordinary players. Self-demotion, ordinary players, TM targets, free agents, and other-team targets are rejected.
+- Both commands use 2-minute initiator-only ephemeral confirmation prompts (`promotion-demotion-confirm:*`). Confirmation re-checks caller and target eligibility state.
+- **Roster & Role Sync**: Player membership and team role are retained; roster count remains unchanged. Global staff roles (`TM`, `ATM`, `PM`) are synchronized. Historical staff appointments are preserved.
+- **Transfer Market Cards**: Published strictly to Transfer Market with `⬆️ Promotion - TeamRole` / `⬇️ Demotion - TeamRole` card structures, single blockquote panel, roster line, TM line, actor footer with avatar and UTC timestamp. No Audit channel delivery.
+- Enforces `BOT_OR_STAFF` channel policy.
+
+Known limitations: Stage 4B.3 does not implement `/folist` or future commands.
 
 ## Emoji validation and thumbnails
 

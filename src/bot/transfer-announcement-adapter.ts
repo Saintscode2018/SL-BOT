@@ -79,16 +79,27 @@ export class DiscordTransferAnnouncementAdapter implements TransferAnnouncementA
     const actorAvatarUrl = plan.presentation?.actor?.avatarUrl ?? null;
     const author = createGuildAuthor({ guildName: serverName, guildIconUrl: serverIconUrl });
 
+    const tmUserId = plan.roster?.teamManagerDiscordUserId;
+    const tmUsername = plan.presentation?.teamManager?.username;
+    const tmFormatted = tmUserId
+      ? formatUserWithVisibleName(tmUserId, tmUsername || 'Unknown User')
+      : BOT_LABELS.vacant;
+    const rosterLine = `${BOT_EMOJIS.roster} ${BOT_LABELS.roster}: ${plan.roster?.currentSize ?? 0}/${plan.roster?.maximumSize ?? 0}`;
+    const tmLine = `${BOT_EMOJIS.teamManager} ${BOT_LABELS.teamManager}: ${tmFormatted}`;
+
     const embed =
-      plan.type === 'APPOINTED' || plan.type === 'DEMOTED'
+      plan.type === 'PROMOTED' || plan.type === 'DEMOTED'
         ? (() => {
-            const isAppointed = plan.type === 'APPOINTED';
+            const isPromotion = plan.type === 'PROMOTED';
             const isStaffOnlyDemand =
               plan.type === 'DEMOTED' && plan.departureMode === 'STAFF_ONLY';
+
             const footer = createActorFooter({
-              verb: isAppointed ? 'Appointed' : isStaffOnlyDemand ? 'Action' : 'Demoted',
-              username: actorUsername,
-              avatarUrl: actorAvatarUrl,
+              verb: isPromotion ? 'Promoted' : isStaffOnlyDemand ? 'Action' : 'Demoted',
+              username: isStaffOnlyDemand ? subjectName : actorUsername,
+              avatarUrl: isStaffOnlyDemand
+                ? (plan.presentation?.subject?.avatarUrl ?? null)
+                : actorAvatarUrl,
               timestamp: plan.occurredAt,
             });
 
@@ -97,108 +108,122 @@ export class DiscordTransferAnnouncementAdapter implements TransferAnnouncementA
                 ? (plan.staffRole ?? 'staff')
                 : `<@&${plan.staffRoleId}>`;
 
-            const panelText = isAppointed
-              ? `${memberFormatted} has been appointed as ${staffRoleMention} for ${team} by ${actorFormatted}!`
+            const actionText = isPromotion
+              ? `${memberFormatted} has been promoted to ${staffRoleMention} for ${team} by ${actorFormatted}!`
               : isStaffOnlyDemand
                 ? `${memberFormatted} has stepped down to player for ${team}!`
                 : `${memberFormatted} has been demoted to player for ${team} by ${actorFormatted}!`;
 
+            const descriptionLines = [actionText, rosterLine, tmLine];
+
             return createInfoEmbed({
               author,
-              title: `${teamRoleName} Transaction (${isAppointed ? BOT_LABELS.appointment : BOT_LABELS.demotion})`,
+              title: `${isPromotion ? BOT_EMOJIS.promotion : BOT_EMOJIS.demotion} ${
+                isPromotion ? 'Promotion' : 'Demotion'
+              } - ${teamRoleName}`,
+              description: formatBlockquote(descriptionLines),
               color: resolveTeamRoleColor(roleColor, BOT_COLORS.info),
-              fields: [
-                {
-                  name: isAppointed
-                    ? `${BOT_EMOJIS.appointment} ${BOT_LABELS.appointment}`
-                    : `${BOT_EMOJIS.demotion} ${BOT_LABELS.demotion}`,
-                  value: formatBlockquote([panelText]),
-                  inline: false,
-                },
-              ],
               thumbnail,
               footer: footer.text,
               ...(footer.iconURL ? { footerIconURL: footer.iconURL } : {}),
             });
           })()
-        : plan.type === 'SIGNED'
+        : plan.type === 'APPOINTED'
           ? (() => {
-              const footer = createPlayerFooter({
-                username: plan.presentation?.subject?.username || 'Unknown Player',
-                avatarUrl: plan.presentation?.subject?.avatarUrl ?? null,
+              const footer = createActorFooter({
+                verb: 'Appointed',
+                username: actorUsername,
+                avatarUrl: actorAvatarUrl,
                 timestamp: plan.occurredAt,
               });
 
-              const tmUserId = plan.roster?.teamManagerDiscordUserId;
-              const tmUsername = plan.presentation?.teamManager?.username;
-              const tmFormatted = tmUserId
-                ? formatUserWithVisibleName(tmUserId, tmUsername || 'Unknown User')
-                : BOT_LABELS.vacant;
+              const staffRoleMention =
+                plan.staffRoleId === undefined
+                  ? (plan.staffRole ?? 'staff')
+                  : `<@&${plan.staffRoleId}>`;
 
-              const description = formatBlockquote([
-                `${memberFormatted} has accepted the offer from ${team}`,
-                `${BOT_EMOJIS.roster} ${BOT_LABELS.roster}: ${plan.roster?.currentSize ?? 0}/${plan.roster?.maximumSize ?? 0}`,
-                `${BOT_EMOJIS.teamManager} ${BOT_LABELS.teamManager}: ${tmFormatted}`,
-              ]);
+              const panelText = `${memberFormatted} has been appointed as ${staffRoleMention} for ${team} by ${actorFormatted}!`;
 
               return createInfoEmbed({
                 author,
-                title: `${BOT_EMOJIS.success} ${BOT_LABELS.offerAccepted} - ${teamRoleName}`,
-                description,
+                title: `${teamRoleName} Transaction (${BOT_LABELS.appointment})`,
                 color: resolveTeamRoleColor(roleColor, BOT_COLORS.info),
+                fields: [
+                  {
+                    name: `${BOT_EMOJIS.appointment} ${BOT_LABELS.appointment}`,
+                    value: formatBlockquote([panelText]),
+                    inline: false,
+                  },
+                ],
                 thumbnail,
                 footer: footer.text,
                 ...(footer.iconURL ? { footerIconURL: footer.iconURL } : {}),
               });
             })()
-          : plan.type === 'DEMANDED' || plan.type === 'RELEASED'
+          : plan.type === 'SIGNED'
             ? (() => {
-                const isDemand = plan.type === 'DEMANDED';
-                const footer = isDemand
-                  ? createActorFooter({
-                      verb: 'Action',
-                      username: subjectName,
-                      avatarUrl: plan.presentation?.subject?.avatarUrl ?? null,
-                      timestamp: plan.occurredAt,
-                    })
-                  : createPlayerFooter({
-                      username: subjectName,
-                      avatarUrl: plan.presentation?.subject?.avatarUrl ?? null,
-                      timestamp: plan.occurredAt,
-                    });
-                const rosterLine = `${BOT_EMOJIS.roster} ${BOT_LABELS.roster}: ${plan.roster?.currentSize ?? 0}/${plan.roster?.maximumSize ?? 0}`;
-                const descriptionLines = [
-                  isDemand
-                    ? `${memberFormatted} has demanded from ${team}!`
-                    : `${memberFormatted} has been released from ${team}!`,
+                const footer = createPlayerFooter({
+                  username: plan.presentation?.subject?.username || 'Unknown Player',
+                  avatarUrl: plan.presentation?.subject?.avatarUrl ?? null,
+                  timestamp: plan.occurredAt,
+                });
+
+                const description = formatBlockquote([
+                  `${memberFormatted} has accepted the offer from ${team}`,
                   rosterLine,
-                ];
-                if (!isDemand) {
-                  const tmUserId = plan.roster?.teamManagerDiscordUserId;
-                  const tmUsername = plan.presentation?.teamManager?.username;
-                  const tmFormatted = tmUserId
-                    ? formatUserWithVisibleName(tmUserId, tmUsername || 'Unknown User')
-                    : BOT_LABELS.vacant;
-                  descriptionLines.push(
-                    `${BOT_EMOJIS.teamManager} ${BOT_LABELS.teamManager}: ${tmFormatted}`,
-                  );
-                }
+                  tmLine,
+                ]);
+
                 return createInfoEmbed({
                   author,
-                  title: `${isDemand ? BOT_EMOJIS.demand : BOT_EMOJIS.release} ${
-                    isDemand ? BOT_LABELS.demand : BOT_LABELS.release
-                  } - ${teamRoleName}`,
-                  description: formatBlockquote(descriptionLines),
+                  title: `${BOT_EMOJIS.success} ${BOT_LABELS.offerAccepted} - ${teamRoleName}`,
+                  description,
                   color: resolveTeamRoleColor(roleColor, BOT_COLORS.info),
                   thumbnail,
                   footer: footer.text,
                   ...(footer.iconURL ? { footerIconURL: footer.iconURL } : {}),
                 });
               })()
-            : createInfoEmbed({
-                description: announcementDescription(plan),
-                color: resolveTeamRoleColor(roleColor, BOT_COLORS.info),
-              });
+            : plan.type === 'DEMANDED' || plan.type === 'RELEASED'
+              ? (() => {
+                  const isDemand = plan.type === 'DEMANDED';
+                  const footer = isDemand
+                    ? createActorFooter({
+                        verb: 'Action',
+                        username: subjectName,
+                        avatarUrl: plan.presentation?.subject?.avatarUrl ?? null,
+                        timestamp: plan.occurredAt,
+                      })
+                    : createPlayerFooter({
+                        username: subjectName,
+                        avatarUrl: plan.presentation?.subject?.avatarUrl ?? null,
+                        timestamp: plan.occurredAt,
+                      });
+                  const descriptionLines = [
+                    isDemand
+                      ? `${memberFormatted} has demanded from ${team}!`
+                      : `${memberFormatted} has been released from ${team}!`,
+                    rosterLine,
+                  ];
+                  if (!isDemand) {
+                    descriptionLines.push(tmLine);
+                  }
+                  return createInfoEmbed({
+                    author,
+                    title: `${isDemand ? BOT_EMOJIS.demand : BOT_EMOJIS.release} ${
+                      isDemand ? BOT_LABELS.demand : BOT_LABELS.release
+                    } - ${teamRoleName}`,
+                    description: formatBlockquote(descriptionLines),
+                    color: resolveTeamRoleColor(roleColor, BOT_COLORS.info),
+                    thumbnail,
+                    footer: footer.text,
+                    ...(footer.iconURL ? { footerIconURL: footer.iconURL } : {}),
+                  });
+                })()
+              : createInfoEmbed({
+                  description: announcementDescription(plan),
+                  color: resolveTeamRoleColor(roleColor, BOT_COLORS.info),
+                });
     await channel
       .send({ allowedMentions: { parse: [] }, embeds: [embed] })
       .catch((error: unknown) => {

@@ -267,6 +267,7 @@ export class RosterMutationService {
         this.assertMayRelease(actorStaff, staff, context.club.id);
       }
       if (kind === 'PROMOTE') {
+        if (context.actor.id === context.user.id) throw new SelfActionForbiddenError();
         const desired = (input as StaffMutationInput).staffType;
         this.assertPromotion(actorStaff, staff, desired, context.club.id);
         if (staff?.membershipType === desired) throw new TargetAlreadyDesiredRankError();
@@ -279,6 +280,7 @@ export class RosterMutationService {
         }
       }
       if (kind === 'DEMOTE') {
+        if (context.actor.id === context.user.id) throw new SelfActionForbiddenError();
         if (
           actorStaff?.clubId !== context.club.id ||
           actorStaff.membershipType !== 'TEAM_MANAGER'
@@ -503,7 +505,7 @@ export class RosterMutationService {
               previousStaffType ?? (resultingStaff.membershipType as StaffMembershipType),
             );
     const appointedStaffRole =
-      kind === 'APPOINT'
+      kind === 'APPOINT' || kind === 'PROMOTE'
         ? this.staffRole(context.settings, (input as StaffMutationInput).staffType)
         : null;
     const announcementType: TransferAnnouncementType =

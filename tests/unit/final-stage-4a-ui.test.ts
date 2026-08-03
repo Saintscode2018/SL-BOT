@@ -88,6 +88,8 @@ class TestInteraction implements CommandInteraction {
   public readonly userId = authorization.discordUserId;
   public readonly memberRoleIds = authorization.memberRoleIds;
   public readonly hasAdministratorPermission = authorization.hasAdministratorPermission;
+  public readonly resolvedDisplayNames = new Map<string, string>();
+  public readonly resolvedDisplayNameRequests: string[] = [];
 
   public constructor(
     public readonly commandName: string,
@@ -135,6 +137,15 @@ class TestInteraction implements CommandInteraction {
 
   public getGuildRoleMetadata(roleId: string): GuildRoleMetadata | null {
     return this.roleMetadata?.id === roleId ? this.roleMetadata : null;
+  }
+
+  public resolveGuildRoleMetadata(roleId: string): Promise<GuildRoleMetadata | null> {
+    return Promise.resolve(this.getGuildRoleMetadata(roleId));
+  }
+
+  public resolveGuildMemberDisplayName(userId: string): Promise<string | null> {
+    this.resolvedDisplayNameRequests.push(userId);
+    return Promise.resolve(this.resolvedDisplayNames.get(userId) ?? null);
   }
 
   public reply(response: SafeInteractionResponse): Promise<void> {
@@ -457,10 +468,41 @@ describe('final Stage 4A command UI', () => {
 
     const text = responseText(interaction);
     expect(interaction.replies[0]?.flags).toBeUndefined();
-    expect(text).toContain(`🔵 <@&${team.discordRoleId}>\\n\\n👑 Team Manager: Vacant`);
-    expect(text).toContain('👔 Assistant Team Manager: Vacant');
-    expect(text).toContain('🧠 Player Manager: Vacant');
+    expect(text).toContain(`🔵 <@&${team.discordRoleId}>\\n> 👑 Team Manager: Vacant`);
+    expect(text).toContain('> 👔 Assistant Team Manager: Vacant');
+    expect(text).toContain('> 🧠 Player Manager: Vacant');
     expect(text).not.toContain('**🔵');
+  });
+
+  it('renders fetched TM, ATM, and PM names in staff list without Unknown User', async () => {
+    const interaction = new TestInteraction(
+      'staff',
+      { subcommand: 'list', team: team.id },
+      'bot-channel',
+    );
+    interaction.resolvedDisplayNames.set('tm-user', 'Fetched TM');
+    interaction.resolvedDisplayNames.set('atm-user', 'Fetched ATM');
+    interaction.resolvedDisplayNames.set('pm-user', 'Fetched PM');
+    const context = createContext();
+    context.staffManagementService.list = () =>
+      Promise.resolve([
+        { membershipType: 'TEAM_MANAGER', user: { discordUserId: 'tm-user' } },
+        { membershipType: 'ASSISTANT_MANAGER', user: { discordUserId: 'atm-user' } },
+        { membershipType: 'PLAYER_MANAGER', user: { discordUserId: 'pm-user' } },
+      ] as never);
+
+    await command('staff').execute(interaction, context);
+
+    const text = responseText(interaction);
+    expect(text).toContain('<@tm-user> `Fetched TM`');
+    expect(text).toContain('<@atm-user> `Fetched ATM`');
+    expect(text).toContain('<@pm-user> `Fetched PM`');
+    expect(text).not.toContain('Unknown User');
+    expect(interaction.resolvedDisplayNameRequests.sort()).toEqual([
+      'atm-user',
+      'pm-user',
+      'tm-user',
+    ]);
   });
 
   it('uses the message-mode roster description and removes title and team field', async () => {
@@ -473,7 +515,7 @@ describe('final Stage 4A command UI', () => {
     expect(embed?.title).toBeUndefined();
     expect(embed?.description).toBe(`🔵 <@&${team.discordRoleId}> Roster`);
     expect(embed?.color).toBe(0xf97316);
-    expect(embed?.footer?.text).toBe('Roster for 🔵 T1, Development League');
+    expect(embed?.footer?.text).toBe('Roster for T1, Development League');
     expect(embed?.fields?.map(({ name }) => name)).toEqual([
       '📊 Roster Count',
       '👑 Team Manager',
@@ -484,6 +526,46 @@ describe('final Stage 4A command UI', () => {
     ]);
     expect(text.match(new RegExp(`<@&${team.discordRoleId}>`, 'g'))).toHaveLength(1);
     expect(text).not.toContain('Assistant Coach');
+  });
+
+  it('resolves each roster staff member and player once before formatting', async () => {
+    const interaction = new TestInteraction('roster', { team: team.id }, 'bot-channel');
+    for (const [id, name] of [
+      ['tm-user', 'Fetched TM'],
+      ['atm-user', 'Fetched ATM'],
+      ['pm-user', 'Fetched PM'],
+      ['player-user', 'Fetched Player'],
+    ] as const) {
+      interaction.resolvedDisplayNames.set(id, name);
+    }
+    const context = createContext();
+    context.rosterManagementService.list = () =>
+      Promise.resolve({
+        club: team,
+        allActiveMembers: [{}, {}, {}, {}],
+        activeStaffUserIds: new Set(['tm-user', 'atm-user', 'pm-user']),
+        ordinaryPlayers: [{ user: { discordUserId: 'player-user' } }],
+        staff: [
+          { membershipType: 'TEAM_MANAGER', user: { discordUserId: 'tm-user' } },
+          { membershipType: 'ASSISTANT_MANAGER', user: { discordUserId: 'atm-user' } },
+          { membershipType: 'PLAYER_MANAGER', user: { discordUserId: 'pm-user' } },
+        ],
+      } as never);
+
+    await command('roster').execute(interaction, context);
+
+    const text = responseText(interaction);
+    expect(text).toContain('<@tm-user> `Fetched TM`');
+    expect(text).toContain('<@atm-user> `Fetched ATM`');
+    expect(text).toContain('<@pm-user> `Fetched PM`');
+    expect(text).toContain('<@player-user> `Fetched Player`');
+    expect(text).not.toContain('Unknown User');
+    expect(interaction.resolvedDisplayNameRequests.sort()).toEqual([
+      'atm-user',
+      'player-user',
+      'pm-user',
+      'tm-user',
+    ]);
   });
 
   it('renders a custom-emoji roster description/footer safely with a blue role', async () => {
@@ -515,7 +597,7 @@ describe('final Stage 4A command UI', () => {
       '<:Newcastle:987654321098765432> <@&300000000000000002> Roster',
     );
     expect(embed?.color).toBe(0x3498db);
-    expect(embed?.footer?.text).toBe('Roster for .Newcastle. T2, Development League');
+    expect(embed?.footer?.text).toBe('Roster for T2, Development League');
     expect(embed?.footer?.text).not.toMatch(/<:|<@&|\d{17,20}/u);
   });
 
@@ -537,7 +619,7 @@ describe('final Stage 4A command UI', () => {
     if (roleMetadata === null) {
       expect(embed?.title).toBeUndefined();
       expect(embed?.description).toBe(`🔵 <@&${team.discordRoleId}> Roster`);
-      expect(embed?.footer?.text).toBe('Roster for 🔵 Unknown Team Role, Development League');
+      expect(embed?.footer?.text).toBe('Roster for Team, Development League');
       expect(
         JSON.stringify(embed).match(new RegExp(`<@&${team.discordRoleId}>`, 'g')),
       ).toHaveLength(1);

@@ -226,14 +226,9 @@ describe('transfer-market announcements', () => {
     const embed = payload.embeds[0]!.toJSON();
     expect(embed).toMatchObject({
       author: { name: 'Stage 4B League' },
-      title: 'Newcastle United Transaction (Demotion)',
+      title: '⬇️ Demotion - Newcastle United',
       color: 0x3498db,
-      fields: [
-        {
-          name: '⬇️ Demotion',
-          value: `> <@${plan.discordUserId}> \`Unknown User\` has been demoted to player for ⚽ <@&${plan.teamIdentity.discordRoleId}> by <@300000000000000099> \`ardaryusz\`!`,
-        },
-      ],
+      description: `> <@${plan.discordUserId}> \`Unknown User\` has been demoted to player for ⚽ <@&${plan.teamIdentity.discordRoleId}> by <@300000000000000099> \`ardaryusz\`!\n> 📊 Roster: 4/17\n> 👑 Team Manager: <@300000000000000009> \`Unknown User\``,
       footer: {
         text: 'Demoted by ardaryusz • 02.08.2026 12:00 UTC',
         icon_url: 'https://cdn.discordapp.com/avatars/actor/avatar.png',
@@ -242,6 +237,69 @@ describe('transfer-market announcements', () => {
     expect(embed.author?.icon_url).toBeUndefined();
     expect(embed.title).not.toMatch(/^@/u);
     expect(JSON.stringify(embed)).not.toContain('ATM');
+  });
+
+  it('renders a structured promotion with target staff role mention in body and actor in footer', async () => {
+    const send = vi.fn((payload: unknown) => {
+      void payload;
+      return Promise.resolve();
+    });
+    const plan: TransferAnnouncementPlan = {
+      ...announcement,
+      type: 'PROMOTED',
+      actorDiscordUserId: '300000000000000099',
+      staffRole: 'PM',
+      staffRoleId: '400000000000000099',
+      presentation: {
+        serverName: 'Stage 4B League',
+        serverIconUrl: 'https://cdn.discordapp.com/icons/guild/icon.png',
+        teamRoleName: 'Chelsea FC',
+        teamRoleColor: 0x0000ff,
+        actor: {
+          username: 'ardaryusz',
+          avatarUrl: 'https://cdn.discordapp.com/avatars/actor/avatar.png',
+        },
+      },
+    };
+    const client = {
+      channels: {
+        fetch: vi.fn(() =>
+          Promise.resolve({
+            guildId: plan.discordGuildId,
+            isSendable: () => true,
+            send,
+          }),
+        ),
+      },
+    } as unknown as Client;
+
+    await new DiscordTransferAnnouncementAdapter(client).send(plan);
+
+    const payload = vi.mocked(send).mock.calls[0]![0] as {
+      embeds: Array<{
+        toJSON(): {
+          author?: { name: string; icon_url?: string };
+          title?: string;
+          color?: number;
+          description?: string;
+          footer?: { text: string; icon_url?: string };
+        };
+      }>;
+    };
+    const embed = payload.embeds[0]!.toJSON();
+    expect(embed).toMatchObject({
+      author: {
+        name: 'Stage 4B League',
+        icon_url: 'https://cdn.discordapp.com/icons/guild/icon.png',
+      },
+      title: '⬆️ Promotion - Chelsea FC',
+      color: 0x0000ff,
+      description: `> <@${plan.discordUserId}> \`Unknown User\` has been promoted to <@&400000000000000099> for ⚽ <@&${plan.teamIdentity.discordRoleId}> by <@300000000000000099> \`ardaryusz\`!\n> 📊 Roster: 4/17\n> 👑 Team Manager: <@300000000000000009> \`Unknown User\``,
+      footer: {
+        text: 'Promoted by ardaryusz • 02.08.2026 12:00 UTC',
+        icon_url: 'https://cdn.discordapp.com/avatars/actor/avatar.png',
+      },
+    });
   });
 
   it('uses a safe Team transaction fallback when the team role name is unavailable', async () => {
@@ -274,11 +332,11 @@ describe('transfer-market announcements', () => {
     await new DiscordTransferAnnouncementAdapter(client).send(plan);
 
     const payload = vi.mocked(send).mock.calls[0]![0] as {
-      embeds: Array<{ toJSON(): { title?: string; fields?: Array<{ value: string }> } }>;
+      embeds: Array<{ toJSON(): { title?: string; description?: string } }>;
     };
     const embed = payload.embeds[0]!.toJSON();
-    expect(embed.title).toBe('Team Transaction (Demotion)');
-    expect(embed.fields?.[0]?.value).toBe(
+    expect(embed.title).toBe('⬇️ Demotion - Team');
+    expect(embed.description).toContain(
       `> <@${plan.discordUserId}> \`Unknown User\` has been demoted to player for ⚽ <@&400000000000000001> by <@300000000000000099> \`ardaryusz\`!`,
     );
     expect(embed.title).not.toMatch(/@|400000000000000001/u);

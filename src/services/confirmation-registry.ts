@@ -20,6 +20,7 @@ export interface ConfirmationContext {
   targetDiscordUserId?: string;
   initiatorStaffRole?: 'TM' | 'ATM' | 'PM';
   targetStaffRole?: 'TM' | 'ATM' | 'PM';
+  destinationStaffRole?: 'TM' | 'ATM' | 'PM';
 }
 
 export type ConfirmationDecision = 'confirm' | 'staff-only';
@@ -42,7 +43,7 @@ interface ConfirmationRecord extends ConfirmationContext {
 }
 
 const confirmationCustomIdPattern =
-  /^roster-confirm:([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}):(confirm|staff-only|cancel)$/i;
+  /^[a-z0-9-]+:([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}):(confirm|staff-only|cancel)$/i;
 
 export const confirmationLifetimeMs = 2 * 60 * 1000;
 
@@ -57,12 +58,14 @@ export class ConfirmationRegistry {
   public create(
     context: ConfirmationContext,
     options: {
+      prefix?: string;
       now?: Date;
       onExpire?: () => Promise<void>;
       onCancel?: () => Promise<void>;
     } = {},
   ): ConfirmationRegistration {
     const id = randomUUID();
+    const prefix = options.prefix ?? 'roster-confirm';
     const now = options.now ?? new Date();
     const expiresAt = new Date(now.getTime() + this.lifetimeMs);
     const timer = setTimeout(() => this.expire(id), this.lifetimeMs);
@@ -78,9 +81,9 @@ export class ConfirmationRegistry {
     });
     return {
       id,
-      confirmCustomId: `roster-confirm:${id}:confirm`,
-      staffOnlyCustomId: `roster-confirm:${id}:staff-only`,
-      cancelCustomId: `roster-confirm:${id}:cancel`,
+      confirmCustomId: `${prefix}:${id}:confirm`,
+      staffOnlyCustomId: `${prefix}:${id}:staff-only`,
+      cancelCustomId: `${prefix}:${id}:cancel`,
       expiresAt,
     };
   }
@@ -207,6 +210,9 @@ export class ConfirmationRegistry {
         ? {}
         : { initiatorStaffRole: record.initiatorStaffRole }),
       ...(record.targetStaffRole === undefined ? {} : { targetStaffRole: record.targetStaffRole }),
+      ...(record.destinationStaffRole === undefined
+        ? {}
+        : { destinationStaffRole: record.destinationStaffRole }),
     };
   }
 }

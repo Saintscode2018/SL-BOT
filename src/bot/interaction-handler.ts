@@ -26,6 +26,108 @@ import type {
   SafeInteractionResponse,
 } from './types.js';
 
+type ResolvableDiscordInteraction = ChatInputCommandInteraction | ButtonInteraction;
+
+function memberDisplayName(member: {
+  displayName: string;
+  user: { globalName: string | null; username: string };
+}): string {
+  return member.displayName.trim() || member.user.globalName || member.user.username;
+}
+
+function invokingUserDisplayName(interaction: ResolvableDiscordInteraction): string {
+  const member = interaction.member;
+  if (
+    member &&
+    typeof member === 'object' &&
+    'displayName' in member &&
+    typeof member.displayName === 'string'
+  ) {
+    return member.displayName.trim() || interaction.user.globalName || interaction.user.username;
+  }
+  return interaction.user.globalName || interaction.user.username;
+}
+
+async function resolveGuildMemberDisplayName(
+  interaction: ResolvableDiscordInteraction,
+  logger: Logger,
+  userId: string,
+): Promise<string | null> {
+  if (interaction.user.id === userId) return invokingUserDisplayName(interaction);
+
+  const guild = interaction.guild;
+  const cachedMember = guild?.members.cache.get(userId);
+  if (cachedMember !== undefined) return memberDisplayName(cachedMember);
+
+  logger.debug('Discord guild member cache miss', {
+    guildId: guild?.id ?? null,
+    userId,
+  });
+
+  if (guild !== null) {
+    try {
+      const fetchedMember = await guild.members.fetch(userId);
+      logger.debug('Discord guild member fetch succeeded', { guildId: guild.id, userId });
+      return memberDisplayName(fetchedMember);
+    } catch (error: unknown) {
+      logger.debug('Discord guild member fetch failed', { guildId: guild.id, userId, error });
+    }
+  }
+
+  const cachedUser = interaction.client.users.cache.get(userId);
+  if (cachedUser !== undefined) return cachedUser.globalName || cachedUser.username;
+
+  try {
+    const fetchedUser = await interaction.client.users.fetch(userId);
+    logger.debug('Discord user fetch succeeded', { userId });
+    return fetchedUser.globalName || fetchedUser.username;
+  } catch (error: unknown) {
+    logger.debug('Discord user fetch failed', { userId, error });
+    return null;
+  }
+}
+
+async function resolveGuildRoleMetadata(
+  interaction: ResolvableDiscordInteraction,
+  logger: Logger,
+  roleId: string,
+): Promise<{ id: string; name: string; color: number } | null> {
+  const guilds = interaction.guild
+    ? [interaction.guild]
+    : [...interaction.client.guilds.cache.values()];
+
+  for (const guild of guilds) {
+    const cachedRole = guild.roles.cache.get(roleId);
+    if (cachedRole !== undefined) {
+      return { id: cachedRole.id, name: cachedRole.name, color: cachedRole.color };
+    }
+  }
+
+  logger.debug('Discord guild role cache miss', {
+    guildId: interaction.guild?.id ?? null,
+    roleId,
+  });
+
+  for (const guild of guilds) {
+    try {
+      const fetchedRole = await guild.roles.fetch(roleId);
+      if (fetchedRole !== null) {
+        logger.debug('Discord guild role fetch succeeded', { guildId: guild.id, roleId });
+        return { id: fetchedRole.id, name: fetchedRole.name, color: fetchedRole.color };
+      }
+      logger.debug('Discord guild role fetch failed', {
+        guildId: guild.id,
+        roleId,
+        error: 'role was not found',
+      });
+    } catch (error: unknown) {
+      logger.debug('Discord guild role fetch failed', { guildId: guild.id, roleId, error });
+    }
+  }
+
+  return null;
+}
+
 class DiscordCommandOptions implements CommandInteractionOptions {
   public constructor(private readonly interaction: ChatInputCommandInteraction) {}
 
@@ -70,8 +172,11 @@ class DiscordCommandOptions implements CommandInteractionOptions {
   }
 }
 
-class DiscordCommandInteraction implements CommandInteraction {
-  public constructor(private readonly interaction: ChatInputCommandInteraction) {}
+export class DiscordCommandInteraction implements CommandInteraction {
+  public constructor(
+    private readonly interaction: ChatInputCommandInteraction,
+    private readonly logger: Logger,
+  ) {}
 
   public get commandName(): string {
     return this.interaction.commandName;
@@ -160,6 +265,22 @@ class DiscordCommandInteraction implements CommandInteraction {
   }
 
   public getGuildMemberDisplayName(userId: string): string | null {
+    if (this.interaction.user.id === userId) {
+      const member = this.interaction.member;
+      if (
+        member &&
+        typeof member === 'object' &&
+        'displayName' in member &&
+        typeof member.displayName === 'string'
+      ) {
+        return (
+          member.displayName.trim() ||
+          this.interaction.user.globalName ||
+          this.interaction.user.username
+        );
+      }
+      return this.interaction.user.globalName || this.interaction.user.username;
+    }
     const member = this.interaction.guild?.members.cache.get(userId);
     if (member) {
       return member.displayName.trim() || member.user.globalName || member.user.username;
@@ -169,6 +290,18 @@ class DiscordCommandInteraction implements CommandInteraction {
       return user.globalName || user.username;
     }
     return null;
+  }
+
+  public async resolveGuildMemberDisplayName(userId: string): Promise<string | null> {
+    return resolveGuildMemberDisplayName(this.interaction, this.logger, userId);
+  }
+
+  public async resolveGuildRoleMetadata(roleId: string): Promise<{
+    id: string;
+    name: string;
+    color: number;
+  } | null> {
+    return resolveGuildRoleMetadata(this.interaction, this.logger, roleId);
   }
 
   public async executeDebugReset(database: CommandContext['database']): Promise<void> {
@@ -282,8 +415,11 @@ class DiscordAutocomplete implements CommandAutocompleteInteraction {
   }
 }
 
-class DiscordButtonAdapter implements OfferButtonInteraction, ButtonInteractionAdapter {
-  public constructor(private readonly interaction: ButtonInteraction) {}
+export class DiscordButtonAdapter implements OfferButtonInteraction, ButtonInteractionAdapter {
+  public constructor(
+    private readonly interaction: ButtonInteraction,
+    private readonly logger: Logger,
+  ) {}
 
   public get customId(): string {
     return this.interaction.customId;
@@ -317,6 +453,14 @@ class DiscordButtonAdapter implements OfferButtonInteraction, ButtonInteractionA
     await this.interaction.reply(response);
   }
 
+  public get guildName(): string | undefined {
+    return this.interaction.guild?.name;
+  }
+
+  public get guildIconUrl(): string | undefined {
+    return this.interaction.guild?.iconURL() ?? undefined;
+  }
+
   public getGuildRoleMetadata(roleId: string): {
     id: string;
     name: string;
@@ -327,12 +471,40 @@ class DiscordButtonAdapter implements OfferButtonInteraction, ButtonInteractionA
   }
 
   public getGuildMemberDisplayName(userId: string): string | null {
+    if (this.interaction.user.id === userId) {
+      const member = this.interaction.member;
+      if (
+        member &&
+        typeof member === 'object' &&
+        'displayName' in member &&
+        typeof member.displayName === 'string'
+      ) {
+        return (
+          member.displayName.trim() ||
+          this.interaction.user.globalName ||
+          this.interaction.user.username
+        );
+      }
+      return this.interaction.user.globalName || this.interaction.user.username;
+    }
     const member = this.interaction.guild?.members.cache.get(userId);
     if (member) {
       return member.displayName.trim() || member.user.globalName || member.user.username;
     }
     const user = this.interaction.client.users.cache.get(userId);
     return user ? user.globalName || user.username : null;
+  }
+
+  public async resolveGuildMemberDisplayName(userId: string): Promise<string | null> {
+    return resolveGuildMemberDisplayName(this.interaction, this.logger, userId);
+  }
+
+  public async resolveGuildRoleMetadata(roleId: string): Promise<{
+    id: string;
+    name: string;
+    color: number;
+  } | null> {
+    return resolveGuildRoleMetadata(this.interaction, this.logger, roleId);
   }
 
   public async deferUpdate(): Promise<void> {
@@ -360,7 +532,7 @@ export function createInteractionCreateHandler(
   return async (interaction) => {
     if (interaction.isChatInputCommand()) {
       await handleInteractionCreate(
-        new DiscordCommandInteraction(interaction),
+        new DiscordCommandInteraction(interaction, logger),
         registry,
         context,
         logger,
@@ -383,11 +555,15 @@ export function createInteractionCreateHandler(
       return;
     }
     if (interaction.isButton()) {
-      const adapted = new DiscordButtonAdapter(interaction);
+      const adapted = new DiscordButtonAdapter(interaction, logger);
       const isDeparture = context.departureCommandHandler?.canHandle(adapted.customId) ?? false;
+      const isPromotionDemotion =
+        context.promotionDemotionCommandHandler?.canHandle(adapted.customId) ?? false;
       try {
         if (isDeparture) {
           await context.departureCommandHandler!.handleButton(adapted);
+        } else if (isPromotionDemotion) {
+          await context.promotionDemotionCommandHandler!.handleButton(adapted);
         } else {
           await context.offerButtonHandler.handle(adapted);
         }
@@ -401,7 +577,7 @@ export function createInteractionCreateHandler(
         if (adapted.deferred && !adapted.replied) {
           await adapted.editReply({
             embeds: [mapped.embed],
-            ...(isDeparture ? { components: [] } : {}),
+            ...(isDeparture || isPromotionDemotion ? { components: [] } : {}),
           });
         } else if (adapted.replied) {
           await adapted.followUp(response);

@@ -46,9 +46,20 @@ tags:
 - Completed `📣 Demand - TeamRole` two-line and `🚪 Release - TeamRole` three-line blockquote cards with safe `Team` fallback, post-roster/current-TM data, no stray quote line, and non-manager release attribution; staff-only demand reuses the structured Demotion card.
 - Added no schema change or migration.
 
-## Stage 4B.3–4B.4 and later
+## Completed Stage 4B.3 promote and demote
 
-- Public `/promote`, `/demote`, and `/folist` commands using the foundation.
+- Registered exact `/promote player rank` and `/demote staff` command shapes.
+- Enforced TM and ATM authorization for promotion; TM authorization for demotion. Blocked Discord Administrators and Bot Permission holders without an active staff appointment (no administrative bypass).
+- Validated exact promotion paths (TM: Player -> PM, Player -> ATM, PM -> ATM; ATM: Player -> PM) and demotion paths (TM: ATM/PM -> Player).
+- Rejected self-action, free agents, other-team members, TM targets, occupied destination slots (`StaffSlotOccupiedError`), and targets already at the desired rank.
+- Applied 2-minute initiator-only ephemeral confirmation dialogs (`promotion-demotion-confirm:*`) with confirmation-time state re-checks.
+- Retained roster membership, team role, and roster count while synchronizing global staff roles (`TM`, `ATM`, `PM`) and preserving historical staff appointments.
+- Published structured Transfer Market cards (`⬆️ Promotion - TeamRole` / `⬇️ Demotion - TeamRole`) with server author/icon, team color/thumbnail, single blockquote panel, roster line, TM line, actor footer with avatar and UTC timestamp. No Audit channel delivery.
+- Enforced `BOT_OR_STAFF` channel policy.
+
+## Stage 4B.4 and later
+
+- Public `/folist` and future commands.
 - Role-derived offer source.
 - Import tooling.
 - General mutation Discord auditing.

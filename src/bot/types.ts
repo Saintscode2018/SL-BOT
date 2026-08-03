@@ -20,6 +20,7 @@ import type { StaffManagementService } from '../services/staff-management-servic
 import type { SetupAuditService } from '../services/setup-audit-service.js';
 import type { OfferButtonHandler } from './offer-button-handler.js';
 import type { RosterDepartureCommandHandler } from './departure-command-handler.js';
+import type { RosterPromotionDemotionCommandHandler } from './promotion-demotion-command-handler.js';
 import type { GuildEmoji } from './emoji-helper.js';
 
 export interface SafeInteractionResponse {
@@ -53,6 +54,8 @@ export interface ButtonInteractionAdapter {
   readonly deferred: boolean;
   getGuildRoleMetadata?(roleId: string): GuildRoleMetadata | null;
   getGuildMemberDisplayName?(userId: string): string | null;
+  resolveGuildRoleMetadata?(roleId: string): Promise<GuildRoleMetadata | null>;
+  resolveGuildMemberDisplayName?(userId: string): Promise<string | null>;
   deferUpdate(): Promise<void>;
   reply(response: SafeInteractionResponse): Promise<void>;
   editReply(response: EditedInteractionResponse): Promise<void>;
@@ -76,6 +79,8 @@ export interface CommandInteraction {
   getGuildEmojis?(): readonly GuildEmoji[];
   getGuildRoleMetadata?(roleId: string): GuildRoleMetadata | null;
   getGuildMemberDisplayName?(userId: string): string | null;
+  resolveGuildRoleMetadata?(roleId: string): Promise<GuildRoleMetadata | null>;
+  resolveGuildMemberDisplayName?(userId: string): Promise<string | null>;
   executeDebugReset?(database: PrismaClient): Promise<void>;
   reply(response: SafeInteractionResponse): Promise<void>;
 
@@ -133,6 +138,10 @@ export interface CommandContext {
   departureCommandHandler?: Pick<
     RosterDepartureCommandHandler,
     'beginDemand' | 'beginRelease' | 'canHandle' | 'handleButton'
+  >;
+  promotionDemotionCommandHandler?: Pick<
+    RosterPromotionDemotionCommandHandler,
+    'beginPromote' | 'beginDemote' | 'canHandle' | 'handleButton'
   >;
   setupAuditService: Pick<SetupAuditService, 'publish'>;
 }

@@ -88,8 +88,19 @@ tags:
 - Non-admin/team-user and informational commands use Bot Commands or Staff; admin/configuration commands use Staff only. The selection is subcommand-aware, channel access never grants command authority, and Transfer Market/Audit remain output-only bot-operation channels. Wrong-channel errors use exact normalized wording (`Use this command in <channel list>.`). Non-global callers (including TM/ATM/PM callers without global administrative authorization) see channel guidance mentioning only Bot Commands (`Use this command in <#botCommandsChannelId>.`); Staff Commands is never disclosed to non-global callers. Unauthorized callers on STAFF_ONLY commands receive `Permission Denied` without channel guidance.
 - Full demand uses `📣 Demand - TeamRole` and exactly two adjacent blockquote lines; release uses `🚪 Release - TeamRole` and exactly three adjacent lines with post-mutation roster/current TM while never revealing the acting manager. Both titles fall back to `Team`. Staff-only demand uses `stepped down to player` wording. Delivery failure is non-critical after completed state.
 
-## 10. Explicit exclusions
+## 10. Stage 4B.3 promotion and demotion decisions
 
-Stage 4B.2 does not register promotion/demotion/folist or implement release reasons, target confirmation/DMs, demand counts/gameplay limits, offer cancellation, imports, role-derived offer source, retry queues, reconciliation, team-inactivation removal, free-form templates, or per-team aliases.
+- `/promote player rank` and `/demote staff` provide team-controlled staff management.
+- Authorization requires an active team staff appointment (TM/ATM for promote; TM for demote). Discord Administrators or Bot Permission holders without an active staff appointment cannot execute these commands (no administrative bypass).
+- Allowed promotion paths: TM (Player -> PM, Player -> ATM, PM -> ATM) and ATM (Player -> PM). ATM promoting to ATM or PM to ATM is blocked. No Team Manager choice is registered or allowed.
+- Allowed demotion paths: TM callers may demote ATM or PM targets back to ordinary player.
+- Self-action (self-promotion, self-demotion), free agents, other-team members, TM targets, occupied destination slots, and targets already at the desired rank are rejected.
+- Confirmations are ephemeral, 2 minutes long, initiator-only, and recheck caller/target state.
+- Roster membership and team role are retained; roster count remains unchanged. Global staff roles (`TM`, `ATM`, `PM`) are synchronized. Historical staff appointments are preserved.
+- Output cards (`⬆️ Promotion - TeamRole` / `⬇️ Demotion - TeamRole`) publish strictly to Transfer Market with server author/icon, team color/thumbnail, single blockquote panel, roster line, TM line, actor footer with avatar and UTC timestamp. No Audit channel delivery.
+
+## 11. Explicit exclusions
+
+Stage 4B.3 does not register `/folist` or implement future commands, release reasons, target confirmation/DMs, demand counts/gameplay limits, offer cancellation, imports, role-derived offer source, retry queues, reconciliation, team-inactivation removal, free-form templates, or per-team aliases.
 
 Related notes: [[Commands]], [[Architecture]], [[Roadmap]]

@@ -7,13 +7,14 @@ import type { AuthorizationInput } from '../services/authorization-service.js';
 import { getFriendlyPositionName, type StaffType } from '../services/staff-management-service.js';
 import { createActorField, createInfoEmbed, createSuccessEmbed } from './embeds.js';
 import { demandCommand, releaseCommand } from './departure-command-definitions.js';
+import { demoteCommand, promoteCommand } from './promotion-demotion-command-definitions.js';
 import { getTeamThumbnail, validateTeamEmoji } from './emoji-helper.js';
 import {
   BOT_COLORS,
   BOT_EMOJIS,
   BOT_LABELS,
   createGuildAuthor,
-  formatTeamFooterIdentity,
+  formatTeamPlainRoleName,
   formatUserWithVisibleName,
   getUserDisplayName,
 } from './presentation/index.js';
@@ -112,33 +113,84 @@ function requiredInteger(options: CommandInteractionOptions, name: string): numb
   return value;
 }
 
-const staffPositions = [
-  { type: 'TEAM_MANAGER', emoji: BOT_EMOJIS.teamManager, name: BOT_LABELS.teamManager },
-  {
-    type: 'ASSISTANT_MANAGER',
-    emoji: BOT_EMOJIS.assistantTeamManager,
-    name: BOT_LABELS.assistantTeamManager,
-  },
-  { type: 'PLAYER_MANAGER', emoji: BOT_EMOJIS.playerManager, name: BOT_LABELS.playerManager },
-] as const;
+export function formatStaffDirectoryTeamSection(
+  formattedTeamIdentity: string,
+  tmFormatted: string,
+  atmFormatted: string,
+  pmFormatted: string,
+): string {
+  return [
+    formattedTeamIdentity,
+    `> ${BOT_EMOJIS.teamManager} ${BOT_LABELS.teamManager}: ${tmFormatted}`,
+    `> ${BOT_EMOJIS.assistantTeamManager} ${BOT_LABELS.assistantTeamManager}: ${atmFormatted}`,
+    `> ${BOT_EMOJIS.playerManager} ${BOT_LABELS.playerManager}: ${pmFormatted}`,
+  ].join('\n');
+}
 
 function staffDirectoryBlock(
   staff: ReadonlyArray<{ membershipType: string; user: { discordUserId: string } }>,
-  interaction?: CommandInteraction,
-): string {
+  resolvedNames?: ReadonlyMap<string, string | null>,
+): { tmFormatted: string; atmFormatted: string; pmFormatted: string } {
   const byType = new Map(staff.map((membership) => [membership.membershipType, membership.user]));
-  return staffPositions
-    .map(({ type, emoji, name }) => {
-      const user = byType.get(type);
-      const userFormatted = user
-        ? formatUserWithVisibleName(
-            user.discordUserId,
-            interaction ? getUserDisplayName(interaction, user.discordUserId) : 'Unknown User',
-          )
-        : BOT_LABELS.vacant;
-      return `${emoji} ${name}: ${userFormatted}`;
-    })
-    .join('\n');
+  const getFormatted = (type: string) => {
+    const user = byType.get(type);
+    return user
+      ? formatUserWithVisibleName(
+          user.discordUserId,
+          resolvedNames?.get(user.discordUserId) ?? 'Unknown User',
+        )
+      : BOT_LABELS.vacant;
+  };
+  return {
+    tmFormatted: getFormatted('TEAM_MANAGER'),
+    atmFormatted: getFormatted('ASSISTANT_MANAGER'),
+    pmFormatted: getFormatted('PLAYER_MANAGER'),
+  };
+}
+
+function renderTeamStaffBlock(
+  formattedTeamIdentity: string,
+  staff: ReadonlyArray<{ membershipType: string; user: { discordUserId: string } }>,
+  resolvedNames?: ReadonlyMap<string, string | null>,
+): string {
+  const { tmFormatted, atmFormatted, pmFormatted } = staffDirectoryBlock(staff, resolvedNames);
+  return formatStaffDirectoryTeamSection(
+    formattedTeamIdentity,
+    tmFormatted,
+    atmFormatted,
+    pmFormatted,
+  );
+}
+
+async function resolveUserDisplayNames(
+  interaction: CommandInteraction,
+  userIds: Iterable<string>,
+): Promise<Map<string, string | null>> {
+  const uniqueUserIds = [...new Set(userIds)];
+  const entries = await Promise.all(
+    uniqueUserIds.map(async (userId) => {
+      const asynchronouslyResolved = await interaction.resolveGuildMemberDisplayName?.(userId);
+      return [
+        userId,
+        asynchronouslyResolved?.trim() || getUserDisplayName(interaction, userId),
+      ] as const;
+    }),
+  );
+  return new Map(entries);
+}
+
+async function resolveTeamPresentationAsync<T extends { discordRoleId: string; emoji: string }>(
+  interaction: CommandInteraction,
+  team: T,
+) {
+  const role =
+    (await interaction.resolveGuildRoleMetadata?.(team.discordRoleId)) ??
+    interaction.getGuildRoleMetadata?.(team.discordRoleId) ??
+    null;
+  return {
+    team: { ...team, discordRoleName: role?.name ?? null },
+    role,
+  };
 }
 
 function chunkStaffDirectoryFields(
@@ -958,10 +1010,14 @@ const staffCommand: CommandDefinition = {
     const selectedTeamId = execution.options.getString('team');
     if (selectedTeamId) {
       const staff = await context.staffManagementService.list(execution.guildId, selectedTeamId);
+      const resolvedNames = await resolveUserDisplayNames(
+        interaction,
+        staff.map(({ user }) => user.discordUserId),
+      );
       const activeTeams = (await context.clubManagementService.listActive(execution.guildId)) ?? [];
       const selectedClubItem = activeTeams.find((item) => item.club.id === selectedTeamId);
       const presentation = selectedClubItem
-        ? resolveTeamPresentation(interaction, selectedClubItem.club)
+        ? await resolveTeamPresentationAsync(interaction, selectedClubItem.club)
         : null;
       const thumbnail = selectedClubItem ? getTeamThumbnail(selectedClubItem.club.emoji) : null;
 
@@ -973,7 +1029,11 @@ const staffCommand: CommandDefinition = {
               fields: [
                 {
                   name: '\u200b',
-                  value: `${formatTeamIdentity(selectedClubItem.club, 'message')}\n\n${staffDirectoryBlock(staff, interaction)}`,
+                  value: renderTeamStaffBlock(
+                    formatTeamIdentity(selectedClubItem.club, 'message'),
+                    staff,
+                    resolvedNames,
+                  ),
                   inline: false,
                 },
               ],
@@ -996,16 +1056,21 @@ const staffCommand: CommandDefinition = {
       return;
     }
 
-    const fields = await Promise.all(
-      activeTeams.map(async ({ club }) => {
-        const staff = await context.staffManagementService.list(execution.guildId, club.id);
-        return {
-          name: '\u200b',
-          value: `${formatTeamIdentity(club, 'message')}\n\n${staffDirectoryBlock(staff, interaction)}`,
-          inline: false,
-        };
-      }),
+    const teamStaff = await Promise.all(
+      activeTeams.map(async ({ club }) => ({
+        club,
+        staff: await context.staffManagementService.list(execution.guildId, club.id),
+      })),
     );
+    const resolvedNames = await resolveUserDisplayNames(
+      interaction,
+      teamStaff.flatMap(({ staff }) => staff.map(({ user }) => user.discordUserId)),
+    );
+    const fields = teamStaff.map(({ club, staff }) => ({
+      name: '\u200b',
+      value: renderTeamStaffBlock(formatTeamIdentity(club, 'message'), staff, resolvedNames),
+      inline: false,
+    }));
 
     const embeds = chunkStaffDirectoryFields(fields).map((chunk, index) =>
       createInfoEmbed({
@@ -1043,29 +1108,33 @@ const rosterCommand: CommandDefinition = {
 
     const effectiveLimit = getEffectiveSquadLimit(result.club, settings?.settings);
     const thumbnail = getTeamThumbnail(result.club.emoji);
-    const presentation = resolveTeamPresentation(interaction, result.club);
+    const presentation = await resolveTeamPresentationAsync(interaction, result.club);
 
     const staffByType = new Map(result.staff.map((m) => [m.membershipType, m.user]));
     const tmUser = staffByType.get('TEAM_MANAGER');
     const atmUser = staffByType.get('ASSISTANT_MANAGER');
     const pmUser = staffByType.get('PLAYER_MANAGER');
+    const resolvedNames = await resolveUserDisplayNames(interaction, [
+      ...result.staff.map(({ user }) => user.discordUserId),
+      ...result.ordinaryPlayers.map(({ user }) => user.discordUserId),
+    ]);
 
     const tmLine = tmUser
       ? formatUserWithVisibleName(
           tmUser.discordUserId,
-          getUserDisplayName(interaction, tmUser.discordUserId),
+          resolvedNames.get(tmUser.discordUserId) ?? 'Unknown User',
         )
       : BOT_LABELS.none;
     const atmLine = atmUser
       ? formatUserWithVisibleName(
           atmUser.discordUserId,
-          getUserDisplayName(interaction, atmUser.discordUserId),
+          resolvedNames.get(atmUser.discordUserId) ?? 'Unknown User',
         )
       : BOT_LABELS.none;
     const pmLine = pmUser
       ? formatUserWithVisibleName(
           pmUser.discordUserId,
-          getUserDisplayName(interaction, pmUser.discordUserId),
+          resolvedNames.get(pmUser.discordUserId) ?? 'Unknown User',
         )
       : BOT_LABELS.none;
 
@@ -1077,7 +1146,7 @@ const rosterCommand: CommandDefinition = {
               ({ user }) =>
                 `• ${formatUserWithVisibleName(
                   user.discordUserId,
-                  getUserDisplayName(interaction, user.discordUserId),
+                  resolvedNames.get(user.discordUserId) ?? 'Unknown User',
                 )}`,
             )
             .join('\n');
@@ -1121,7 +1190,7 @@ const rosterCommand: CommandDefinition = {
         },
       ],
       thumbnail,
-      footer: `Roster for ${formatTeamFooterIdentity(presentation.team)}, ${leagueName}`,
+      footer: `Roster for ${formatTeamPlainRoleName(presentation.team)}, ${leagueName}`,
     });
 
     await interaction.reply({ embeds: [embed] });
@@ -1211,6 +1280,8 @@ export const commands: readonly CommandDefinition[] = [
   offerCommand,
   demandCommand,
   releaseCommand,
+  promoteCommand,
+  demoteCommand,
 ];
 
 export const commandDefinitions = [
@@ -1223,5 +1294,7 @@ export const commandDefinitions = [
   offerCommand,
   demandCommand,
   releaseCommand,
+  promoteCommand,
+  demoteCommand,
   ...(process.env['SLBOT_ENABLE_DEBUG_COMMANDS'] === 'true' ? [debugResetCommand] : []),
 ] satisfies readonly CommandDefinition[];

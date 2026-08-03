@@ -2,6 +2,7 @@ import type { Client } from 'discord.js';
 
 import { createDiscordClient } from '../bot/client.js';
 import { RosterDepartureCommandHandler } from '../bot/departure-command-handler.js';
+import { RosterPromotionDemotionCommandHandler } from '../bot/promotion-demotion-command-handler.js';
 import { loadCommands } from '../bot/command-loader.js';
 import { commandDefinitions } from '../bot/commands.js';
 import { EventRegistry } from '../bot/event-registry.js';
@@ -39,6 +40,7 @@ import { OfferDeliveryService } from '../services/offer-delivery-service.js';
 import { OfferResponseService } from '../services/offer-response-service.js';
 import { RosterManagementService } from '../services/roster-management-service.js';
 import { RosterDepartureService } from '../services/roster-departure-service.js';
+import { RosterPromotionDemotionService } from '../services/roster-promotion-demotion-service.js';
 import { RoleSynchronizedMutationService } from '../services/role-synchronized-mutation-service.js';
 import { RosterMutationService } from '../services/roster-mutation-service.js';
 import { StaffManagementService } from '../services/staff-management-service.js';
@@ -89,11 +91,17 @@ export function createApplication(
   );
   const rosterMutations = new RosterMutationService(prisma, synchronizedMutations);
   const commandChannelPolicy = new CommandChannelPolicyService(prisma);
+  const confirmations = new ConfirmationRegistry(logger);
   const departureCommandHandler = new RosterDepartureCommandHandler(
     commandChannelPolicy,
     new RosterDepartureService(prisma, rosterMutations),
-    new ConfirmationRegistry(logger),
+    confirmations,
     new GuildUserRateLimiter(demandRateLimitMs),
+  );
+  const promotionDemotionCommandHandler = new RosterPromotionDemotionCommandHandler(
+    commandChannelPolicy,
+    new RosterPromotionDemotionService(prisma, rosterMutations),
+    confirmations,
   );
   const offerAcceptanceService = new OfferAcceptanceService(
     prisma,
@@ -134,6 +142,7 @@ export function createApplication(
     offerDeliveryService,
     offerButtonHandler,
     departureCommandHandler,
+    promotionDemotionCommandHandler,
     setupAuditService,
   };
   const events = new EventRegistry(createEventDefinitions(commands, context, logger));

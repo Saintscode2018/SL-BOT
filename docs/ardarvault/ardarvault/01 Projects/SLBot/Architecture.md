@@ -33,7 +33,7 @@ The appended final-identity migration rebuilds both SQLite tables without changi
 
 ## Authorization and policy
 
-Global access: guild owner, Discord Administrator, or configured `bot_permissions` role. Club staff scope: active database TM/ATM/PM appointment. Explicit channel scopes are subcommand-aware: `/health`, `/team list`, `/staff list`, `/roster`, `/limit view`, `/offer`, `/demand`, and `/release` are `BOT_OR_STAFF`; setup/team/staff/limit mutations, setup view, and debug reset are `STAFF_ONLY`. Command-channel access never grants command authority. Transfer Market and Audit are output-only bot-operation channels. Non-global callers (ordinary players and TM/ATM/PM callers without global administrative authorization) receive channel guidance mentioning only Bot Commands (`Use this command in <#botCommandsChannelId>.`) to ensure Staff Commands is never disclosed. Globally authorized callers receive concise guidance mentioning both channels for BOT_OR_STAFF commands (`Use this command in <#botCommandsChannelId> or <#staffCommandsChannelId>.`) and staff-channel guidance for STAFF_ONLY commands (`Use this command in <#staffCommandsChannelId>.`). Channel-not-configured errors remain distinct.
+Global access: guild owner, Discord Administrator, or configured `bot_permissions` role. Club staff scope: active database TM/ATM/PM appointment. Explicit channel scopes are subcommand-aware: `/health`, `/team list`, `/staff list`, `/roster`, `/limit view`, `/offer`, `/demand`, `/release`, `/promote`, and `/demote` are `BOT_OR_STAFF`; setup/team/staff/limit mutations, setup view, and debug reset are `STAFF_ONLY`. Command-channel access never grants command authority. Transfer Market and Audit are output-only bot-operation channels. Non-global callers (ordinary players and TM/ATM/PM callers without global administrative authorization) receive channel guidance mentioning only Bot Commands (`Use this command in <#botCommandsChannelId>.`) to ensure Staff Commands is never disclosed. Globally authorized callers receive concise guidance mentioning both channels for BOT_OR_STAFF commands (`Use this command in <#botCommandsChannelId> or <#staffCommandsChannelId>.`) and staff-channel guidance for STAFF_ONLY commands (`Use this command in <#staffCommandsChannelId>.`). Channel-not-configured errors remain distinct.
 
 ## Presentation and auditing
 
@@ -70,5 +70,16 @@ The in-memory confirmation registry binds random tokens to initiator, guild, act
 Full demand/release removes the team role plus the matching configured ATM/PM role when applicable and ends both active membership rows. Staff-only demand removes only the matching global role, ends only the staff row, and retains capacity/team membership. All history is retained and no departure Audit event is written. The existing forced member fetch, hierarchy checks, role-first ordering, database recheck, compensation, and post-success best-effort Transfer Market delivery remain the synchronization boundary.
 
 Demand and release cards use server author/icon, plain team-role title, team color/thumbnail, one blockquote panel, post-mutation roster data, UTC player footer, and no audit/reason details. Release also shows the current TM but never identifies the acting manager. Staff-only demand uses the Demotion card with `stepped down to player` and `Action by` wording.
+
+## Stage 4B.3 promotion and demotion boundary
+
+`RosterPromotionDemotionService` is the application boundary for `/promote` and `/demote`.
+
+- Authorization requires holding an active team staff appointment (TM/ATM for promote; TM for demote). Discord Administrators or Bot Permission holders without an active team staff appointment are blocked (no administrative bypass).
+- Allowed promotion paths: TM (Player -> PM, Player -> ATM, PM -> ATM) and ATM (Player -> PM). No Team Manager choice is registered or allowed. Self-promotion, free agents, other-team members, TM targets, occupied destination slots, and targets already at the desired rank are rejected.
+- Allowed demotion paths: TM callers may demote ATM or PM staff back to ordinary player. Self-demotion, ordinary players, TM targets, free agents, and other-team members are rejected.
+- Confirmations use `ConfirmationRegistry` under isolated custom ID namespace `promotion-demotion-confirm:*`. Ephemeral 2-minute prompts re-check eligibility state at confirmation time.
+- Roster membership and team role are retained; roster count remains unchanged. Global staff roles (`TM`, `ATM`, `PM`) are synchronized. Historical staff appointments are marked ENDED.
+- Output cards (`⬆️ Promotion - TeamRole` / `⬇️ Demotion - TeamRole`) publish strictly to Transfer Market with server author/icon, team color/thumbnail, single blockquote panel, roster line, TM line, actor footer with avatar and UTC timestamp. Audit channel delivery is not used.
 
 Related notes: [[Commands]], [[Product Decisions]], [[Roadmap]]

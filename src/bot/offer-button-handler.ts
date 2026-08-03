@@ -7,12 +7,13 @@ import type {
   OfferDeliveryService,
   OfferMessageAdapter,
   OfferMessageReference,
+  TerminalOfferPresentationPayload,
 } from '../services/offer-delivery-service.js';
 import type { OfferResponseService } from '../services/offer-response-service.js';
-import { formatTeamIdentity } from '../domain/team-label.js';
 import type {
   DeferredInteractionResponse,
   EditedInteractionResponse,
+  GuildRoleMetadata,
   SafeInteractionResponse,
 } from './types.js';
 import { parseOfferCustomId } from './offer-custom-id.js';
@@ -24,8 +25,15 @@ export interface OfferButtonInteraction {
   messageId: string;
   replied: boolean;
   deferred: boolean;
+  guildName?: string | undefined;
+  guildIconUrl?: string | undefined;
+  getGuildRoleMetadata?(roleId: string): { id: string; name: string; color: number } | null;
+  getGuildMemberDisplayName?(userId: string): string | null;
+  resolveGuildRoleMetadata?(roleId: string): Promise<GuildRoleMetadata | null>;
+  resolveGuildMemberDisplayName?(userId: string): Promise<string | null>;
   reply(response: SafeInteractionResponse): Promise<void>;
   deferReply(response: DeferredInteractionResponse): Promise<void>;
+  deferUpdate?(): Promise<void>;
   editReply(response: EditedInteractionResponse): Promise<void>;
   followUp(response: SafeInteractionResponse): Promise<void>;
 }
@@ -45,33 +53,112 @@ export class OfferButtonHandler {
       channelId: interaction.channelId,
       messageId: interaction.messageId,
     };
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    try {
-      if (parsed.action === 'accept') {
-        const result = await this.responses.acceptOffer({
+
+    if (parsed.action === 'decline') {
+      await interaction.deferUpdate?.();
+      try {
+        const declineResult = await this.responses.declineOffer({
           offerId: parsed.offerId,
           respondingDiscordUserId: interaction.userId,
           discordChannelId: interaction.channelId,
           discordMessageId: interaction.messageId,
         });
+
+        const roleMeta = declineResult.destinationClub?.discordRoleId
+          ? await this.resolveRole(interaction, declineResult.destinationClub.discordRoleId)
+          : null;
+        const teamRoleName = roleMeta?.name?.trim().replace(/^@+/u, '') ?? null;
+        const tmUserId = declineResult.teamManagerDiscordUserId ?? null;
+        const tmUsername = tmUserId ? await this.resolveUser(interaction, tmUserId) : null;
+
+        const presentationPayload: TerminalOfferPresentationPayload = {
+          state: 'DECLINED',
+          guildName: interaction.guildName ?? declineResult.guildName ?? null,
+          guildIconUrl: interaction.guildIconUrl ?? null,
+          teamRoleName,
+          teamEmoji: declineResult.destinationClub?.emoji ?? '',
+          teamDiscordRoleId: declineResult.destinationClub?.discordRoleId ?? '',
+          tmUserId,
+          tmUsername,
+          activePlayerCount: declineResult.activePlayerCount ?? 0,
+          effectiveSquadLimit: declineResult.effectiveSquadLimit ?? 17,
+        };
+
+        const targetOffer =
+          declineResult && 'offer' in declineResult
+            ? declineResult.offer
+            : (declineResult as unknown as Offer);
+
         await this.updateAfterDatabaseSuccess(
-          result.offer,
+          targetOffer,
           interaction.userId,
           reference,
-          'ACCEPTED',
-          `${result.player.discordUserId === interaction.userId ? `<@${interaction.userId}>` : 'The player'} joined ${formatTeamIdentity(result.destinationClub, 'message')} as a ${result.transactionType.toLowerCase()}.`,
+          'DECLINED',
+          presentationPayload,
         );
-        await this.respond(interaction, 'Offer accepted successfully.');
-      } else {
-        const offer = await this.responses.declineOffer({
-          offerId: parsed.offerId,
-          respondingDiscordUserId: interaction.userId,
-          discordChannelId: interaction.channelId,
-          discordMessageId: interaction.messageId,
-        });
-        await this.updateAfterDatabaseSuccess(offer, interaction.userId, reference, 'DECLINED');
-        await this.respond(interaction, 'Offer declined.');
+        return true;
+      } catch (error: unknown) {
+        if (error instanceof OfferExpiredError) {
+          await this.messages
+            .setTerminalState(reference, 'EXPIRED')
+            .catch((updateError: unknown) => {
+              this.logger.error('expired offer message update failed', updateError, {
+                offerId: parsed.offerId,
+              });
+            });
+        }
+        throw error;
       }
+    }
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    try {
+      const result = await this.responses.acceptOffer({
+        offerId: parsed.offerId,
+        respondingDiscordUserId: interaction.userId,
+        discordChannelId: interaction.channelId,
+        discordMessageId: interaction.messageId,
+      });
+
+      const roleMeta = await this.resolveRole(interaction, result.destinationClub.discordRoleId);
+      const teamRoleName =
+        roleMeta?.name?.trim().replace(/^@+/u, '') ??
+        result.acceptedPresentation?.teamRoleName ??
+        null;
+      const tmUserId = result.acceptedPresentation?.tmUserId ?? null;
+      const tmUsername = tmUserId
+        ? ((await this.resolveUser(interaction, tmUserId)) ??
+          result.acceptedPresentation?.tmUsername ??
+          null)
+        : null;
+
+      const presentationPayload: TerminalOfferPresentationPayload = {
+        state: 'ACCEPTED',
+        guildName: interaction.guildName ?? result.acceptedPresentation?.guildName ?? null,
+        guildIconUrl: interaction.guildIconUrl ?? result.acceptedPresentation?.guildIconUrl ?? null,
+        teamRoleName,
+        teamEmoji: result.destinationClub.emoji,
+        teamDiscordRoleId: result.destinationClub.discordRoleId,
+        tmUserId,
+        tmUsername,
+        activePlayerCount:
+          result.acceptedPresentation?.activePlayerCount ??
+          result.announcement?.roster?.currentSize ??
+          1,
+        effectiveSquadLimit:
+          result.acceptedPresentation?.effectiveSquadLimit ??
+          result.announcement?.roster?.maximumSize ??
+          17,
+      };
+
+      await this.updateAfterDatabaseSuccess(
+        result.offer,
+        interaction.userId,
+        reference,
+        'ACCEPTED',
+        presentationPayload,
+      );
+      await this.respond(interaction, 'Offer accepted successfully.');
       return true;
     } catch (error: unknown) {
       if (error instanceof OfferExpiredError) {
@@ -90,7 +177,7 @@ export class OfferButtonHandler {
     actorDiscordUserId: string,
     reference: OfferMessageReference,
     state: 'ACCEPTED' | 'DECLINED',
-    detail?: string,
+    detail?: string | TerminalOfferPresentationPayload,
   ): Promise<void> {
     try {
       await this.messages.setTerminalState(reference, state, detail);
@@ -101,6 +188,28 @@ export class OfferButtonHandler {
       });
       await this.delivery.recordMessageUpdateFailure(offer, actorDiscordUserId, state);
     }
+  }
+
+  private async resolveRole(
+    interaction: OfferButtonInteraction,
+    roleId: string,
+  ): Promise<GuildRoleMetadata | null> {
+    return (
+      (await interaction.resolveGuildRoleMetadata?.(roleId)) ??
+      interaction.getGuildRoleMetadata?.(roleId) ??
+      null
+    );
+  }
+
+  private async resolveUser(
+    interaction: OfferButtonInteraction,
+    userId: string,
+  ): Promise<string | null> {
+    return (
+      (await interaction.resolveGuildMemberDisplayName?.(userId)) ??
+      interaction.getGuildMemberDisplayName?.(userId) ??
+      null
+    );
   }
 
   private async respond(interaction: OfferButtonInteraction, content: string): Promise<void> {

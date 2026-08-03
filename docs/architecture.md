@@ -41,7 +41,7 @@ Composite `Club(id, guildId)` references remain intact for memberships, offers, 
 
 Global authorization is granted to the guild owner, a Discord Administrator, or a member with `botPermissionsRoleId`. Active TM/ATM/PM database appointments provide club-scoped authority only.
 
-- Bot-or-Staff: `/health`, `/team list`, `/staff list`, `/roster`, `/limit view`, `/offer`, `/demand`, and `/release`. These commands are rejected in Transfer Market, Audit, and arbitrary channels; their own authorization rules still apply.
+- Bot-or-Staff: `/health`, `/team list`, `/staff list`, `/roster`, `/limit view`, `/offer`, `/demand`, `/release`, `/promote`, and `/demote`. These commands are rejected in Transfer Market, Audit, and arbitrary channels; their own authorization rules still apply.
 - Demand rate limiting is a fixed one-minute in-memory expiry per guild/user. Only an allowed acquisition stores a new expiry; blocked retries do not mutate it, and channel policy runs first so wrong-channel attempts do not consume or refresh it.
 - Administrative Staff-only: `/setup *`, `/team add|edit|remove`, `/limit default|team|reset`, and `/staff appoint|remove`.
 - Debug: `/debugreset`, Discord Administrator only and Staff-restricted once configured.
@@ -100,3 +100,14 @@ Full demand/release role plans remove the team role and the matching configured 
 Effective capacity is `club.squadLimitOverride ?? settings.defaultSquadLimit`. Active `PLAYER` memberships count; because every staff member also owns that player row, TM/ATM/PM all consume squad capacity. Roster presentation derives all active members, active staff user IDs, and ordinary players: capacity uses the first collection while the Players field uses only the last, preventing duplicate staff display. Limit DTOs carry the `Club` record rather than duplicating presentation fields.
 
 The command boundary resolves the source role name/color plus guild name/icon before private offer delivery. The DM adapter does not query a guild and renders a `Contract Offer` card with Source Team, Team Manager, `📊 Squad`, and relative-only `⏰ Expires` fields, followed by persistent buttons configured with ✅/❌ emoji. Missing role metadata becomes a safe readable `Team` identity rather than a raw ID or `@unknown-role`.
+
+## Stage 4B.3 promotion and demotion workflows
+
+`RosterPromotionDemotionService` handles eligibility validation and mutation orchestration for `/promote` and `/demote`.
+
+- **Authorization**: TM and ATM appointments grant promotion authority; TM appointments grant demotion authority. Discord Administrators and Bot Permission holders without active team staff appointments are blocked (no administrative bypass).
+- **Promotion Paths**: TM callers may promote Player -> PM, Player -> ATM, or PM -> ATM. ATM callers may promote Player -> PM only. No Team Manager choice is registered or allowed. Self-promotion, free agents, other-team members, TM targets, occupied destination slots (`StaffSlotOccupiedError`), and targets already at the desired rank are rejected.
+- **Demotion Paths**: TM callers may demote ATM or PM targets to ordinary players. Self-demotion, ordinary players, TM targets, free agents, and other-team members are rejected.
+- **Confirmations**: Managed via `ConfirmationRegistry` under isolated custom ID namespace `promotion-demotion-confirm:*`. Prompts expire after two minutes and enforce initiating-user ownership. Confirmation-time execution re-reads database state.
+- **Mutations & Role Sync**: Player membership and team role are retained; roster count remains unchanged. Global staff roles (`TM`, `ATM`, `PM`) are synchronized before database commit. Historical staff memberships are marked ENDED.
+- **Announcements**: Published strictly to Transfer Market channel with `⬆️ Promotion - TeamRole` / `⬇️ Demotion - TeamRole` card structures, single blockquote panel, roster line, TM line, actor footer with avatar and UTC timestamp. No Audit channel delivery.

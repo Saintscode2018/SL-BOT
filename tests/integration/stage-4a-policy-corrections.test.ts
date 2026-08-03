@@ -280,6 +280,8 @@ describe('authorization aware channel policy', () => {
       { commandName: 'offer' },
       { commandName: 'demand' },
       { commandName: 'release' },
+      { commandName: 'promote' },
+      { commandName: 'demote' },
     ];
 
     for (const item of botOrStaffCommands) {
@@ -338,6 +340,8 @@ describe('authorization aware channel policy', () => {
     for (const [commandName, subcommand] of [
       ['demand', null],
       ['release', null],
+      ['promote', null],
+      ['demote', null],
       ['offer', null],
       ['roster', null],
       ['team', 'list'],
