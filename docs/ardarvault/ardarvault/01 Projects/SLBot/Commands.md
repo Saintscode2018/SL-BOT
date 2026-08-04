@@ -34,6 +34,7 @@ tags:
   list [team]
 /roster team
 /teamhealth [team]
+/folist
 /offer player
 /demand
 /release player
@@ -62,6 +63,7 @@ All `team` string options use the same database-backed autocomplete. Labels cont
 | `/staff list`                 | Bot Commands or Staff                       | Any allowed caller                                    | Public                                                             |
 | `/roster`                     | Bot Commands or Staff                       | Any allowed caller                                    | Public                                                             |
 | `/teamhealth [team]`          | Staff                                       | Global                                                | Ephemeral, read-only                                               |
+| `/folist`                     | Staff                                       | Global                                                | Ephemeral, read-only                                               |
 | `/offer`                      | Bot Commands or Staff                       | Active database TM/ATM/PM appointment                 | Ephemeral acknowledgement + private DM                             |
 | `/demand`                     | Bot Commands or Staff                       | Player, ATM, or PM with active membership; TM blocked | Ephemeral confirmation/result; public Transfer Market success only |
 | `/release player`             | Bot Commands or Staff                       | Active TM/ATM/PM, exact own-team hierarchy            | Ephemeral confirmation/result; public Transfer Market success only |
@@ -76,6 +78,7 @@ Errors are always ephemeral. Stale commands receive an ephemeral `Command Unavai
 - Team health compact: one active team per line as `<emoji> <@&roleId>: <active PLAYER count> 👤, <heart>`, ordered like `/team list`, with no staff, limit, slots, labels, blank rows, inactive teams, or truncation. Multiple information-color embeds preserve complete rows and order. Empty state is `No active teams are currently configured.`
 - Team health detailed: `<emoji> <@&roleId>` followed immediately by continuous quoted `👑 Team Manager`, `👔 Assistant Team Manager`, `🧠 Player Manager`, `📊 Roster: current/effective`, and `🩺 Health` rows. Vacancies say `Vacant`; users use `<@id> \`VisibleName\``. Health is 🖤 at 0–4, 💛 at 5–9, 💚 at 10–15, and ❤️ at 16+.
 - `/teamhealth` is read-only, Staff-only, and global-administrator-only. It uses the shared team autocomplete, rejects inactive/foreign/unknown/stale-role selections, and uses cache-then-fetch role/user resolution after restarts.
+- `/folist`: lists every active team and its Team Manager as `<emoji> <@&roleId> Team Manager: <formatted manager or Vacant>`, ordered like `/team list`, with no ATM, PM, roster count, health, blockquotes, or blank lines. Ephemeral, Staff-only, and global-administrator-only, chunked across embeds with title `Franchise Owner List`. Empty state is `No active teams are currently configured.`
 
 - Team list: `<team identity> — current/max`.
 - Staff appointment/removal: affected user, friendly position, and team identity; actor field last.

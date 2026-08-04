@@ -19,6 +19,7 @@ import type { RosterManagementService } from '../services/roster-management-serv
 import type { StaffManagementService } from '../services/staff-management-service.js';
 import type { SetupAuditService } from '../services/setup-audit-service.js';
 import type { TeamHealthService } from '../services/team-health-service.js';
+import type { FranchiseOwnerListService } from '../services/franchise-owner-list-service.js';
 import type { OfferButtonHandler } from './offer-button-handler.js';
 import type { RosterDepartureCommandHandler } from './departure-command-handler.js';
 import type { RosterPromotionDemotionCommandHandler } from './promotion-demotion-command-handler.js';
@@ -146,6 +147,7 @@ export interface CommandContext {
   >;
   setupAuditService: Pick<SetupAuditService, 'publish'>;
   teamHealthService?: Pick<TeamHealthService, 'getOverview' | 'getDetail'>;
+  franchiseOwnerListService?: Pick<FranchiseOwnerListService, 'getList'>;
 }
 
 export interface CommandDefinition {

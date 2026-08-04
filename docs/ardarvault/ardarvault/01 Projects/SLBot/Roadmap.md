@@ -60,7 +60,7 @@ tags:
 ## Stage 4B.4 and later
 
 - Completed `/teamhealth [team]`: Staff-only/global-admin-only read-only compact and detailed roster health, exact heart boundaries, effective limit/staff detail, cold-cache Discord resolution, deterministic chunking, and focused unit/integration coverage.
-- Public `/folist` and future commands.
+- Completed `/folist`: Staff-only/global-admin-only read-only compact team manager list (`<emoji> <role mention> Team Manager: <manager or Vacant>`), cold-cache Discord resolution, deterministic chunking, and focused unit/integration coverage.
 - Role-derived offer source.
 - Import tooling.
 - General mutation Discord auditing.

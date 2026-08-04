@@ -47,6 +47,7 @@ import { StaffManagementService } from '../services/staff-management-service.js'
 import { SetupAuditService } from '../services/setup-audit-service.js';
 import { TransferAnnouncementService } from '../services/transfer-announcement-service.js';
 import { TeamHealthService } from '../services/team-health-service.js';
+import { FranchiseOwnerListService } from '../services/franchise-owner-list-service.js';
 import { Application, type DatabaseLifecycle } from './application.js';
 
 export interface ApplicationBundle {
@@ -146,6 +147,7 @@ export function createApplication(
     promotionDemotionCommandHandler,
     setupAuditService,
     teamHealthService: new TeamHealthService(prisma),
+    franchiseOwnerListService: new FranchiseOwnerListService(prisma),
   };
   const events = new EventRegistry(createEventDefinitions(commands, context, logger));
   const database: DatabaseLifecycle = {

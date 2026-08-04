@@ -25,6 +25,7 @@ import {
   formatCompactTeamHealthLine,
   formatDetailedTeamHealthDescription,
 } from './team-health-presentation.js';
+import { formatFranchiseOwnerListLine } from './franchise-owner-list-presentation.js';
 import type {
   CommandAutocompleteInteraction,
   CommandContext,
@@ -1318,6 +1319,91 @@ const teamHealthCommand: CommandDefinition = {
   autocomplete: autocompleteTeam,
 };
 
+const folistCommand: CommandDefinition = {
+  data: new SlashCommandBuilder()
+    .setName('folist')
+    .setDescription("List every active team's Team Manager"),
+  async execute(interaction, context) {
+    const execution = await enforceChannelPolicy(interaction, context);
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    const service = context.franchiseOwnerListService;
+    if (service === undefined) {
+      throw new ConfigurationError('franchise owner list service is unavailable');
+    }
+
+    const requestedAt = new Date();
+    const actorDisplayName = getUserDisplayName(interaction, execution.authorization.discordUserId);
+    const footer = createActorFooter({
+      verb: 'Requested',
+      username: actorDisplayName,
+      timestamp: requestedAt,
+    });
+
+    const result = await service.getList(execution.guildId);
+    const author = createGuildAuthor({
+      guildName: result.guild.name || execution.guildName,
+      guildIconUrl: interaction.guildIconUrl ?? null,
+    });
+
+    if (result.items.length === 0) {
+      const embed = createInfoEmbed({
+        author,
+        title: 'Franchise Owner List',
+        description: 'No active teams are currently configured.',
+        footer: footer.text,
+        footerIconURL: footer.iconURL ?? null,
+        timestamp: requestedAt,
+      });
+      await interaction.editReply({ embeds: [embed] });
+      return;
+    }
+
+    const presentedItems = await Promise.all(
+      result.items.map(async ({ club, teamManager }) => {
+        const presentation = await resolveTeamPresentationAsync(interaction, club);
+        if (presentation.role === null) throw new DiscordRoleMissingError('TEAM');
+        return { presentation, teamManager };
+      }),
+    );
+
+    const managerUserIds = presentedItems
+      .map(({ teamManager }) => teamManager?.user.discordUserId)
+      .filter((id): id is string => id !== undefined && id !== null);
+
+    const resolvedNames = await resolveUserDisplayNames(interaction, managerUserIds);
+
+    const lines = presentedItems.map(({ presentation, teamManager }) => {
+      const managerUserId = teamManager?.user.discordUserId ?? null;
+      const managerDisplayName =
+        managerUserId !== null ? (resolvedNames.get(managerUserId) ?? null) : null;
+      return formatFranchiseOwnerListLine(presentation.team, managerUserId, managerDisplayName);
+    });
+
+    const descriptions = chunkTeamHealthLines(lines);
+
+    const embeds = descriptions.map((description, index) =>
+      createInfoEmbed({
+        author,
+        title: index === 0 ? 'Franchise Owner List' : 'Franchise Owner List Continued',
+        description,
+        footer: footer.text,
+        footerIconURL: footer.iconURL ?? null,
+        timestamp: requestedAt,
+      }),
+    );
+
+    const firstBatch = embeds.slice(0, 10);
+    await interaction.editReply({ embeds: firstBatch });
+    for (let index = 10; index < embeds.length; index += 10) {
+      await interaction.followUp({
+        embeds: embeds.slice(index, index + 10),
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+  },
+};
+
 const offerCommand: CommandDefinition = {
   data: new SlashCommandBuilder()
     .setName('offer')
@@ -1398,6 +1484,7 @@ export const commands: readonly CommandDefinition[] = [
   staffCommand,
   rosterCommand,
   teamHealthCommand,
+  folistCommand,
   offerCommand,
   demandCommand,
   releaseCommand,
@@ -1413,6 +1500,7 @@ export const commandDefinitions = [
   staffCommand,
   rosterCommand,
   teamHealthCommand,
+  folistCommand,
   offerCommand,
   demandCommand,
   releaseCommand,
