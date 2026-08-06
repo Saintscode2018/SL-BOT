@@ -80,7 +80,7 @@ class RosterCommandInteraction implements CommandInteraction {
   public constructor(
     private readonly clubId: string,
     public readonly commandName = 'roster',
-    private readonly subcommand: string | null = null,
+    private readonly subcommand: string | null = 'view',
     private readonly role: GuildRoleMetadata | null = null,
     channelId = botChannelId,
     private readonly stringOptions: Readonly<Record<string, string>> = {},
@@ -202,7 +202,7 @@ describe('roster autocomplete command correlation', () => {
         [roleId]: roleName,
       });
       expect(changedChoices[0]?.value).toBe(choice.value);
-      const interaction = new RosterCommandInteraction(choice.value, 'roster', null, role);
+      const interaction = new RosterCommandInteraction(choice.value, 'roster', 'view', role);
 
       await command.execute(interaction, context);
 

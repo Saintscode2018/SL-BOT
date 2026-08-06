@@ -16,6 +16,7 @@ import type { LimitManagementService } from '../services/limit-management-servic
 import type { OfferAcceptanceService } from '../services/offer-acceptance-service.js';
 import type { OfferDeliveryService } from '../services/offer-delivery-service.js';
 import type { RosterManagementService } from '../services/roster-management-service.js';
+import type { RosterAdministrationService } from '../services/roster-administration-service.js';
 import type { StaffManagementService } from '../services/staff-management-service.js';
 import type { SetupAuditService } from '../services/setup-audit-service.js';
 import type { TeamHealthService } from '../services/team-health-service.js';
@@ -138,6 +139,7 @@ export interface CommandContext {
   >;
 
   rosterManagementService: Pick<RosterManagementService, 'add' | 'remove' | 'list'>;
+  rosterAdministrationService?: Pick<RosterAdministrationService, 'add' | 'remove'>;
   limitManagementService: Pick<
     LimitManagementService,
     'setDefaultLimit' | 'setTeamLimit' | 'resetTeamLimit' | 'viewLimit'

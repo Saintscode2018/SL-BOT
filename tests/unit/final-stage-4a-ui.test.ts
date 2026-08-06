@@ -529,7 +529,11 @@ describe('final Stage 4A command UI', () => {
   });
 
   it('uses the message-mode roster description and removes title and team field', async () => {
-    const interaction = new TestInteraction('roster', { team: team.id }, 'bot-channel');
+    const interaction = new TestInteraction(
+      'roster',
+      { subcommand: 'view', team: team.id },
+      'bot-channel',
+    );
 
     await command('roster').execute(interaction, createContext());
 
@@ -557,7 +561,11 @@ describe('final Stage 4A command UI', () => {
   });
 
   it('resolves each roster staff member and player once before formatting', async () => {
-    const interaction = new TestInteraction('roster', { team: team.id }, 'bot-channel');
+    const interaction = new TestInteraction(
+      'roster',
+      { subcommand: 'view', team: team.id },
+      'bot-channel',
+    );
     for (const [id, name] of [
       ['tm-user', 'Fetched TM'],
       ['atm-user', 'Fetched ATM'],
@@ -596,6 +604,38 @@ describe('final Stage 4A command UI', () => {
     ]);
   });
 
+  it('keeps every chunked roster-view follow-up private and preserves player order', async () => {
+    const interaction = new TestInteraction(
+      'roster',
+      { subcommand: 'view', team: team.id },
+      'bot-channel',
+    );
+    const players = Array.from({ length: 40 }, (_, index) => {
+      const discordUserId = `player-${index.toString().padStart(2, '0')}`;
+      interaction.resolvedDisplayNames.set(discordUserId, `Player ${index} ${'x'.repeat(24)}`);
+      return { user: { discordUserId } };
+    });
+    const context = createContext();
+    context.rosterManagementService.list = () =>
+      Promise.resolve({
+        club: team,
+        allActiveMembers: players,
+        activeStaffUserIds: new Set<string>(),
+        ordinaryPlayers: players,
+        staff: [],
+      } as never);
+
+    await command('roster').execute(interaction, context);
+
+    expect(interaction.followUps.length).toBeGreaterThan(0);
+    expect(interaction.followUps.every(({ flags }) => flags === MessageFlags.Ephemeral)).toBe(true);
+    const output = [interaction.replies[0], ...interaction.followUps]
+      .flatMap((response) => response?.embeds ?? [])
+      .map((embed) => JSON.stringify(embed.data))
+      .join('\n');
+    expect(output.indexOf('<@player-00>')).toBeLessThan(output.indexOf('<@player-39>'));
+  });
+
   it('renders a custom-emoji roster description/footer safely with a blue role', async () => {
     const customTeam = {
       ...team,
@@ -611,11 +651,16 @@ describe('final Stage 4A command UI', () => {
         ordinaryPlayers: [],
         staff: [],
       });
-    const interaction = new TestInteraction('roster', { team: customTeam.id }, 'bot-channel', {
-      id: customTeam.discordRoleId,
-      name: 'T2',
-      color: 0x3498db,
-    });
+    const interaction = new TestInteraction(
+      'roster',
+      { subcommand: 'view', team: customTeam.id },
+      'bot-channel',
+      {
+        id: customTeam.discordRoleId,
+        name: 'T2',
+        color: 0x3498db,
+      },
+    );
 
     await command('roster').execute(interaction, context);
 
@@ -635,7 +680,7 @@ describe('final Stage 4A command UI', () => {
   ] as const)('uses safe roster fallbacks for a %s', async (_, roleMetadata) => {
     const interaction = new TestInteraction(
       'roster',
-      { team: team.id },
+      { subcommand: 'view', team: team.id },
       'bot-channel',
       roleMetadata,
     );

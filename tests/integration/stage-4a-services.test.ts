@@ -143,6 +143,7 @@ describe('Stage 4A Services and Policies', () => {
           authorization: ownerAuth(),
           channelId: '999999999999999999', // arbitrary channel
           commandName: 'roster',
+          subcommand: 'view',
         }),
       ).rejects.toThrow(ConfigurationError);
 
@@ -152,6 +153,7 @@ describe('Stage 4A Services and Policies', () => {
           authorization: ownerAuth(),
           channelId: '111111111111111111', // bot commands channel
           commandName: 'roster',
+          subcommand: 'view',
         }),
       ).resolves.toBeUndefined();
 
@@ -161,6 +163,7 @@ describe('Stage 4A Services and Policies', () => {
           authorization: ownerAuth(),
           channelId: '222222222222222222', // staff channel
           commandName: 'roster',
+          subcommand: 'view',
         }),
       ).resolves.toBeUndefined();
     });

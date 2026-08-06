@@ -31,7 +31,8 @@ The permanent team identity is only `<emoji> <@&DiscordRoleId>`. Emoji and Disco
 - `/bannerconfig` is removed and stale cached interactions fail safely.
 - Autocomplete uses only `@CachedRoleName` (or `Unknown Team Role`) with club IDs as values.
 - Roster, staff, limit, team, offer, and relevant error output share `formatTeamIdentity`.
-- Rosters have no title; the description starts with `<emoji> <@&roleId> Roster`, has no `Team` field, and retains the readable team/server footer.
+- `/roster view team:<team>` replaces standalone `/roster team:<team>` and retains the titleless `<emoji> <@&roleId> Roster` presentation with no `Team` field and a readable team/server footer.
+- `/roster add` and `/roster remove` are global-administrator-only, Staff Commands-only role-synchronized mutations. They use only team-specific player roles, enforce free-agent/staff/capacity rules, preserve unrelated roles and history, and defer Audit + Transfer routing.
 - Active TM/ATM/PM rows count toward roster capacity but appear only under staff headings; `/staff remove` returns the retained member to Players, keeps the team role, and removes the matching global staff role.
 - Single-team embeds and private offer DMs use live nonzero Discord role colors, with safe fallbacks and no persisted color data.
 - The ephemeral offer acknowledgement names the target, actor, and source team and never creates a public follow-up.

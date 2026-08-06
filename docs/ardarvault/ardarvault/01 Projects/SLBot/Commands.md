@@ -32,7 +32,10 @@ tags:
   appoint team user staff_type
   remove team staff_type
   list [team]
-/roster team
+/roster
+  view team
+  add player team
+  remove player
 /teamhealth [team]
 /folist
 /offer player
@@ -43,7 +46,7 @@ tags:
 /debugreset  (development flag only)
 ```
 
-`/bannerconfig` and the former `/team remove` subcommand have been removed. `/team add` has no other options. `/team edit` rejects an invocation that supplies neither role nor emoji. `/team disband` has one required autocomplete `team` option and no reason option.
+`/bannerconfig`, the former `/team remove`, and standalone `/roster team:<team>` have been removed. `/team add` has no other options. `/team edit` rejects an invocation that supplies neither role nor emoji. `/team disband` has one required autocomplete `team` option and no reason option. `/roster` has exactly `view`, `add`, and `remove`.
 
 ## Team selectors
 
@@ -61,7 +64,8 @@ All `team` string options use the same database-backed autocomplete. Labels cont
 | `/limit view`                 | Bot Commands or Staff                       | Any allowed caller                                    | Ephemeral, read-only                                               |
 | `/staff appoint\|remove`      | Staff                                       | Global                                                | Ephemeral                                                          |
 | `/staff list`                 | Bot Commands or Staff                       | Any allowed caller                                    | Ephemeral, read-only                                               |
-| `/roster`                     | Bot Commands or Staff                       | Any allowed caller                                    | Ephemeral, read-only                                               |
+| `/roster view`                | Bot Commands or Staff                       | Any allowed caller                                    | Ephemeral, read-only                                               |
+| `/roster add`, `remove`       | Staff Commands                              | Owner, Administrator, or Bot Permissions              | Ephemeral administrative mutation                                  |
 | `/teamhealth [team]`          | Staff                                       | Global                                                | Ephemeral, read-only                                               |
 | `/folist`                     | Staff                                       | Global                                                | Ephemeral, read-only                                               |
 | `/offer`                      | Bot Commands or Staff                       | Active database TM/ATM/PM appointment                 | Ephemeral acknowledgement + private DM                             |
@@ -71,7 +75,7 @@ All `team` string options use the same database-backed autocomplete. Labels cont
 | `/demote staff`               | Bot Commands or Staff                       | Active TM appointment                                 | Ephemeral confirmation/result; public Transfer Market success only |
 | `/debugreset`                 | Staff once configured                       | Discord Administrator                                 | Ephemeral                                                          |
 
-All read-only/reporting responses (`/health`, `/setup view`, `/team list`, `/limit view`, `/staff list`, `/roster`, `/teamhealth`, and `/folist`) are ephemeral and private to the invoking user; chunked continuations are ephemeral as well. Errors are always ephemeral. Stale commands receive an ephemeral `Command Unavailable` response. Transfer Market and Audit are output-only for bot operations, so commands are rejected there before confirmations, mutations, or announcements. Wrong-channel responses use exact concise wording (`Use this command in <channel list>.`). Non-global callers (including TM/ATM/PM callers without global administrative authorization) see channel guidance mentioning only Bot Commands (`Use this command in <#botCommandsChannelId>.`); Staff Commands is never disclosed to non-global callers. Unauthorized callers on STAFF_ONLY commands receive `Permission Denied` without channel guidance.
+All read-only/reporting responses (`/health`, `/setup view`, `/team list`, `/limit view`, `/staff list`, `/roster view`, `/teamhealth`, and `/folist`) are ephemeral and private to the invoking user; chunked continuations are ephemeral as well. Errors and roster administration results are always ephemeral. Stale commands receive an ephemeral `Command Unavailable` response. Transfer Market and Audit are output-only for bot operations, so commands are rejected there before confirmations, mutations, or announcements. Wrong-channel responses use exact concise wording (`Use this command in <channel list>.`). Non-global callers (including TM/ATM/PM callers without global administrative authorization) see channel guidance mentioning only Bot Commands (`Use this command in <#botCommandsChannelId>.`); Staff Commands is never disclosed to non-global callers. Unauthorized callers on STAFF_ONLY commands receive `Permission Denied` without channel guidance.
 
 ## Output contracts
 
@@ -84,7 +88,9 @@ All read-only/reporting responses (`/health`, `/setup view`, `/team list`, `/lim
 - Team list: `<team identity> — current/max`.
 - Staff appointment/removal: affected user, friendly position, and team identity; actor field last.
 - Staff list: normal identity line, then vertical `👑 Team Manager`, `👔 Assistant Team Manager`, and `🧠 Player Manager` lines using `Vacant`.
-- Roster: no title; description starts `<emoji> <@&roleId> Roster`, with no `Team` field, exact TM/ATM/PM sections, player divider/list, emoji thumbnail, league author, and `Roster for <footer-safe identity>, <server name>` footer. Custom emoji become `.emojiName.` only in the footer.
+- Roster view: `/roster view team:<team>` has no title; description starts `<emoji> <@&roleId> Roster`, with no `Team` field, exact TM/ATM/PM sections, player divider/list, emoji thumbnail, league author, and `Roster for <footer-safe identity>, <server name>` footer. Custom emoji become `.emojiName.` only in the footer.
+- Roster administration: `/roster add player:<user> team:<team>` signs a non-bot free agent with no active staff appointment to an active team after effective-limit validation. `/roster remove player:<user>` derives and ends only one ordinary active `PLAYER` membership; it rejects free agents, staff targets, and ambiguous membership data. Both require global administration and Staff Commands.
+- Roster roles: a player receives only the team-specific Discord role. No global Player role exists. Add/remove preserve unrelated and staff roles, synchronize Discord before the database transaction, and compensate Discord on database failure. Transaction and audit-domain history are recorded, while Audit + Transfer channel publishing is deferred to the next hotfix.
 - Limit: team identity only.
 - Offer: `Source Team` is the caller's active database staff club. The target must be a free agent at creation and acceptance. Successful acceptance adds the team role and produces a Transfer Market signing announcement after the database commit.
 - Roster: TM/ATM/PM player rows count toward capacity but active staff appear only under their staff heading, not again under Players. After `/staff remove`, the retained member returns to Players.

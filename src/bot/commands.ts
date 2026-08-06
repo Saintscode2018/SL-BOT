@@ -220,6 +220,23 @@ function chunkStaffDirectoryFields(
   return chunks;
 }
 
+function chunkRosterPlayerLines(lines: readonly string[]): string[] {
+  if (lines.length === 0) return [BOT_LABELS.none];
+  const chunks: string[] = [];
+  let current = '';
+  for (const line of lines) {
+    const candidate = current.length === 0 ? line : `${current}\n${line}`;
+    if (candidate.length > 1_024 && current.length > 0) {
+      chunks.push(current);
+      current = line;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
+
 function requiredUser(
   options: CommandInteractionOptions,
   name: string,
@@ -1079,12 +1096,100 @@ const staffCommand: CommandDefinition = {
 const rosterCommand: CommandDefinition = {
   data: new SlashCommandBuilder()
     .setName('roster')
-    .setDescription('View team rosters')
-    .addStringOption((option) =>
-      option.setName('team').setDescription('Team').setAutocomplete(true).setRequired(true),
+    .setDescription('View and administratively manage team rosters')
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('view')
+        .setDescription('View an active team roster')
+        .addStringOption((option) =>
+          option.setName('team').setDescription('Team').setAutocomplete(true).setRequired(true),
+        ),
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('add')
+        .setDescription('Add a free-agent player to an active team')
+        .addUserOption((option) =>
+          option.setName('player').setDescription('Player to add').setRequired(true),
+        )
+        .addStringOption((option) =>
+          option.setName('team').setDescription('Team').setAutocomplete(true).setRequired(true),
+        ),
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('remove')
+        .setDescription('Remove an ordinary player from their current team')
+        .addUserOption((option) =>
+          option.setName('player').setDescription('Player to remove').setRequired(true),
+        ),
     ),
   async execute(interaction, context) {
     const execution = await enforceChannelPolicy(interaction, context);
+    const subcommand = execution.options.getSubcommand();
+
+    if (subcommand === 'add' || subcommand === 'remove') {
+      const service = context.rosterAdministrationService;
+      if (service === undefined) {
+        throw new ConfigurationError('roster administration service is unavailable');
+      }
+      const selectedPlayer = requiredUser(execution.options, 'player');
+      const occurredAt = new Date();
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      const result =
+        subcommand === 'add'
+          ? await service.add({
+              authorization: execution.authorization,
+              clubId: requiredString(execution.options, 'team'),
+              playerDiscordUserId: selectedPlayer.id,
+              playerIsBot: selectedPlayer.bot,
+              occurredAt,
+            })
+          : await service.remove({
+              authorization: execution.authorization,
+              playerDiscordUserId: selectedPlayer.id,
+              occurredAt,
+            });
+      const presentation = await resolveTeamPresentationAsync(interaction, result.club);
+      const playerDisplayName =
+        selectedPlayer.displayName?.trim() ||
+        (await interaction.resolveGuildMemberDisplayName?.(selectedPlayer.id)) ||
+        getUserDisplayName(interaction, selectedPlayer.id);
+      const player = formatUserWithVisibleName(selectedPlayer.id, playerDisplayName);
+      const team = formatTeamIdentity(presentation.team, 'message');
+      const actorDisplayName = getUserDisplayName(
+        interaction,
+        execution.authorization.discordUserId,
+      );
+      const actorFooter = createActorFooter({
+        verb: subcommand === 'add' ? 'Added' : 'Removed',
+        username: actorDisplayName,
+        timestamp: occurredAt,
+      });
+      const embed = createSuccessEmbed({
+        title:
+          subcommand === 'add'
+            ? `${BOT_EMOJIS.success} Player Added to Roster`
+            : `${BOT_EMOJIS.success} Player Removed from Roster`,
+        description:
+          subcommand === 'add'
+            ? `${player} has been added to ${team}.`
+            : `${player} has been removed from ${team} and is now a free agent.`,
+        author: createGuildAuthor({
+          guildName: result.guild.name,
+          guildIconUrl: interaction.guildIconUrl ?? null,
+        }),
+        color: getTeamEmbedColor(presentation, BOT_COLORS.success),
+        thumbnail: getTeamThumbnail(result.club.emoji),
+        footer: actorFooter.text,
+        ...(actorFooter.iconURL ? { footerIconURL: actorFooter.iconURL } : {}),
+        timestamp: occurredAt,
+      });
+      await interaction.editReply({ embeds: [embed] });
+      return;
+    }
+
+    if (subcommand !== 'view') throw new ConfigurationError('unknown roster subcommand');
     const teamId = requiredString(execution.options, 'team');
 
     // roster view is private to the invoking user and matches the visual specification
@@ -1125,18 +1230,15 @@ const rosterCommand: CommandDefinition = {
         )
       : BOT_LABELS.none;
 
-    const playerLines =
-      result.ordinaryPlayers.length === 0
-        ? BOT_LABELS.none
-        : result.ordinaryPlayers
-            .map(
-              ({ user }) =>
-                `• ${formatUserWithVisibleName(
-                  user.discordUserId,
-                  resolvedNames.get(user.discordUserId) ?? 'Unknown User',
-                )}`,
-            )
-            .join('\n');
+    const playerChunks = chunkRosterPlayerLines(
+      result.ordinaryPlayers.map(
+        ({ user }) =>
+          `• ${formatUserWithVisibleName(
+            user.discordUserId,
+            resolvedNames.get(user.discordUserId) ?? 'Unknown User',
+          )}`,
+      ),
+    );
 
     const leagueName = settings?.guild?.name ?? execution.guildName;
     const author = createGuildAuthor({
@@ -1172,7 +1274,7 @@ const rosterCommand: CommandDefinition = {
         { name: `──────── ${BOT_LABELS.players} ────────`, value: '\u200b', inline: false },
         {
           name: `${BOT_EMOJIS.player} ${BOT_LABELS.players}`,
-          value: playerLines.slice(0, 1024),
+          value: playerChunks[0] ?? BOT_LABELS.none,
           inline: false,
         },
       ],
@@ -1181,6 +1283,23 @@ const rosterCommand: CommandDefinition = {
     });
 
     await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+    for (const playerChunk of playerChunks.slice(1)) {
+      const continuation = createInfoEmbed({
+        author,
+        description: `${formatTeamIdentity(presentation.team, 'message')} Roster`,
+        color: getTeamEmbedColor(presentation, BOT_COLORS.info),
+        fields: [
+          {
+            name: `${BOT_EMOJIS.player} ${BOT_LABELS.players}`,
+            value: playerChunk,
+            inline: false,
+          },
+        ],
+        thumbnail,
+        footer: `Roster for ${formatTeamPlainRoleName(presentation.team)}, ${leagueName}`,
+      });
+      await interaction.followUp({ embeds: [continuation], flags: MessageFlags.Ephemeral });
+    }
   },
   autocomplete: autocompleteTeam,
 };

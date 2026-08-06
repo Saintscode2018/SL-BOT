@@ -1,8 +1,10 @@
 import type { EmbedBuilder } from 'discord.js';
 import {
+  ActiveStaffRosterConflictError,
   AdministrativePermissionDeniedError,
   AdministrativeWrongChannelError,
   AlreadyMemberOfClubError,
+  AmbiguousActivePlayerMembershipError,
   AuthorizationError,
   BotCommandsChannelNotConfiguredError,
   BotUserNotAllowedError,
@@ -195,6 +197,8 @@ export function mapDiscordError(error: unknown): MappedErrorResponse {
     error instanceof MemberAlreadySignedError ||
     error instanceof MemberIsFreeAgentError ||
     error instanceof MemberNotOnTeamError ||
+    error instanceof AmbiguousActivePlayerMembershipError ||
+    error instanceof ActiveStaffRosterConflictError ||
     error instanceof TargetNotStaffError ||
     error instanceof TargetAlreadyDesiredRankError ||
     error instanceof StaleMutationStateError

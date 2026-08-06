@@ -777,7 +777,7 @@ describe('Stage 4A Polish Verification', () => {
 
       const interaction = new MockCommandInteraction(
         'roster',
-        { team: club.id },
+        { subcommand: 'view', team: club.id },
         botCmdChannel,
         adminAuth,
       );

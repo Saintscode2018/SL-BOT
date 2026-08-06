@@ -220,6 +220,28 @@ export class MemberIsFreeAgentError extends InvalidStateTransitionError {
   }
 }
 
+export class AmbiguousActivePlayerMembershipError extends InvalidStateTransitionError {
+  public readonly code = 'AMBIGUOUS_ACTIVE_PLAYER_MEMBERSHIP';
+
+  public constructor() {
+    super(
+      'That user has multiple active player memberships. Resolve the roster data conflict before trying again.',
+    );
+  }
+}
+
+export class ActiveStaffRosterConflictError extends ConflictError {
+  public readonly code = 'ACTIVE_STAFF_ROSTER_CONFLICT';
+
+  public constructor(action: 'add' | 'remove') {
+    super(
+      action === 'add'
+        ? 'Active team staff cannot be added as an ordinary player. Remove the staff appointment first.'
+        : 'Active team staff cannot be removed with /roster remove. Use /staff remove, /demote, or /release as appropriate.',
+    );
+  }
+}
+
 export class MemberNotOnTeamError extends AuthorizationError {
   public readonly code = 'MEMBER_NOT_ON_TEAM';
 

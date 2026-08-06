@@ -43,7 +43,9 @@ tags:
 
 - Team list is one `identity — current/max` line per team.
 - Staff list is one normal-text identity followed by vertical TM/ATM/PM lines with `Vacant`.
-- Roster has no title; its description begins `<emoji> <@&roleId> Roster`, with no separate `Team` field, and retains the effective limit, exact staff headings, player list, and readable team/server footer.
+- `/roster view team:<team>` replaces standalone `/roster team:<team>`. The view has no title; its description begins `<emoji> <@&roleId> Roster`, with no separate `Team` field, and retains the effective limit, exact staff headings, player list, and readable team/server footer.
+- `/roster add player:<user> team:<team>` and `/roster remove player:<user>` are immediate Staff Commands-only operations for the owner, Discord Administrators, and Bot Permissions role. Add requires a non-bot free agent without active staff and enforces effective capacity. Remove derives one ordinary active player team and never removes staff appointments.
+- Players use only an active `PLAYER` membership and the team-specific Discord role; there is no global Player role. Role-first/database-second compensation applies, unrelated roles are preserved, and Audit + Transfer publishing is deferred to the next hotfix.
 - Single-team thumbnails are emoji-derived.
 - Single-team embeds use the nonzero cached Discord role color; missing/zero colors use the existing fallback. Role colors are not persisted.
 

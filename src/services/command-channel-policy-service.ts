@@ -33,7 +33,7 @@ export class CommandChannelPolicyService {
       commandName === 'promote' ||
       commandName === 'demote' ||
       commandName === 'offer' ||
-      commandName === 'roster' ||
+      (commandName === 'roster' && subcommand === 'view') ||
       (commandName === 'team' && subcommand === 'list') ||
       (commandName === 'staff' && subcommand === 'list') ||
       (commandName === 'limit' && subcommand === 'view')

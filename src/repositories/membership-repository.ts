@@ -44,6 +44,17 @@ export class MembershipRepository {
     });
   }
 
+  public async listActivePlayerMembershipsForUserInGuild(
+    guildId: string,
+    userId: string,
+  ): Promise<Array<ClubMembership & { club: Club }>> {
+    return this.db.clubMembership.findMany({
+      where: { guildId, userId, membershipType: 'PLAYER', status: 'ACTIVE' },
+      include: { club: true },
+      orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }],
+    });
+  }
+
   public async getActiveStaffAppointments(clubId: string): Promise<ClubMembership[]> {
     return this.db.clubMembership.findMany({
       where: {

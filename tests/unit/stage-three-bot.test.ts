@@ -286,7 +286,7 @@ class RosterCommandInteraction implements CommandInteraction {
   public readonly followUps: SafeInteractionResponse[] = [];
   public readonly edits: EditedInteractionResponse[] = [];
   public readonly options: CommandInteractionOptions = {
-    getSubcommand: () => null,
+    getSubcommand: () => 'view',
     getString: (name) => (name === 'team' ? 'club-1' : null),
     getInteger: () => null,
     getUser: () => null,

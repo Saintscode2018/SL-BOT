@@ -71,8 +71,18 @@ tags:
 - Extended the existing role-first coordinator to deduplicated multi-member batches with reverse compensation for later-member or database failures and visible compensation-failure logging.
 - Added command, authorization/channel, confirmation, database/history/offer/audit, role-plan, and compensation coverage. No Prisma schema or migration change was required.
 
+## Completed Stage 4C.3 roster administration
+
+- Replaced standalone `/roster team:<team>` with exact `/roster view team:<team>`, `/roster add player:<user> team:<team>`, and `/roster remove player:<user>` subcommands.
+- Preserved the ephemeral roster view, active-team autocomplete, canonical presentation, effective capacity, deterministic ordering, cold-cache resolution, and private continuation chunks.
+- Restricted add/remove to the guild owner, Discord Administrators, and Bot Permissions role in Staff Commands; ordinary TM/ATM/PM appointments do not grant access.
+- Added non-bot free-agent/staff/conflicting-membership validation, active guild-local destination validation, effective squad-limit enforcement, and automatic current-team resolution for ordinary-player removal.
+- Added team-role-only synchronization with unrelated/staff role preservation, repeated transaction validation, Discord compensation, signing/release transactions, and audit-domain history. No global Player role, schema change, or migration was added.
+- Kept roster administration channel publishing disabled; centralized Audit + Transfer Market routing is the next dedicated hotfix.
+
 ## Later
 
+- Centralized `/roster add` and `/roster remove` Audit + Transfer Market routing.
 - Role-derived offer source.
 - Import tooling.
 - General mutation Discord auditing.

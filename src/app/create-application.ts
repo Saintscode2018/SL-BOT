@@ -40,6 +40,7 @@ import { OfferDeclineService } from '../services/offer-decline-service.js';
 import { OfferDeliveryService } from '../services/offer-delivery-service.js';
 import { OfferResponseService } from '../services/offer-response-service.js';
 import { RosterManagementService } from '../services/roster-management-service.js';
+import { RosterAdministrationService } from '../services/roster-administration-service.js';
 import { RosterDepartureService } from '../services/roster-departure-service.js';
 import { RosterPromotionDemotionService } from '../services/roster-promotion-demotion-service.js';
 import { RoleSynchronizedMutationService } from '../services/role-synchronized-mutation-service.js';
@@ -146,6 +147,7 @@ export function createApplication(
     clubManagementService: new ClubManagementService(prisma),
     staffManagementService: new StaffManagementService(prisma, rosterMutations),
     rosterManagementService: new RosterManagementService(prisma),
+    rosterAdministrationService: new RosterAdministrationService(prisma, synchronizedMutations),
     limitManagementService: new LimitManagementService(prisma),
     commandChannelPolicyService: commandChannelPolicy,
     offerDeliveryService,

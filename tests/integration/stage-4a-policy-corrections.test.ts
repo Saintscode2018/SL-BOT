@@ -103,10 +103,15 @@ describe('authorization aware channel policy', () => {
       new CommandChannelPolicyService(database.client).validateChannelPolicy({
         authorization: ordinaryUser,
         commandName: 'roster',
+        subcommand: 'view',
         channelId: staffChannelId,
       }),
     ).resolves.toBeUndefined();
-    const error = await policyError({ authorization: ordinaryUser, commandName: 'roster' });
+    const error = await policyError({
+      authorization: ordinaryUser,
+      commandName: 'roster',
+      subcommand: 'view',
+    });
     expect(error).toBeInstanceOf(WrongCommandChannelError);
     const mapped = mapDiscordError(error);
     expect(mapped.title).toBe('❌ Wrong Command Channel');
@@ -155,6 +160,59 @@ describe('authorization aware channel policy', () => {
       expect(mapped.title).toBe('❌ Wrong Command Channel');
       expect(mapped.description).toBe(`Use this command in <#${staffChannelId}>.`);
       expect(mapped.description).not.toContain('Administrative commands must be used in');
+    }
+  });
+
+  it('applies the roster add/remove authorization matrix and Staff Commands policy', async () => {
+    await configureChannelsAndRoles();
+    const owner: AuthorizationInput = {
+      ...ordinaryUser,
+      discordUserId: administrator.guildOwnerId,
+    };
+    const discordAdministrator: AuthorizationInput = {
+      ...ordinaryUser,
+      discordUserId: '200000000000000004',
+      hasAdministratorPermission: true,
+    };
+    const policy = new CommandChannelPolicyService(database.client);
+
+    for (const subcommand of ['add', 'remove'] as const) {
+      for (const authorization of [owner, discordAdministrator, botPermissionsUser]) {
+        await expect(
+          policy.validateChannelPolicy({
+            authorization,
+            commandName: 'roster',
+            subcommand,
+            channelId: staffChannelId,
+          }),
+        ).resolves.toBeUndefined();
+      }
+
+      for (const memberRoleIds of [
+        ['666666666666666666'],
+        ['777777777777777777'],
+        ['888888888888888888'],
+        ['999999999999999998'],
+        [],
+      ]) {
+        await expect(
+          policy.validateChannelPolicy({
+            authorization: { ...ordinaryUser, memberRoleIds },
+            commandName: 'roster',
+            subcommand,
+            channelId: staffChannelId,
+          }),
+        ).rejects.toBeInstanceOf(AdministrativePermissionDeniedError);
+      }
+
+      await expect(
+        policy.validateChannelPolicy({
+          authorization: owner,
+          commandName: 'roster',
+          subcommand,
+          channelId: botCommandsChannelId,
+        }),
+      ).rejects.toBeInstanceOf(AdministrativeWrongChannelError);
     }
   });
 
@@ -238,6 +296,7 @@ describe('authorization aware channel policy', () => {
     const neitherConfigured = await policyError({
       authorization: administrator,
       commandName: 'roster',
+      subcommand: 'view',
     });
     expect(neitherConfigured).toBeInstanceOf(BotCommandsChannelNotConfiguredError);
   });
@@ -276,7 +335,7 @@ describe('authorization aware channel policy', () => {
       { commandName: 'team', subcommand: 'list' },
       { commandName: 'staff', subcommand: 'list' },
       { commandName: 'limit', subcommand: 'view' },
-      { commandName: 'roster' },
+      { commandName: 'roster', subcommand: 'view' },
       { commandName: 'offer' },
       { commandName: 'demand' },
       { commandName: 'release' },
@@ -343,7 +402,7 @@ describe('authorization aware channel policy', () => {
       ['promote', null],
       ['demote', null],
       ['offer', null],
-      ['roster', null],
+      ['roster', 'view'],
       ['team', 'list'],
       ['staff', 'list'],
       ['limit', 'view'],
@@ -360,6 +419,8 @@ describe('authorization aware channel policy', () => {
       ['team', 'disband'],
       ['staff', 'appoint'],
       ['staff', 'remove'],
+      ['roster', 'add'],
+      ['roster', 'remove'],
       ['limit', 'default'],
       ['limit', 'team'],
       ['limit', 'reset'],
