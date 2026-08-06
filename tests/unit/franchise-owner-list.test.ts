@@ -371,6 +371,7 @@ describe('franchise owner list presentation, policy, and command execution', () 
     const reply = interaction.replies[0]!;
     expect(reply).toEqual({ flags: MessageFlags.Ephemeral });
     expect(interaction.edits).toHaveLength(1);
+    expect(interaction.followUps).toEqual([]);
     const edit = interaction.edits[0]!;
     const embedData = edit.embeds?.[0]?.data;
     expect(embedData?.title).toBe('Franchise Owner List');
@@ -433,7 +434,7 @@ describe('franchise owner list presentation, policy, and command execution', () 
 
   it('chunks rows across multiple embeds when Discord description limits are exceeded', async () => {
     const interaction = new FranchiseOwnerListInteraction();
-    const items = Array.from({ length: 70 }, (_, i) => {
+    const items = Array.from({ length: 1_200 }, (_, i) => {
       const c: Club = {
         id: `club-${i + 1}`,
         guildId: guild.id,
@@ -442,7 +443,7 @@ describe('franchise owner list presentation, policy, and command execution', () 
         logoUrl: null,
         squadLimitOverride: null,
         active: true,
-        createdAt: new Date(`2026-01-01T00:00:00.${String(i).padStart(3, '0')}Z`),
+        createdAt: new Date(now.getTime() + i),
         updatedAt: now,
       };
       interaction.roles.set(c.discordRoleId, {
@@ -466,18 +467,24 @@ describe('franchise owner list presentation, policy, and command execution', () 
 
     expect(interaction.edits).toHaveLength(1);
     const edit = interaction.edits[0]!;
-    const embeds = edit.embeds!;
+    const embeds = [
+      ...(edit.embeds ?? []),
+      ...interaction.followUps.flatMap(({ embeds: followUpEmbeds }) => followUpEmbeds ?? []),
+    ];
+    expect(interaction.replies).toEqual([{ flags: MessageFlags.Ephemeral }]);
+    expect(interaction.followUps.length).toBeGreaterThan(0);
+    expect(interaction.followUps.every(({ flags }) => flags === MessageFlags.Ephemeral)).toBe(true);
     expect(embeds.length).toBeGreaterThan(1);
     const embed1 = embeds[0]!;
     const embed2 = embeds[1]!;
     expect(embed1.data.title).toBe('Franchise Owner List');
     expect(embed2.data.title).toBe('Franchise Owner List Continued');
 
-    // Confirm total rows across all embeds equals 70
+    // Confirm total rows across all initial and follow-up embeds equals 1,200
     const totalLines = embeds.reduce(
       (count, e) => count + (e.data.description?.split('\n').length ?? 0),
       0,
     );
-    expect(totalLines).toBe(70);
+    expect(totalLines).toBe(1_200);
   });
 });

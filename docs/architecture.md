@@ -50,7 +50,7 @@ The scope is selected after reading grouped subcommands. Administrative permissi
 
 ## Presentation
 
-Mutations, system health, team health, setup view, offer acknowledgements, and errors are ephemeral. Informational team/staff/limit lists and rosters are public. The central error mapper hides unexpected internal details and retains specific role, emoji, staff, squad, offer, permission, channel, inactive-team, and missing-record errors.
+Mutations, offer acknowledgements, errors, and all read-only/reporting commands are ephemeral. `/health`, `/setup view`, `/team list`, `/limit view`, `/staff list`, `/roster`, `/teamhealth`, and `/folist` are therefore private to the invoking user, including chunked continuation responses. The central error mapper hides unexpected internal details and retains specific role, emoji, staff, squad, offer, permission, channel, inactive-team, and missing-record errors.
 
 Presentation logic is centralized under `src/bot/presentation/`:
 

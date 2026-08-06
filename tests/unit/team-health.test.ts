@@ -293,7 +293,9 @@ describe('/teamhealth command', () => {
     );
 
     expect(interaction.replies[0]?.flags).toBe(MessageFlags.Ephemeral);
+    expect(interaction.replies).toHaveLength(1);
     expect(interaction.edits).toHaveLength(1);
+    expect(interaction.followUps).toEqual([]);
     expect(interaction.edits[0]?.embeds?.[0]?.data.description).toBe(
       ['🌊 <@&100000000000000002>: 14 👤, 💚', '🔥 <@&100000000000000001>: 3 👤, 🖤'].join('\n'),
     );
@@ -317,7 +319,7 @@ describe('/teamhealth command', () => {
 
   it('chunks a large overview without losing or splitting teams', async () => {
     const interaction = new TeamHealthInteraction();
-    const teams = Array.from({ length: 120 }, (_, index) => ({
+    const teams = Array.from({ length: 1_200 }, (_, index) => ({
       club: club(index + 1),
       activePlayerCount: index,
     }));
@@ -335,12 +337,20 @@ describe('/teamhealth command', () => {
         getDetail: () => Promise.reject(new Error('unused')),
       }),
     );
-    const descriptions =
-      interaction.edits[0]?.embeds?.map(({ data }) => data.description ?? '') ?? [];
-    expect(descriptions.length).toBeGreaterThan(1);
-    expect(descriptions.join('\n').split('\n')).toHaveLength(120);
+    const descriptions = [
+      ...(interaction.edits[0]?.embeds?.map(({ data }) => data.description ?? '') ?? []),
+      ...interaction.followUps.flatMap(
+        ({ embeds }) => embeds?.map(({ data }) => data.description ?? '') ?? [],
+      ),
+    ];
+    expect(interaction.replies).toEqual([{ flags: MessageFlags.Ephemeral }]);
+    expect(interaction.edits).toHaveLength(1);
+    expect(interaction.followUps.length).toBeGreaterThan(0);
+    expect(interaction.followUps.every(({ flags }) => flags === MessageFlags.Ephemeral)).toBe(true);
+    expect(descriptions.length).toBeGreaterThan(10);
+    expect(descriptions.join('\n').split('\n')).toHaveLength(1_200);
     expect(descriptions.join('\n')).toContain('<@&100000000000000001>');
-    expect(descriptions.join('\n')).toContain('<@&1000000000000000120>');
+    expect(descriptions.join('\n')).toContain('<@&10000000000000001200>');
   });
 
   it('renders selected staff names from cold-cache fetches exactly once and uses role color', async () => {

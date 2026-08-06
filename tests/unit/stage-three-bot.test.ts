@@ -386,6 +386,9 @@ describe('stage three command registry and deployment', () => {
       commandContext(new MemoryLogger(), () => Promise.reject(new Error('database secret'))),
     );
     expect(interaction.replies).toHaveLength(1);
+    expect(interaction.replies[0]?.flags).toBe(MessageFlags.Ephemeral);
+    expect(interaction.deferred).toBe(false);
+    expect(interaction.edits).toEqual([]);
     expect(interaction.replies[0]?.embeds?.[0]?.data?.title).toBe('SL Bot System Health');
     expect(JSON.stringify(interaction.replies)).not.toContain('database secret');
   });
@@ -453,6 +456,11 @@ describe('stage three command registry and deployment', () => {
     expect(embed?.color).toBe(0x3498db);
     expect(embed?.fields?.some(({ name }) => name === 'Team')).toBe(false);
     expect(embed?.footer?.text).toBe('Roster for T1, Test Guild');
+    expect(interaction.replies).toHaveLength(1);
+    expect(interaction.replies[0]?.flags).toBe(MessageFlags.Ephemeral);
+    expect(interaction.deferred).toBe(false);
+    expect(interaction.edits).toEqual([]);
+    expect(interaction.followUps).toEqual([]);
   });
 
   it('defers and edits the same private response after successful offer delivery', async () => {

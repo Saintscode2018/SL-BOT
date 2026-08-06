@@ -415,7 +415,11 @@ describe('final Stage 4A command UI', () => {
 
     await command('team').execute(interaction, context);
 
-    expect(interaction.replies[0]?.flags).toBeUndefined();
+    expect(interaction.replies).toHaveLength(1);
+    expect(interaction.replies[0]?.flags).toBe(MessageFlags.Ephemeral);
+    expect(interaction.deferrals).toEqual([]);
+    expect(interaction.edits).toEqual([]);
+    expect(interaction.followUps).toEqual([]);
     expect(responseText(interaction)).toContain(
       `🔵 <@&${team.discordRoleId}> — 4/17\\n<:Newcastle:987654321098765432> <@&300000000000000002> — 0/17`,
     );
@@ -456,7 +460,11 @@ describe('final Stage 4A command UI', () => {
     await command('staff').execute(interaction, createContext());
 
     const text = responseText(interaction);
-    expect(interaction.replies[0]?.flags).toBeUndefined();
+    expect(interaction.replies).toHaveLength(1);
+    expect(interaction.replies[0]?.flags).toBe(MessageFlags.Ephemeral);
+    expect(interaction.deferrals).toEqual([]);
+    expect(interaction.edits).toEqual([]);
+    expect(interaction.followUps).toEqual([]);
     expect(text).toContain(`🔵 <@&${team.discordRoleId}>\\n> 👑 Team Manager: Vacant`);
     expect(text).toContain('> 👔 Assistant Team Manager: Vacant');
     expect(text).toContain('> 🧠 Player Manager: Vacant');
@@ -494,6 +502,32 @@ describe('final Stage 4A command UI', () => {
     ]);
   });
 
+  it('keeps every chunked staff list response private', async () => {
+    const interaction = new TestInteraction('staff', { subcommand: 'list' }, 'bot-channel');
+    const context = createContext();
+    context.clubManagementService.listActive = () =>
+      Promise.resolve(
+        Array.from({ length: 26 }, (_, index) => ({
+          club: {
+            ...team,
+            id: `club-${index + 1}`,
+            discordRoleId: `3000000000000000${String(index + 1).padStart(2, '0')}`,
+          },
+          activePlayerCount: 0,
+          effectiveLimit: 17,
+        })),
+      );
+
+    await command('staff').execute(interaction, context);
+
+    expect(interaction.replies).toHaveLength(1);
+    expect(interaction.replies[0]?.flags).toBe(MessageFlags.Ephemeral);
+    expect(interaction.followUps).toHaveLength(1);
+    expect(interaction.followUps[0]?.flags).toBe(MessageFlags.Ephemeral);
+    expect(interaction.deferrals).toEqual([]);
+    expect(interaction.edits).toEqual([]);
+  });
+
   it('uses the message-mode roster description and removes title and team field', async () => {
     const interaction = new TestInteraction('roster', { team: team.id }, 'bot-channel');
 
@@ -505,6 +539,11 @@ describe('final Stage 4A command UI', () => {
     expect(embed?.description).toBe(`🔵 <@&${team.discordRoleId}> Roster`);
     expect(embed?.color).toBe(0xf97316);
     expect(embed?.footer?.text).toBe('Roster for T1, Development League');
+    expect(interaction.replies).toHaveLength(1);
+    expect(interaction.replies[0]?.flags).toBe(MessageFlags.Ephemeral);
+    expect(interaction.deferrals).toEqual([]);
+    expect(interaction.edits).toEqual([]);
+    expect(interaction.followUps).toEqual([]);
     expect(embed?.fields?.map(({ name }) => name)).toEqual([
       '📊 Roster Count',
       '👑 Team Manager',
@@ -637,6 +676,11 @@ describe('final Stage 4A command UI', () => {
     const view = new TestInteraction('limit', { subcommand: 'view', team: team.id }, 'bot-channel');
     await command('limit').execute(view, createContext());
     expect(view.replies[0]?.embeds?.[0]?.data.color).toBe(0xf97316);
+    expect(view.replies).toHaveLength(1);
+    expect(view.replies[0]?.flags).toBe(MessageFlags.Ephemeral);
+    expect(view.deferrals).toEqual([]);
+    expect(view.edits).toEqual([]);
+    expect(view.followUps).toEqual([]);
 
     const offer = new TestInteraction('offer', { player: 'player-1' }, 'bot-channel');
     await command('offer').execute(offer, createContext());
@@ -657,7 +701,10 @@ describe('final Stage 4A command UI', () => {
 
     await command('setup').execute(interaction, context);
 
-    expect(interaction.deferrals[0]?.flags).toBe(MessageFlags.Ephemeral);
+    expect(interaction.deferrals).toEqual([{ flags: MessageFlags.Ephemeral }]);
+    expect(interaction.replies).toEqual([]);
+    expect(interaction.edits).toHaveLength(1);
+    expect(interaction.followUps).toEqual([]);
     expect(responseText(interaction)).not.toMatch(/banner|preview/i);
     expect(publish).not.toHaveBeenCalled();
   });
