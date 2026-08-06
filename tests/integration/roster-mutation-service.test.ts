@@ -180,6 +180,7 @@ describe('roster mutation service', () => {
       const synchronized = new RoleSynchronizedMutationService(
         { apply, compensate: vi.fn(() => Promise.resolve()) },
         announcements,
+        { publish: () => Promise.resolve(true) },
         new MemoryLogger(),
       );
       const removalService = new RosterMutationService(database.client, synchronized);
@@ -233,6 +234,7 @@ describe('roster mutation service', () => {
         compensate: vi.fn(() => Promise.resolve()),
       },
       announcements,
+      { publish: () => Promise.resolve(true) },
       new MemoryLogger(),
     );
 

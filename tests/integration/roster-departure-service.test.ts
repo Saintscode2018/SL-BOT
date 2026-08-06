@@ -383,6 +383,7 @@ describe('Stage 4B.2 roster departure service', () => {
       const synchronized = new RoleSynchronizedMutationService(
         { apply, compensate: vi.fn(() => Promise.resolve()) },
         publisher,
+        { publish: () => Promise.resolve(true) },
         new MemoryLogger(),
       );
       const synchronizedService = new RosterDepartureService(

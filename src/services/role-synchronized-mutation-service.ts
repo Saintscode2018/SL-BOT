@@ -6,18 +6,22 @@ import type {
   MemberRoleSynchronizationService,
 } from './member-role-synchronization-service.js';
 
+import type { AuditAnnouncementPublisher } from './audit-announcement-service.js';
+
 export interface TransferAnnouncementPublisher {
   publish(plan: NonNullable<MutationPlans['announcement']>): Promise<boolean>;
 }
 
 export type SynchronizedMutationResult<T extends MutationPlans> = T & {
   announcementDelivered: boolean | null;
+  auditAnnouncementDelivered: boolean | null;
 };
 
 export class RoleSynchronizedMutationService {
   public constructor(
     private readonly roles: Pick<MemberRoleSynchronizationService, 'apply' | 'compensate'>,
     private readonly announcements: TransferAnnouncementPublisher,
+    private readonly auditAnnouncements: AuditAnnouncementPublisher,
     private readonly logger: Logger,
   ) {}
 
@@ -35,8 +39,16 @@ export class RoleSynchronizedMutationService {
     }
 
     const announcementDelivered =
-      result.announcement === null ? null : await this.announcements.publish(result.announcement);
-    return { ...result, announcementDelivered };
+      result.announcement === null || result.announcement === undefined
+        ? null
+        : await this.announcements.publish(result.announcement);
+
+    const auditAnnouncementDelivered =
+      result.auditAnnouncement === null || result.auditAnnouncement === undefined
+        ? null
+        : await this.auditAnnouncements.publish(result.auditAnnouncement);
+
+    return { ...result, announcementDelivered, auditAnnouncementDelivered };
   }
 
   public async executeMany<T>(

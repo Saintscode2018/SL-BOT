@@ -61,9 +61,23 @@ export interface TransferAnnouncementPlan {
   presentation?: TransferAnnouncementPresentation;
 }
 
+export type AuditAnnouncementOperation = 'ROSTER_PLAYER_ADDED' | 'ROSTER_PLAYER_REMOVED';
+
+export interface AuditAnnouncementPlan {
+  discordGuildId: string;
+  channelId: string;
+  operation: AuditAnnouncementOperation;
+  actorDiscordUserId: string;
+  playerDiscordUserId: string;
+  teamIdentity: TeamIdentitySource;
+  occurredAt: Date;
+  presentation?: TransferAnnouncementPresentation;
+}
+
 export interface MutationPlans {
   roleMutation: MemberRoleMutationPlan;
   announcement: TransferAnnouncementPlan | null;
+  auditAnnouncement?: AuditAnnouncementPlan | null;
 }
 
 export function toStaffRoleCode(staffType: StaffMembershipType): StaffRoleCode {

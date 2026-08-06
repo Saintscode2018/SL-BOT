@@ -18,7 +18,12 @@ import {
   SquadFullError,
   TeamNotFoundError,
 } from '../domain/errors.js';
-import type { MemberRoleMutationPlan, MutationPlans } from '../domain/roster-mutation.js';
+import type {
+  AuditAnnouncementPlan,
+  MemberRoleMutationPlan,
+  MutationPlans,
+  TransferAnnouncementPlan,
+} from '../domain/roster-mutation.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { ClubRepository } from '../repositories/club-repository.js';
@@ -165,6 +170,40 @@ export class RosterAdministrationService {
       metadata: { transactionId: leagueTransaction.id },
     });
     const guild = await this.requireGuild(transaction, guildId);
+    const settings = await new GuildRepository(transaction).getSettings(guildId);
+    const activePlayerCount = await memberships.countActivePlayers(club.id);
+    const tmMembership = await memberships.getActiveStaffAppointment(club.id, 'TEAM_MANAGER');
+    const teamManager = tmMembership === null ? null : await users.getById(tmMembership.userId);
+
+    const announcement: TransferAnnouncementPlan | null = settings?.transferChannelId
+      ? {
+          discordGuildId: guild.discordGuildId,
+          channelId: settings.transferChannelId,
+          type: 'SIGNED',
+          discordUserId: player.discordUserId,
+          teamIdentity: club,
+          occurredAt,
+          actorDiscordUserId: actor.discordUserId,
+          roster: {
+            currentSize: activePlayerCount,
+            maximumSize: getEffectiveSquadLimit(club, settings),
+            teamManagerDiscordUserId: teamManager?.discordUserId ?? null,
+          },
+        }
+      : null;
+
+    const auditAnnouncement: AuditAnnouncementPlan | null = settings?.auditChannelId
+      ? {
+          discordGuildId: guild.discordGuildId,
+          channelId: settings.auditChannelId,
+          operation: 'ROSTER_PLAYER_ADDED',
+          actorDiscordUserId: actor.discordUserId,
+          playerDiscordUserId: player.discordUserId,
+          teamIdentity: club,
+          occurredAt,
+        }
+      : null;
+
     return {
       guild,
       club,
@@ -176,7 +215,8 @@ export class RosterAdministrationService {
         input.playerDiscordUserId,
         { add: club.discordRoleId },
       ),
-      announcement: null,
+      announcement,
+      auditAnnouncement,
     };
   }
 
@@ -220,7 +260,8 @@ export class RosterAdministrationService {
     const users = new UserRepository(transaction);
     const actor = await users.getOrCreateByDiscordUserId(input.authorization.discordUserId);
     const occurredAt = input.occurredAt ?? new Date();
-    const membership = await new MembershipRepository(transaction).end(resolved.membership.id, {
+    const memberships = new MembershipRepository(transaction);
+    const membership = await memberships.end(resolved.membership.id, {
       leftAt: occurredAt,
       endedByUserId: actor.id,
     });
@@ -246,6 +287,42 @@ export class RosterAdministrationService {
       metadata: { transactionId: leagueTransaction.id },
     });
     const guild = await this.requireGuild(transaction, guildId);
+    const settings = await new GuildRepository(transaction).getSettings(guildId);
+    const activePlayerCount = await memberships.countActivePlayers(resolved.club.id);
+    const tmMembership = await memberships.getActiveStaffAppointment(
+      resolved.club.id,
+      'TEAM_MANAGER',
+    );
+    const teamManager = tmMembership === null ? null : await users.getById(tmMembership.userId);
+
+    const announcement: TransferAnnouncementPlan | null = settings?.transferChannelId
+      ? {
+          discordGuildId: guild.discordGuildId,
+          channelId: settings.transferChannelId,
+          type: 'RELEASED',
+          discordUserId: resolved.player.discordUserId,
+          teamIdentity: resolved.club,
+          occurredAt,
+          roster: {
+            currentSize: activePlayerCount,
+            maximumSize: getEffectiveSquadLimit(resolved.club, settings),
+            teamManagerDiscordUserId: teamManager?.discordUserId ?? null,
+          },
+        }
+      : null;
+
+    const auditAnnouncement: AuditAnnouncementPlan | null = settings?.auditChannelId
+      ? {
+          discordGuildId: guild.discordGuildId,
+          channelId: settings.auditChannelId,
+          operation: 'ROSTER_PLAYER_REMOVED',
+          actorDiscordUserId: actor.discordUserId,
+          playerDiscordUserId: resolved.player.discordUserId,
+          teamIdentity: resolved.club,
+          occurredAt,
+        }
+      : null;
+
     return {
       guild,
       club: resolved.club,
@@ -257,7 +334,8 @@ export class RosterAdministrationService {
         input.playerDiscordUserId,
         { remove: resolved.club.discordRoleId },
       ),
-      announcement: null,
+      announcement,
+      auditAnnouncement,
     };
   }
 

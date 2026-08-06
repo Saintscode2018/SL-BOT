@@ -465,3 +465,11 @@ export class TransferAnnouncementDeliveryError extends DomainError {
     super('The transfer-market announcement could not be delivered.', options);
   }
 }
+
+export class AuditAnnouncementDeliveryError extends DomainError {
+  public readonly code = 'AUDIT_ANNOUNCEMENT_DELIVERY_FAILED';
+
+  public constructor(options?: ErrorOptions) {
+    super('The audit announcement could not be delivered.', options);
+  }
+}

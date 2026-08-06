@@ -13,6 +13,8 @@ import { OfferButtonHandler } from '../bot/offer-button-handler.js';
 import { DiscordOfferMessageAdapter } from '../bot/offer-message-adapter.js';
 import { DiscordMemberRoleAdapter } from '../bot/discord-member-role-adapter.js';
 import { DiscordSetupAuditMessageAdapter } from '../bot/setup-audit-message-adapter.js';
+import { DiscordAuditAnnouncementAdapter } from '../bot/audit-announcement-adapter.js';
+import { DiscordAuditAnnouncementPresentationProvider } from '../bot/audit-announcement-presentation.js';
 import { DiscordTransferAnnouncementAdapter } from '../bot/transfer-announcement-adapter.js';
 import { DiscordTransferAnnouncementPresentationProvider } from '../bot/transfer-announcement-presentation.js';
 import type { CommandContext } from '../bot/types.js';
@@ -25,6 +27,7 @@ import { createDatabaseClient } from '../database/client.js';
 import { ConsoleLogger, type Logger } from '../logging/logger.js';
 import { ClubRepository } from '../repositories/club-repository.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
+import { AuditAnnouncementService } from '../services/audit-announcement-service.js';
 import { ClubManagementService } from '../services/club-management-service.js';
 import { CommandChannelPolicyService } from '../services/command-channel-policy-service.js';
 import { ConfirmationRegistry } from '../services/confirmation-registry.js';
@@ -89,9 +92,15 @@ export function createApplication(
     logger,
     new DiscordTransferAnnouncementPresentationProvider(discord),
   );
+  const auditAnnouncements = new AuditAnnouncementService(
+    new DiscordAuditAnnouncementAdapter(discord),
+    logger,
+    new DiscordAuditAnnouncementPresentationProvider(discord),
+  );
   const synchronizedMutations = new RoleSynchronizedMutationService(
     memberRoles,
     transferAnnouncements,
+    auditAnnouncements,
     logger,
   );
   const rosterMutations = new RosterMutationService(prisma, synchronizedMutations);

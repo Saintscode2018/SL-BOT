@@ -360,9 +360,11 @@ describe('Stage 4A Polish Verification', () => {
           },
         } as unknown as Client;
         const announcements = { publish: vi.fn(() => Promise.resolve(true)) };
+        const noopAudit = { publish: vi.fn(() => Promise.resolve(true)) };
         const synchronization = new RoleSynchronizedMutationService(
           new MemberRoleSynchronizationService(new DiscordMemberRoleAdapter(discord), logger),
           announcements,
+          noopAudit,
           logger,
         );
         commandContext.staffManagementService = new StaffManagementService(

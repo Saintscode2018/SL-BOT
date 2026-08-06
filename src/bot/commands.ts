@@ -108,6 +108,22 @@ function withAuditWarning(description: string, auditPublished: boolean): string 
   return auditPublished ? description : `${description}\n\n${auditDeliveryWarning}`;
 }
 
+function formatRosterAdminWarning(
+  transferDelivered: boolean | null | undefined,
+  auditDelivered: boolean | null | undefined,
+): string | null {
+  if (transferDelivered === false && auditDelivered === false) {
+    return `${BOT_EMOJIS.warning} The roster was updated, but the Audit and Transfer Market announcements could not be delivered.`;
+  }
+  if (transferDelivered === false) {
+    return `${BOT_EMOJIS.warning} The roster was updated, but the Transfer Market announcement could not be delivered.`;
+  }
+  if (auditDelivered === false) {
+    return `${BOT_EMOJIS.warning} The roster was updated, but the Audit announcement could not be delivered.`;
+  }
+  return null;
+}
+
 function requiredString(options: CommandInteractionOptions, name: string): string {
   const value = options.getString(name);
   if (value === null) throw new ConfigurationError(`${name} is required`);
@@ -1166,15 +1182,22 @@ const rosterCommand: CommandDefinition = {
         username: actorDisplayName,
         timestamp: occurredAt,
       });
+      const baseDescription =
+        subcommand === 'add'
+          ? `${player} has been added to ${team}.`
+          : `${player} has been removed from ${team} and is now a free agent.`;
+      const warning = formatRosterAdminWarning(
+        result.announcementDelivered,
+        result.auditAnnouncementDelivered,
+      );
+      const description =
+        warning === null ? `${baseDescription}` : `${baseDescription}\n\n${warning}`;
       const embed = createSuccessEmbed({
         title:
           subcommand === 'add'
             ? `${BOT_EMOJIS.success} Player Added to Roster`
             : `${BOT_EMOJIS.success} Player Removed from Roster`,
-        description:
-          subcommand === 'add'
-            ? `${player} has been added to ${team}.`
-            : `${player} has been removed from ${team} and is now a free agent.`,
+        description,
         author: createGuildAuthor({
           guildName: result.guild.name,
           guildIconUrl: interaction.guildIconUrl ?? null,

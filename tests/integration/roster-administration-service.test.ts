@@ -10,12 +10,19 @@ import {
   SquadFullError,
   TeamNotFoundError,
 } from '../../src/domain/errors.js';
-import type { MemberRoleMutationPlan } from '../../src/domain/roster-mutation.js';
+import type {
+  AuditAnnouncementPlan,
+  MemberRoleMutationPlan,
+} from '../../src/domain/roster-mutation.js';
 import { ClubRepository } from '../../src/repositories/club-repository.js';
 import { GuildRepository } from '../../src/repositories/guild-repository.js';
 import { MembershipRepository } from '../../src/repositories/membership-repository.js';
 import { UserRepository } from '../../src/repositories/user-repository.js';
 import type { AuthorizationInput } from '../../src/services/authorization-service.js';
+import {
+  AuditAnnouncementService,
+  type AuditAnnouncementAdapter,
+} from '../../src/services/audit-announcement-service.js';
 import { RosterAdministrationService } from '../../src/services/roster-administration-service.js';
 import { RoleSynchronizedMutationService } from '../../src/services/role-synchronized-mutation-service.js';
 import {
@@ -38,6 +45,7 @@ describe('administrative roster service', () => {
   let apply: ReturnType<typeof vi.fn>;
   let compensate: ReturnType<typeof vi.fn>;
   let publish: ReturnType<typeof vi.fn>;
+  let publishAudit: ReturnType<typeof vi.fn>;
   let service: RosterAdministrationService;
 
   const authorization = (overrides: Partial<AuthorizationInput> = {}): AuthorizationInput => ({
@@ -54,13 +62,22 @@ describe('administrative roster service', () => {
       addedRoles: MemberRoleMutationPlan['addRoles'];
       removedRoles: MemberRoleMutationPlan['removeRoles'];
     }> = (plan) => Promise.resolve({ addedRoles: plan.addRoles, removedRoles: plan.removeRoles }),
+    publishImplementation = () => Promise.resolve(true),
+    publishAuditImplementation = () => Promise.resolve(true),
+    logger = new MemoryLogger(),
   ): RosterAdministrationService => {
     apply = vi.fn(applyImplementation);
     compensate = vi.fn(() => Promise.resolve());
-    publish = vi.fn(() => Promise.resolve(true));
+    publish = vi.fn(publishImplementation);
+    publishAudit = vi.fn(publishAuditImplementation);
     return new RosterAdministrationService(
       database.client,
-      new RoleSynchronizedMutationService({ apply, compensate }, { publish }, new MemoryLogger()),
+      new RoleSynchronizedMutationService(
+        { apply, compensate },
+        { publish },
+        { publish: publishAudit },
+        logger,
+      ),
     );
   };
 
@@ -367,5 +384,183 @@ describe('administrative roster service', () => {
          WHERE "membershipType" = 'PLAYER' AND "status" = 'ACTIVE'`,
       );
     }
+  });
+
+  it('publishes both Transfer Market and Audit announcements post-commit when channels are configured', async () => {
+    const guilds = new GuildRepository(database.client);
+    await guilds.upsertSettings(guild.id, {
+      transferChannelId: '810000000000000030',
+      auditChannelId: '810000000000000040',
+    });
+
+    let addMemberStatusDuringPublish: string | null = null;
+    let addTxCountDuringPublish: number = 0;
+    let addAuditEventCountDuringPublish: number = 0;
+
+    const customService = makeService(
+      (plan) => Promise.resolve({ addedRoles: plan.addRoles, removedRoles: plan.removeRoles }),
+      async () => {
+        const mem = await database.client.clubMembership.findFirst({
+          where: { clubId: team.id, status: 'ACTIVE' },
+        });
+        addMemberStatusDuringPublish = mem?.status ?? null;
+        addTxCountDuringPublish = await database.client.leagueTransaction.count();
+        addAuditEventCountDuringPublish = await database.client.auditEvent.count();
+        return true;
+      },
+      () => Promise.resolve(true),
+    );
+
+    const added = await customService.add({
+      authorization: authorization(),
+      clubId: team.id,
+      playerDiscordUserId: playerId,
+      playerIsBot: false,
+    });
+
+    expect(added.announcementDelivered).toBe(true);
+    expect(added.auditAnnouncementDelivered).toBe(true);
+    expect(addMemberStatusDuringPublish).toBe('ACTIVE');
+    expect(addTxCountDuringPublish).toBe(1);
+    expect(addAuditEventCountDuringPublish).toBe(1);
+    expect(added.announcement).toMatchObject({
+      type: 'SIGNED',
+      discordGuildId,
+      channelId: '810000000000000030',
+      discordUserId: playerId,
+      actorDiscordUserId: ownerId,
+      teamIdentity: { id: team.id },
+    });
+    expect(added.auditAnnouncement).toMatchObject({
+      operation: 'ROSTER_PLAYER_ADDED',
+      discordGuildId,
+      channelId: '810000000000000040',
+      playerDiscordUserId: playerId,
+      actorDiscordUserId: ownerId,
+      teamIdentity: { id: team.id },
+    });
+
+    let removeMemberStatusDuringPublish: string | null = null;
+    const customServiceRemove = makeService(
+      (plan) => Promise.resolve({ addedRoles: plan.addRoles, removedRoles: plan.removeRoles }),
+      async () => {
+        const mem = await database.client.clubMembership.findFirst({
+          where: { clubId: team.id, userId: added.player.id },
+        });
+        removeMemberStatusDuringPublish = mem?.status ?? null;
+        return true;
+      },
+      () => Promise.resolve(true),
+    );
+
+    const removed = await customServiceRemove.remove({
+      authorization: authorization(),
+      playerDiscordUserId: playerId,
+    });
+
+    expect(removed.announcementDelivered).toBe(true);
+    expect(removed.auditAnnouncementDelivered).toBe(true);
+    expect(removeMemberStatusDuringPublish).toBe('ENDED');
+    expect(removed.announcement).toMatchObject({
+      type: 'RELEASED',
+      discordGuildId,
+      channelId: '810000000000000030',
+      discordUserId: playerId,
+      teamIdentity: { id: team.id },
+    });
+    expect(removed.announcement?.actorDiscordUserId).toBeUndefined();
+    expect(removed.auditAnnouncement).toMatchObject({
+      operation: 'ROSTER_PLAYER_REMOVED',
+      discordGuildId,
+      channelId: '810000000000000040',
+      playerDiscordUserId: playerId,
+      actorDiscordUserId: ownerId,
+      teamIdentity: { id: team.id },
+    });
+  });
+
+  it('handles partial and both delivery failures without rolling back roster state', async () => {
+    const guilds = new GuildRepository(database.client);
+    await guilds.upsertSettings(guild.id, {
+      transferChannelId: '810000000000000030',
+      auditChannelId: '810000000000000040',
+    });
+
+    // Transfer fails, Audit succeeds
+    const s1 = makeService(
+      (plan) => Promise.resolve({ addedRoles: plan.addRoles, removedRoles: plan.removeRoles }),
+      () => Promise.resolve(false),
+      () => Promise.resolve(true),
+    );
+    const added1 = await s1.add({
+      authorization: authorization(),
+      clubId: team.id,
+      playerDiscordUserId: playerId,
+      playerIsBot: false,
+    });
+    expect(added1.announcementDelivered).toBe(false);
+    expect(added1.auditAnnouncementDelivered).toBe(true);
+    expect(added1.membership.status).toBe('ACTIVE');
+
+    // Audit fails, Transfer succeeds
+    const s2 = makeService(
+      (plan) => Promise.resolve({ addedRoles: plan.addRoles, removedRoles: plan.removeRoles }),
+      () => Promise.resolve(true),
+      () => Promise.resolve(false),
+    );
+    const removed1 = await s2.remove({
+      authorization: authorization(),
+      playerDiscordUserId: playerId,
+    });
+    expect(removed1.announcementDelivered).toBe(true);
+    expect(removed1.auditAnnouncementDelivered).toBe(false);
+    expect(removed1.membership.status).toBe('ENDED');
+
+    // Both fail
+    const s3 = makeService(
+      (plan) => Promise.resolve({ addedRoles: plan.addRoles, removedRoles: plan.removeRoles }),
+      () => Promise.resolve(false),
+      () => Promise.resolve(false),
+    );
+    const added2 = await s3.add({
+      authorization: authorization(),
+      clubId: team.id,
+      playerDiscordUserId: playerId,
+      playerIsBot: false,
+    });
+    expect(added2.announcementDelivered).toBe(false);
+    expect(added2.auditAnnouncementDelivered).toBe(false);
+    expect(added2.membership.status).toBe('ACTIVE');
+  });
+
+  it('logs structured metadata when AuditAnnouncementService delivery fails', async () => {
+    const logger = new MemoryLogger();
+    const failingAdapter: AuditAnnouncementAdapter = {
+      send: () => Promise.reject(new Error('Discord channel unreachable')),
+    };
+    const auditService = new AuditAnnouncementService(failingAdapter, logger);
+
+    const plan: AuditAnnouncementPlan = {
+      discordGuildId,
+      channelId: '810000000000000040',
+      operation: 'ROSTER_PLAYER_ADDED',
+      actorDiscordUserId: ownerId,
+      playerDiscordUserId: playerId,
+      teamIdentity: team,
+      occurredAt: new Date(),
+    };
+
+    const result = await auditService.publish(plan);
+    expect(result).toBe(false);
+    const entry = logger.entries.find((e) => e.message === 'audit announcement delivery failed');
+    expect(entry).toBeDefined();
+    expect(entry?.context).toMatchObject({
+      discordGuildId,
+      operation: 'ROSTER_PLAYER_ADDED',
+      actorDiscordUserId: ownerId,
+      playerDiscordUserId: playerId,
+      teamRoleId: team.discordRoleId,
+      channelId: '810000000000000040',
+    });
   });
 });

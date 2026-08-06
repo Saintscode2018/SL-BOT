@@ -450,7 +450,13 @@ describe('role-synchronized mutation orchestration', () => {
         return Promise.resolve(false);
       }),
     };
-    const service = new RoleSynchronizedMutationService(roles, announcements, new MemoryLogger());
+    const noopAudit = { publish: vi.fn(() => Promise.resolve(true)) };
+    const service = new RoleSynchronizedMutationService(
+      roles,
+      announcements,
+      noopAudit,
+      new MemoryLogger(),
+    );
     const result = await service.execute(rolePlan, () => {
       order.push('database');
       return Promise.resolve({ roleMutation: rolePlan, announcement });
@@ -466,7 +472,13 @@ describe('role-synchronized mutation orchestration', () => {
       compensate: vi.fn(() => Promise.resolve()),
     };
     const announcements = { publish: vi.fn(() => Promise.resolve(true)) };
-    const service = new RoleSynchronizedMutationService(roles, announcements, new MemoryLogger());
+    const noopAudit = { publish: vi.fn(() => Promise.resolve(true)) };
+    const service = new RoleSynchronizedMutationService(
+      roles,
+      announcements,
+      noopAudit,
+      new MemoryLogger(),
+    );
     await expect(
       service.execute(rolePlan, () => Promise.reject(new Error('database conflict'))),
     ).rejects.toThrow('database conflict');
@@ -480,8 +492,14 @@ describe('role-synchronized mutation orchestration', () => {
       compensate: vi.fn(() => Promise.resolve()),
     };
     const announcements = { publish: vi.fn(() => Promise.resolve(true)) };
+    const noopAudit = { publish: vi.fn(() => Promise.resolve(true)) };
     const mutate = vi.fn(() => Promise.resolve({ roleMutation: rolePlan, announcement }));
-    const service = new RoleSynchronizedMutationService(roles, announcements, new MemoryLogger());
+    const service = new RoleSynchronizedMutationService(
+      roles,
+      announcements,
+      noopAudit,
+      new MemoryLogger(),
+    );
 
     await expect(service.execute(rolePlan, mutate)).rejects.toThrow('role synchronization failed');
     expect(mutate).not.toHaveBeenCalled();

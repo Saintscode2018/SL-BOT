@@ -104,6 +104,7 @@ describe('Stage 4B.3 Roster promotion and demotion integration', () => {
         compensate: vi.fn().mockResolvedValue({ compensationFailedPurposes: [] }),
       },
       { publish: vi.fn().mockResolvedValue(true) },
+      { publish: vi.fn().mockResolvedValue(true) },
       new MemoryLogger(),
     );
 
@@ -227,6 +228,7 @@ describe('Stage 4B.3 Roster promotion and demotion integration', () => {
         compensate: vi.fn().mockResolvedValue({ compensationFailedPurposes: [] }),
       },
       { publish: vi.fn().mockResolvedValue(true) },
+      { publish: vi.fn().mockResolvedValue(true) },
       new MemoryLogger(),
     );
 
@@ -312,6 +314,7 @@ describe('Stage 4B.3 Roster promotion and demotion integration', () => {
 
     const synchronizedMutations = new RoleSynchronizedMutationService(
       failingRoleSync,
+      { publish: vi.fn().mockResolvedValue(undefined) },
       { publish: vi.fn().mockResolvedValue(undefined) },
       new MemoryLogger(),
     );

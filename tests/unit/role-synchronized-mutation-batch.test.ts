@@ -33,6 +33,7 @@ function fixture() {
   const service = new RoleSynchronizedMutationService(
     { apply, compensate },
     { publish: () => Promise.resolve(true) },
+    { publish: () => Promise.resolve(true) },
     logger,
   );
   return { service, apply, compensate, logger };

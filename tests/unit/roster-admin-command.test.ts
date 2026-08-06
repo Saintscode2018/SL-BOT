@@ -92,6 +92,47 @@ describe('roster administrative command', () => {
       expect(subcommand === 'add' ? add : remove).toHaveBeenCalledOnce();
     },
   );
+
+  it('surfaces precise delivery warnings for partial and both delivery failures in /roster add', async () => {
+    const interaction1 = new RosterAdminInteraction('add');
+    const add1 = vi.fn(() =>
+      Promise.resolve({
+        ...result(),
+        announcementDelivered: false,
+        auditAnnouncementDelivered: true,
+      }),
+    );
+    await roster.execute(interaction1, contextWith({ add: add1, remove: vi.fn() }));
+    expect(interaction1.edits[0]?.embeds?.[0]?.data?.description).toContain(
+      '⚠️ The roster was updated, but the Transfer Market announcement could not be delivered.',
+    );
+
+    const interaction2 = new RosterAdminInteraction('add');
+    const add2 = vi.fn(() =>
+      Promise.resolve({
+        ...result(),
+        announcementDelivered: true,
+        auditAnnouncementDelivered: false,
+      }),
+    );
+    await roster.execute(interaction2, contextWith({ add: add2, remove: vi.fn() }));
+    expect(interaction2.edits[0]?.embeds?.[0]?.data?.description).toContain(
+      '⚠️ The roster was updated, but the Audit announcement could not be delivered.',
+    );
+
+    const interaction3 = new RosterAdminInteraction('add');
+    const add3 = vi.fn(() =>
+      Promise.resolve({
+        ...result(),
+        announcementDelivered: false,
+        auditAnnouncementDelivered: false,
+      }),
+    );
+    await roster.execute(interaction3, contextWith({ add: add3, remove: vi.fn() }));
+    expect(interaction3.edits[0]?.embeds?.[0]?.data?.description).toContain(
+      '⚠️ The roster was updated, but the Audit and Transfer Market announcements could not be delivered.',
+    );
+  });
 });
 
 class RosterAdminInteraction implements CommandInteraction {
@@ -217,7 +258,9 @@ function result() {
       removeRoles: [],
     },
     announcement: null,
+    auditAnnouncement: null,
     announcementDelivered: null,
+    auditAnnouncementDelivered: null,
   };
 }
 
