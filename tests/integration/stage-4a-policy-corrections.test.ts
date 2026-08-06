@@ -357,7 +357,7 @@ describe('authorization aware channel policy', () => {
       ['setup', 'view'],
       ['team', 'add'],
       ['team', 'edit'],
-      ['team', 'remove'],
+      ['team', 'disband'],
       ['staff', 'appoint'],
       ['staff', 'remove'],
       ['limit', 'default'],

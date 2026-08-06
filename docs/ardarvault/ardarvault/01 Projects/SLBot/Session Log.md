@@ -43,6 +43,18 @@ This change establishes the permanent `<emoji> <@&DiscordRoleId>` identity model
 
 Related notes: [[Architecture]], [[Commands]], [[Testing and Deployment]]
 
+## Stage 4C.2 team disbandment
+
+**Date**: August 6, 2026
+**Branch**: `stage4c/team-disband`
+
+- Replaced `/team remove` with `/team disband team:<team>` and retained active-only autocomplete with no reason option.
+- Added Staff-only global authorization, initiator-owned two-minute warning/cancel/expiry handling, confirmation-time policy and active-team rechecks, and private success presentation.
+- Added `TeamDisbandmentService`: one Prisma transaction ends all active memberships, expires related pending offers, marks the team inactive, and writes the counted `team.disbanded` audit while retaining every historical record, team role ID, and emoji.
+- Extended role synchronization to multi-member batches. Each user loses the deduplicated team role; staff additionally lose the matching configured TM/ATM/PM role. Ordinary players lose no unrelated role and there is no global Player role.
+- Added reverse role compensation for later-member or database failures and surfaced/logged compensation failure. No schema or migration change was required.
+- Added focused command, confirmation, authorization/channel, persistence/history/offer/audit, role-plan, and compensation tests. No commit or push was performed.
+
 ## Stage 4B.1 roster-mutation foundation
 
 - Added the shared guild/team-scoped transaction service and made staff appointment also create/retain the same-team roster membership.

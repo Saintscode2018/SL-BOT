@@ -21,7 +21,7 @@ tags:
 /team
   add role emoji
   edit team [role] [emoji]
-  remove team
+  disband team
   list
 /limit
   default amount
@@ -43,7 +43,7 @@ tags:
 /debugreset  (development flag only)
 ```
 
-`/bannerconfig` has been removed. `/team add` has no other options. `/team edit` rejects an invocation that supplies neither role nor emoji.
+`/bannerconfig` and the former `/team remove` subcommand have been removed. `/team add` has no other options. `/team edit` rejects an invocation that supplies neither role nor emoji. `/team disband` has one required autocomplete `team` option and no reason option.
 
 ## Team selectors
 
@@ -55,7 +55,7 @@ All `team` string options use the same database-backed autocomplete. Labels cont
 | ----------------------------- | ------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------ |
 | `/health`                     | Bot Commands or Staff                       | Any allowed caller                                    | Ephemeral                                                          |
 | `/setup *`                    | Staff; Administrator bootstrap before setup | Global                                                | Ephemeral                                                          |
-| `/team add\|edit\|remove`     | Staff                                       | Global                                                | Ephemeral                                                          |
+| `/team add\|edit\|disband`    | Staff                                       | Global                                                | Ephemeral confirmation/result                                      |
 | `/team list`                  | Bot Commands or Staff                       | Any allowed caller                                    | Public                                                             |
 | `/limit default\|team\|reset` | Staff                                       | Global                                                | Ephemeral                                                          |
 | `/limit view`                 | Bot Commands or Staff                       | Any allowed caller                                    | Public                                                             |
@@ -79,6 +79,7 @@ Errors are always ephemeral. Stale commands receive an ephemeral `Command Unavai
 - Team health detailed: `<emoji> <@&roleId>` followed immediately by continuous quoted `👑 Team Manager`, `👔 Assistant Team Manager`, `🧠 Player Manager`, `📊 Roster: current/effective`, and `🩺 Health` rows. Vacancies say `Vacant`; users use `<@id> \`VisibleName\``. Health is 🖤 at 0–4, 💛 at 5–9, 💚 at 10–15, and ❤️ at 16+.
 - `/teamhealth` is read-only, Staff-only, and global-administrator-only. It uses the shared team autocomplete, rejects inactive/foreign/unknown/stale-role selections, and uses cache-then-fetch role/user resolution after restarts.
 - `/folist`: lists every active team and its Team Manager as `<emoji> <@&roleId> Team Manager: <formatted manager or Vacant>`, ordered like `/team list`, with no ATM, PM, roster count, health, blockquotes, or blank lines. Ephemeral, Staff-only, and global-administrator-only, chunked across embeds with title `Franchise Owner List`. Empty state is `No active teams are currently configured.`
+- Team disband: `/team disband team:<team>` is restricted to the server owner, Discord Administrator, or Bot Permissions role in Staff Commands. Its two-minute initiator-only warning has Disband Team/Cancel buttons and no reason field. Confirmation ends all active player/staff memberships, removes the team role from each affected user plus matching TM/ATM/PM roles from staff, expires related pending offers, marks the team inactive, and writes a disband audit. The team role, emoji, database row, users, and history remain. Ordinary players lose only the team role because no global Player role exists.
 
 - Team list: `<team identity> — current/max`.
 - Staff appointment/removal: affected user, friendly position, and team identity; actor field last.
@@ -102,7 +103,7 @@ Errors are always ephemeral. Stale commands receive an ephemeral `Command Unavai
 
 Single-team team/staff/limit/roster/offer embeds use the current nonzero Discord team-role color. Missing or zero-color roles retain the existing fallback color. Role colors are cache-derived presentation data and are not stored.
 
-Stage 4B.3 implements `/promote` and `/demote`. `/folist` remains planned for a future stage and is not registered.
+Stage 4C.2 implements `/team disband`; `/team remove` is no longer registered.
 
 Staff appointment/demotion transaction cards publish to Transfer Market, never Audit, and title the action with the readable team role name—without a leading `@`—rather than a removed team name. The live removal path force-refreshes member roles before deciding whether to call Discord. Discord changes require Manage Roles/Administrator plus hierarchy: place the SL Bot role above playable admin roles, TM/ATM/PM, and team roles. Administrator does not bypass hierarchy, and the server owner cannot be role-managed.
 

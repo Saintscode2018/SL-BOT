@@ -25,7 +25,7 @@ There is no team display name, abbreviation, or configurable banner. `Club.id` r
 - `/setup league|channels|roles|view`: Configure or inspect league settings. Mutations are ephemeral and publish best-effort audit messages; `view` is ephemeral, read-only, unaudited, and contains no team-identity settings section.
 - `/team add role:<role> emoji:<emoji>`: Add a team. Both options are required.
 - `/team edit team:<club> [role:<role>] [emoji:<emoji>]`: Edit a role and/or emoji. Supplying neither change is rejected.
-- `/team remove team:<club>`: Soft-deactivate a team while preserving history.
+- `/team disband team:<club>`: Admin-only, Staff Commands-only permanent league disbandment with an initiator-owned two-minute confirmation. It ends all active memberships, makes every member a free agent, removes the team role plus applicable TM/ATM/PM roles, expires related pending offers, and marks the team inactive while preserving its Discord role, emoji, database row, and all history. No reason is required. The former `/team remove` slash subcommand is no longer registered.
 - `/team list`: Public `identity — current/max` lines.
 - `/limit default|team|reset|view`: Manage the guild default and team overrides; team output uses only the shared identity.
 - `/staff appoint|remove|list`: Manage TM, ATM, and PM appointments. Appointment also ensures an active player roster row; staff-only removal retains that row and the team role while removing the matching configured global staff role. Public lists use vertical per-team blocks and `Vacant`.
@@ -50,7 +50,7 @@ Global administration requires the server owner, Discord Administrator permissio
 - `/offer` is allowed in Bot Commands or Staff and checks channel policy before resolving the caller's database appointment.
 - `/demand` is ephemeral and uses a fixed one-minute in-memory guild/user cooldown. A permitted first attempt starts the window; blocked retries report the decreasing remainder without extending it, and wrong-channel attempts neither start nor refresh it.
 - `/release` is ephemeral and allowed only in Bot Commands or Staff. Database staff authority—not global bot permission or Discord Administrator—controls access.
-- `/setup *` (including view after setup), `/team add|edit|remove`, `/limit default|team|reset`, `/staff appoint|remove`, `/teamhealth`, `/folist`, and `/debugreset` are Staff-only; the existing pre-configuration setup bootstrap remains. `/teamhealth` and `/folist` accept only the server owner, Discord Administrators, or the configured Bot Permissions role—not ordinary team staff or players. Unauthorized callers receive `Permission Denied` without channel guidance. Authorized callers in wrong channels see concise guidance (`Use this command in <#staffCommandsChannelId>.`).
+- `/setup *` (including view after setup), `/team add|edit|disband`, `/limit default|team|reset`, `/staff appoint|remove`, `/teamhealth`, `/folist`, and `/debugreset` are Staff-only; the existing pre-configuration setup bootstrap remains. `/team disband`, `/teamhealth`, and `/folist` accept only the server owner, Discord Administrators, or the configured Bot Permissions role—not ordinary team staff or players. Unauthorized callers receive `Permission Denied` without channel guidance. Authorized callers in wrong channels see concise guidance (`Use this command in <#staffCommandsChannelId>.`).
 - Transfer Market and Audit are output-only for bot operations: completed roster movement is published to Transfer Market and configuration events to Audit, but slash commands are rejected there.
 - Successful mutations, offer acknowledgements, setup view, health, and all handled errors are ephemeral.
 - Setup league/channels/roles mutations publish timestamped actor-attributed audit embeds when configured. Player and staff movements use Transfer Market instead; announcement failure is logged but does not roll back completed state.
@@ -96,6 +96,12 @@ Both commands use initiating-user, guild, action, team, target, and staff-rank-b
 ## Stage 4C.1 franchise owner list (/folist)
 
 `FranchiseOwnerListService` reads active clubs in `createdAt`, then club ID order, and fetches active `TEAM_MANAGER` appointments. Inactive teams, inactive memberships, ATM, PM, and ordinary players are excluded. Rows are formatted as `<emoji> <role mention> Team Manager: <formatted manager or Vacant>`, using `formatUserWithVisibleName` for resolved managers (`<@USER_ID> \`VisibleName\``) and `Vacant`when unassigned. The command is restricted to Staff Commands, requires administrative authorization, defers ephemerally, uses cold-cache safe role and user resolution, and chunks complete rows across embeds with title`Franchise Owner List`. Empty state produces `No active teams are currently configured.`.
+
+## Stage 4C.2 team disbandment
+
+`TeamDisbandmentCommandHandler` owns `/team disband team:<team>` warning, cancel, expiry, confirmation ownership, confirmation-time authorization/channel recheck, and private terminal presentation. `TeamDisbandmentService` revalidates the active guild-owned team and exact active membership set, then uses one Prisma transaction to end every active player/staff row, expire pending offers where the team is the destination or an affected active player is the source, mark the team inactive, and write `team.disbanded` audit metadata. Team rows, role IDs, emoji, users, ended memberships, terminal offers, transactions, and earlier audits remain intact.
+
+Discord changes use the existing role-first coordinator in a multi-member batch. Each affected user loses the team role once; TM/ATM/PM users additionally lose only their matching configured global staff role. Ordinary players have no global Player role. A first or later role failure prevents the database transaction; a database failure compensates every applied member in reverse order. Compensation failures are logged and surfaced for manual reconciliation, and no success response is sent on partial failure.
 
 ## Emoji validation and thumbnails
 

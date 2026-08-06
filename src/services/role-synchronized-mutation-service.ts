@@ -39,6 +39,30 @@ export class RoleSynchronizedMutationService {
     return { ...result, announcementDelivered };
   }
 
+  public async executeMany<T>(
+    rolePlans: readonly MemberRoleMutationPlan[],
+    mutate: () => Promise<T>,
+  ): Promise<T> {
+    const applied: Array<{ plan: MemberRoleMutationPlan; mutation: AppliedMemberRoleMutation }> =
+      [];
+
+    try {
+      for (const plan of rolePlans) {
+        applied.push({ plan, mutation: await this.roles.apply(plan) });
+      }
+    } catch (roleError: unknown) {
+      await this.compensateApplied(applied, roleError, 'Discord role synchronization failed');
+      throw roleError;
+    }
+
+    try {
+      return await mutate();
+    } catch (databaseError: unknown) {
+      await this.compensateApplied(applied, databaseError, 'database mutation failed');
+      throw databaseError;
+    }
+  }
+
   private async compensateDatabaseFailure(
     plan: MemberRoleMutationPlan,
     applied: AppliedMemberRoleMutation,
@@ -66,5 +90,46 @@ export class RoleSynchronizedMutationService {
         ),
       });
     }
+  }
+
+  private async compensateApplied(
+    applied: ReadonlyArray<{
+      plan: MemberRoleMutationPlan;
+      mutation: AppliedMemberRoleMutation;
+    }>,
+    originalError: unknown,
+    failureDescription: string,
+  ): Promise<void> {
+    const compensationErrors: unknown[] = [];
+    const affectedRolePurposes: string[] = [];
+
+    for (const { plan, mutation } of [...applied].reverse()) {
+      try {
+        await this.roles.compensate(plan, mutation);
+      } catch (compensationError: unknown) {
+        compensationErrors.push(compensationError);
+        affectedRolePurposes.push(
+          ...mutation.addedRoles.map(({ purpose }) => purpose),
+          ...mutation.removedRoles.map(({ purpose }) => purpose),
+        );
+        this.logger.error(
+          `${failureDescription} and Discord compensation also failed`,
+          originalError,
+          {
+            discordGuildId: plan.discordGuildId,
+            discordUserId: plan.discordUserId,
+            compensationError,
+          },
+        );
+      }
+    }
+
+    if (compensationErrors.length === 0) return;
+    throw new DiscordRoleCompensationFailedError([...new Set(affectedRolePurposes)], {
+      cause: new AggregateError(
+        [originalError, ...compensationErrors],
+        `${failureDescription} and Discord compensation failed`,
+      ),
+    });
   }
 }

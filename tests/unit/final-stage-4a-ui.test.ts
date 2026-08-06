@@ -374,7 +374,7 @@ describe('final Stage 4A command UI', () => {
     expect(responseText(interaction)).toContain('"name":"Emoji"');
   });
 
-  it('uses the updated Discord role color for team edit and remove confirmations', async () => {
+  it('uses the updated Discord role color for team edits', async () => {
     const updatedRole = {
       id: '300000000000000099',
       name: 'T2',
@@ -383,8 +383,6 @@ describe('final Stage 4A command UI', () => {
     const updatedTeam = { ...team, discordRoleId: updatedRole.id };
     const context = createContext();
     context.clubManagementService.edit = () => Promise.resolve(updatedTeam);
-    context.clubManagementService.deactivate = () =>
-      Promise.resolve({ ...updatedTeam, active: false });
 
     const edit = new TestInteraction(
       'team',
@@ -395,15 +393,6 @@ describe('final Stage 4A command UI', () => {
     await command('team').execute(edit, context);
     expect(edit.edits[0]?.embeds?.[0]?.data.color).toBe(0x3498db);
     expect(responseText(edit)).toContain(`<@&${updatedRole.id}>`);
-
-    const remove = new TestInteraction(
-      'team',
-      { subcommand: 'remove', team: team.id },
-      'staff-channel',
-      updatedRole,
-    );
-    await command('team').execute(remove, context);
-    expect(remove.edits[0]?.embeds?.[0]?.data.color).toBe(0x3498db);
   });
 
   it('lists one identity and capacity per line publicly', async () => {

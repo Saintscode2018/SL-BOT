@@ -23,6 +23,7 @@ import type { FranchiseOwnerListService } from '../services/franchise-owner-list
 import type { OfferButtonHandler } from './offer-button-handler.js';
 import type { RosterDepartureCommandHandler } from './departure-command-handler.js';
 import type { RosterPromotionDemotionCommandHandler } from './promotion-demotion-command-handler.js';
+import type { TeamDisbandmentCommandHandler } from './team-disbandment-command-handler.js';
 import type { GuildEmoji } from './emoji-helper.js';
 
 export interface SafeInteractionResponse {
@@ -51,7 +52,14 @@ export interface EditedInteractionResponse {
 export interface ButtonInteractionAdapter {
   readonly customId: string;
   readonly userId: string;
+  readonly userDisplayName?: string | undefined;
   readonly guildId?: string | undefined;
+  readonly guildName?: string | undefined;
+  readonly guildIconUrl?: string | undefined;
+  readonly guildOwnerId?: string | undefined;
+  readonly channelId?: string | undefined;
+  readonly memberRoleIds?: readonly string[] | undefined;
+  readonly hasAdministratorPermission?: boolean | undefined;
   readonly replied: boolean;
   readonly deferred: boolean;
   getGuildRoleMetadata?(roleId: string): GuildRoleMetadata | null;
@@ -144,6 +152,10 @@ export interface CommandContext {
   promotionDemotionCommandHandler?: Pick<
     RosterPromotionDemotionCommandHandler,
     'beginPromote' | 'beginDemote' | 'canHandle' | 'handleButton'
+  >;
+  teamDisbandmentCommandHandler?: Pick<
+    TeamDisbandmentCommandHandler,
+    'begin' | 'canHandle' | 'handleButton'
   >;
   setupAuditService: Pick<SetupAuditService, 'publish'>;
   teamHealthService?: Pick<TeamHealthService, 'getOverview' | 'getDetail'>;

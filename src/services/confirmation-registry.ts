@@ -8,7 +8,7 @@ import {
 } from '../domain/errors.js';
 import type { Logger } from '../logging/logger.js';
 
-export type ConfirmationActionType = 'DEMAND' | 'RELEASE' | 'PROMOTE' | 'DEMOTE';
+export type ConfirmationActionType = 'DEMAND' | 'RELEASE' | 'PROMOTE' | 'DEMOTE' | 'DISBAND';
 export type ConfirmationTerminalState = 'CONSUMED' | 'CANCELLED' | 'EXPIRED';
 
 export interface ConfirmationContext {

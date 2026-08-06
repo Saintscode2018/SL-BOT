@@ -21,7 +21,7 @@ tags:
 - Add: `/team add role emoji`.
 - Edit: `/team edit team [role] [emoji]`, with at least one change.
 - The removed `/bannerconfig` command and its settings do not return.
-- `/team remove` remains soft deactivation; full disband behavior is deferred.
+- `/team remove` is removed from the public slash-command surface. `/team disband team` is the confirmed permanent league-disbandment workflow.
 
 ## 3. Formatter and autocomplete
 
@@ -99,8 +99,16 @@ tags:
 - Roster membership and team role are retained; roster count remains unchanged. Global staff roles (`TM`, `ATM`, `PM`) are synchronized. Historical staff appointments are preserved.
 - Output cards (`⬆️ Promotion - TeamRole` / `⬇️ Demotion - TeamRole`) publish strictly to Transfer Market with server author/icon, team color/thumbnail, single blockquote panel, roster line, TM line, actor footer with avatar and UTC timestamp. No Audit channel delivery.
 
-## 11. Explicit exclusions
+## 11. Stage 4C.2 team disbandment decisions
 
-Stage 4B.3 does not register `/folist` or implement future commands, release reasons, target confirmation/DMs, demand counts/gameplay limits, offer cancellation, imports, role-derived offer source, retry queues, reconciliation, team-inactivation removal, free-form templates, or per-team aliases.
+- `/team disband team:<team>` is global-admin-only, Staff Commands-only, ephemeral, and requires a two-minute initiator-owned confirmation. It has no reason option.
+- Every active player/staff row ends historically. Every affected user loses the team-specific role; TM/ATM/PM users additionally lose only their matching configured global role. There is no global Player role.
+- Related pending offers expire. Terminal and unrelated offers remain unchanged. The team row becomes inactive but its Discord role ID, emoji, users, transactions, audits, and all historical records remain.
+- Role work remains role-first/database-second. Multi-member application deduplicates users/roles and compensates earlier removals on later failure; database failure compensates the whole applied batch. Compensation failure is logged and surfaced.
+- Successful disbandment writes a `team.disbanded` audit containing guild/team/role/actor/count/timestamp metadata. It does not delete or mutate the Discord team role or emoji and makes no public announcement.
+
+## 12. Explicit exclusions
+
+Stage 4C.2 does not implement release reasons, target confirmation/DMs, demand counts/gameplay limits, general offer cancellation, imports, role-derived offer source, retry queues, reconciliation, free-form templates, or per-team aliases.
 
 Related notes: [[Commands]], [[Architecture]], [[Roadmap]]

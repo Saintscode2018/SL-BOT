@@ -590,18 +590,26 @@ const teamCommand: CommandDefinition = {
     )
     .addSubcommand((subcommand) =>
       subcommand
-        .setName('remove')
-        .setDescription('Deactivate an active team while preserving historical records')
+        .setName('disband')
+        .setDescription('Permanently disband an active team while preserving its identity')
         .addStringOption((option) =>
           option
             .setName('team')
-            .setDescription('Team to remove')
+            .setDescription('Team to disband')
             .setAutocomplete(true)
             .setRequired(true),
         ),
     )
     .addSubcommand((subcommand) => subcommand.setName('list').setDescription('List active teams')),
   async execute(interaction, context) {
+    if (interaction.options?.getSubcommand() === 'disband') {
+      if (context.teamDisbandmentCommandHandler === undefined) {
+        throw new ConfigurationError('team disbandment handler is unavailable');
+      }
+      await context.teamDisbandmentCommandHandler.begin(interaction);
+      return;
+    }
+
     const execution = await enforceChannelPolicy(interaction, context);
     const subcommand = execution.options.getSubcommand();
     const guildEmojis = interaction.getGuildEmojis?.() ?? [];
@@ -664,34 +672,6 @@ const teamCommand: CommandDefinition = {
         color: getTeamEmbedColor(presentation, BOT_COLORS.success),
         fields: [
           createActorField('Edited', execution.authorization.discordUserId, actorDisplayName),
-        ],
-        thumbnail,
-      });
-
-      await interaction.editReply({ embeds: [embed] });
-      return;
-    }
-
-    if (subcommand === 'remove') {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-      const teamId = requiredString(execution.options, 'team');
-      const club = await context.clubManagementService.deactivate(execution.authorization, teamId);
-
-      const presentation = resolveTeamPresentation(interaction, club);
-      const thumbnail = getTeamThumbnail(club.emoji);
-      const embed = createSuccessEmbed({
-        title: `${BOT_EMOJIS.success} Team Removed`,
-        description: `Successfully deactivated ${formatTeamIdentity(presentation.team, 'message')}. The team is now inactive.`,
-        color: getTeamEmbedColor(presentation, BOT_COLORS.success),
-        fields: [
-          { name: 'Status', value: 'Inactive', inline: true },
-          {
-            name: 'Historical Data',
-            value:
-              'Historical memberships, staff appointments, offers, transactions, and audit records are preserved.',
-            inline: false,
-          },
-          createActorField('Removed', execution.authorization.discordUserId, actorDisplayName),
         ],
         thumbnail,
       });

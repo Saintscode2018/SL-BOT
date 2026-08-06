@@ -57,10 +57,22 @@ tags:
 - Published structured Transfer Market cards (`⬆️ Promotion - TeamRole` / `⬇️ Demotion - TeamRole`) with server author/icon, team color/thumbnail, single blockquote panel, roster line, TM line, actor footer with avatar and UTC timestamp. No Audit channel delivery.
 - Enforced `BOT_OR_STAFF` channel policy.
 
-## Stage 4B.4 and later
+## Completed Stage 4B.4 and Stage 4C.1
 
 - Completed `/teamhealth [team]`: Staff-only/global-admin-only read-only compact and detailed roster health, exact heart boundaries, effective limit/staff detail, cold-cache Discord resolution, deterministic chunking, and focused unit/integration coverage.
 - Completed `/folist`: Staff-only/global-admin-only read-only compact team manager list (`<emoji> <role mention> Team Manager: <manager or Vacant>`), cold-cache Discord resolution, deterministic chunking, and focused unit/integration coverage.
+
+## Completed Stage 4C.2 team disbandment
+
+- Replaced public `/team remove` with exact `/team disband team:<team>` registration: required active-team autocomplete, no reason option, global-admin-only, Staff Commands-only, ephemeral, and initiator-confirmed.
+- Ended every active player/staff membership and moved all affected users to free agency without deleting team, user, membership, offer, transaction, or audit history.
+- Removed the team-specific role from every affected member and matching configured TM/ATM/PM roles from staff; ordinary players have no global Player role and retain unrelated roles.
+- Expired only related pending offers, preserved terminal/unrelated offers, marked the team inactive, and wrote actor/count/timestamp `team.disbanded` audit metadata while preserving the Discord team role and emoji.
+- Extended the existing role-first coordinator to deduplicated multi-member batches with reverse compensation for later-member or database failures and visible compensation-failure logging.
+- Added command, authorization/channel, confirmation, database/history/offer/audit, role-plan, and compensation coverage. No Prisma schema or migration change was required.
+
+## Later
+
 - Role-derived offer source.
 - Import tooling.
 - General mutation Discord auditing.

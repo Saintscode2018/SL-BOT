@@ -429,6 +429,10 @@ export class DiscordButtonAdapter implements OfferButtonInteraction, ButtonInter
     return this.interaction.user.id;
   }
 
+  public get userDisplayName(): string {
+    return invokingUserDisplayName(this.interaction);
+  }
+
   public get guildId(): string | undefined {
     return this.interaction.guildId ?? undefined;
   }
@@ -459,6 +463,22 @@ export class DiscordButtonAdapter implements OfferButtonInteraction, ButtonInter
 
   public get guildIconUrl(): string | undefined {
     return this.interaction.guild?.iconURL() ?? undefined;
+  }
+
+  public get guildOwnerId(): string | undefined {
+    return this.interaction.guild?.ownerId;
+  }
+
+  public get memberRoleIds(): readonly string[] {
+    const roles = this.interaction.member?.roles;
+    if (roles === undefined) return [];
+    return Array.isArray(roles) ? roles : [...roles.cache.keys()];
+  }
+
+  public get hasAdministratorPermission(): boolean {
+    return (
+      this.interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator) ?? false
+    );
   }
 
   public getGuildRoleMetadata(roleId: string): {
@@ -559,11 +579,15 @@ export function createInteractionCreateHandler(
       const isDeparture = context.departureCommandHandler?.canHandle(adapted.customId) ?? false;
       const isPromotionDemotion =
         context.promotionDemotionCommandHandler?.canHandle(adapted.customId) ?? false;
+      const isTeamDisbandment =
+        context.teamDisbandmentCommandHandler?.canHandle(adapted.customId) ?? false;
       try {
         if (isDeparture) {
           await context.departureCommandHandler!.handleButton(adapted);
         } else if (isPromotionDemotion) {
           await context.promotionDemotionCommandHandler!.handleButton(adapted);
+        } else if (isTeamDisbandment) {
+          await context.teamDisbandmentCommandHandler!.handleButton(adapted);
         } else {
           await context.offerButtonHandler.handle(adapted);
         }
@@ -577,7 +601,7 @@ export function createInteractionCreateHandler(
         if (adapted.deferred && !adapted.replied) {
           await adapted.editReply({
             embeds: [mapped.embed],
-            ...(isDeparture || isPromotionDemotion ? { components: [] } : {}),
+            ...(isDeparture || isPromotionDemotion || isTeamDisbandment ? { components: [] } : {}),
           });
         } else if (adapted.replied) {
           await adapted.followUp(response);

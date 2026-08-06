@@ -3,6 +3,7 @@ import type { Client } from 'discord.js';
 import { createDiscordClient } from '../bot/client.js';
 import { RosterDepartureCommandHandler } from '../bot/departure-command-handler.js';
 import { RosterPromotionDemotionCommandHandler } from '../bot/promotion-demotion-command-handler.js';
+import { TeamDisbandmentCommandHandler } from '../bot/team-disbandment-command-handler.js';
 import { loadCommands } from '../bot/command-loader.js';
 import { commandDefinitions } from '../bot/commands.js';
 import { EventRegistry } from '../bot/event-registry.js';
@@ -47,6 +48,7 @@ import { StaffManagementService } from '../services/staff-management-service.js'
 import { SetupAuditService } from '../services/setup-audit-service.js';
 import { TransferAnnouncementService } from '../services/transfer-announcement-service.js';
 import { TeamHealthService } from '../services/team-health-service.js';
+import { TeamDisbandmentService } from '../services/team-disbandment-service.js';
 import { FranchiseOwnerListService } from '../services/franchise-owner-list-service.js';
 import { Application, type DatabaseLifecycle } from './application.js';
 
@@ -105,6 +107,11 @@ export function createApplication(
     new RosterPromotionDemotionService(prisma, rosterMutations),
     confirmations,
   );
+  const teamDisbandmentCommandHandler = new TeamDisbandmentCommandHandler(
+    commandChannelPolicy,
+    new TeamDisbandmentService(prisma, synchronizedMutations),
+    confirmations,
+  );
   const offerAcceptanceService = new OfferAcceptanceService(
     prisma,
     undefined,
@@ -145,6 +152,7 @@ export function createApplication(
     offerButtonHandler,
     departureCommandHandler,
     promotionDemotionCommandHandler,
+    teamDisbandmentCommandHandler,
     setupAuditService,
     teamHealthService: new TeamHealthService(prisma),
     franchiseOwnerListService: new FranchiseOwnerListService(prisma),

@@ -27,6 +27,7 @@ The permanent team identity is only `<emoji> <@&DiscordRoleId>`. Emoji and Disco
 ## Current status
 
 - `/team add role emoji` and `/team edit team [role] [emoji]` are final.
+- `/team disband team` replaces `/team remove`: global administrators in Staff Commands confirm an initiator-owned destructive action that ends all active memberships, removes team plus matching staff roles, expires related pending offers, marks the team inactive, and audits the result while preserving the team role, emoji, rows, and history.
 - `/bannerconfig` is removed and stale cached interactions fail safely.
 - Autocomplete uses only `@CachedRoleName` (or `Unknown Team Role`) with club IDs as values.
 - Roster, staff, limit, team, offer, and relevant error output share `formatTeamIdentity`.
@@ -46,4 +47,4 @@ The permanent team identity is only `<emoji> <@&DiscordRoleId>`. Emoji and Disco
 - Discord role work requires Manage Roles/Administrator and a bot role above playable admin roles, staff roles, team roles, and the target's highest role. Administrator cannot bypass hierarchy; the server owner cannot be managed.
 - Presentation logic is centralized under `src/bot/presentation/` (`BOT_EMOJIS`, `BOT_LABELS`, `BOT_COLORS`, `timestamps.ts`, `users.ts`, `roles.ts`, `blockquotes.ts`, `authors.ts`, `footers.ts`); full cosmetic pass is deferred.
 - Stage 4B.3 exposes `/promote player rank` and `/demote staff` in Bot Commands or Staff with 2-minute initiator-only confirmations. Active TM/ATM database rank controls promotion (TM: Player -> PM, Player -> ATM, PM -> ATM; ATM: Player -> PM only) and TM rank controls demotion (ATM/PM -> Player). Self-action, free agents, other-team members, TM targets, occupied destination slots, and targets already at the desired rank are rejected. Promoted and demoted cards publish to Transfer Market only.
-- `/folist`, role-derived offer source, team-inactivation removal, and general mutation audit publication remain out of scope for the public command surface.
+- `/folist` and `/team disband` are implemented. Role-derived offer source and general mutation audit publication remain out of scope for the public command surface.

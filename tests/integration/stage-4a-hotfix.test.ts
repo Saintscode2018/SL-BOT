@@ -423,13 +423,14 @@ describe('Stage 4A Hotfix Verification', () => {
       expect(roleOptions).not.toContain('league_admin');
     });
 
-    it('exposes safe /team remove subcommand', () => {
+    it('exposes /team disband and removes the old /team remove subcommand', () => {
       const teamCmd = commandDefinitions.find((c) => c.data.name === 'team');
       expect(teamCmd).not.toBeNull();
       const json = teamCmd?.data.toJSON() as { options?: Array<{ name: string }> };
       const subcommands = (json.options ?? []).map((o) => o.name);
 
-      expect(subcommands).toContain('remove');
+      expect(subcommands).toContain('disband');
+      expect(subcommands).not.toContain('remove');
     });
   });
 
@@ -485,39 +486,6 @@ describe('Stage 4A Hotfix Verification', () => {
       const edit = interaction.edits[0];
       expect(edit?.embeds).toBeDefined();
       expect(edit?.embeds?.[0]?.data.title).toBe('✅ Team Added');
-    });
-
-    it('/team remove deactivates the team while preserving database history', async () => {
-      await setupLeagueAndChannels();
-
-      const club = await commandContext.clubManagementService.create({
-        authorization: adminAuth,
-        discordRoleId: '300000000000000099',
-        emoji: '🔴',
-      });
-
-      const registry = {
-        resolve: (name: string) => commandDefinitions.find((c) => c.data.name === name) ?? null,
-      } as unknown as CommandRegistry;
-
-      const interaction = new MockCommandInteraction(
-        'team',
-        { subcommand: 'remove', team: club.id },
-        staffChannel,
-        adminAuth,
-      );
-
-      await handleInteractionCreate(interaction, registry, commandContext, logger);
-
-      expect(interaction.edits).toHaveLength(1);
-      const edit = interaction.edits[0];
-      expect(edit?.embeds?.[0]?.data.title).toBe('✅ Team Removed');
-      expect(edit?.embeds?.[0]?.data.description).toContain('The team is now inactive.');
-
-      // verify the team remains stored and inactive
-      const dbClub = await context.client.club.findUnique({ where: { id: club.id } });
-      expect(dbClub).not.toBeNull();
-      expect(dbClub?.active).toBe(false);
     });
   });
 });
