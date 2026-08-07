@@ -7,7 +7,6 @@ import {
 } from '../domain/errors.js';
 import { fromStaffRoleCode, type StaffRoleCode } from '../domain/roster-mutation.js';
 import { formatTeamIdentity } from '../domain/team-label.js';
-import type { AuthorizationInput } from '../services/authorization-service.js';
 import type { CommandChannelPolicyService } from '../services/command-channel-policy-service.js';
 import type {
   ConfirmationContext,
@@ -21,6 +20,7 @@ import type {
 } from '../services/roster-departure-service.js';
 import { getFriendlyPositionName } from '../services/staff-management-service.js';
 import { createErrorEmbed, createSuccessEmbed, createWarningEmbed } from './embeds.js';
+import { requireGuildExecution } from './guild-execution.js';
 import {
   BOT_COLORS,
   BOT_EMOJIS,
@@ -29,50 +29,11 @@ import {
   getUserDisplayName,
 } from './presentation/index.js';
 import { getTeamEmbedColor, resolveTeamPresentation } from './team-presentation.js';
-import type {
-  ButtonInteractionAdapter,
-  CommandInteraction,
-  CommandInteractionOptions,
-} from './types.js';
+import type { ButtonInteractionAdapter, CommandInteraction } from './types.js';
 
 export type DateClock = () => Date;
 
-interface GuildCommandExecution {
-  guildId: string;
-  guildName: string;
-  channelId: string;
-  options: CommandInteractionOptions;
-  authorization: AuthorizationInput;
-}
-
 const announcementWarning = `${BOT_EMOJIS.warning} The roster and Discord roles were updated, but the Transfer Market announcement could not be delivered.`;
-
-function requireExecution(interaction: CommandInteraction): GuildCommandExecution {
-  const { guildId, guildName, guildOwnerId, userId, channelId, options } = interaction;
-  if (
-    guildId === undefined ||
-    guildName === undefined ||
-    guildOwnerId === undefined ||
-    userId === undefined ||
-    channelId === undefined ||
-    options === undefined
-  ) {
-    throw new ConfigurationError('this command must be used in a Discord server text channel');
-  }
-  return {
-    guildId,
-    guildName,
-    channelId,
-    options,
-    authorization: {
-      discordGuildId: guildId,
-      discordUserId: userId,
-      guildOwnerId,
-      memberRoleIds: interaction.memberRoleIds ?? [],
-      hasAdministratorPermission: interaction.hasAdministratorPermission ?? false,
-    },
-  };
-}
 
 function confirmationCancelledEmbed() {
   return createWarningEmbed({
@@ -141,7 +102,7 @@ export class RosterDepartureCommandHandler {
   }
 
   public async beginDemand(interaction: CommandInteraction): Promise<void> {
-    const execution = requireExecution(interaction);
+    const execution = requireGuildExecution(interaction, { requireChannel: true });
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await this.channelPolicy.validateChannelPolicy({
       authorization: execution.authorization,
@@ -242,7 +203,7 @@ export class RosterDepartureCommandHandler {
   }
 
   public async beginRelease(interaction: CommandInteraction): Promise<void> {
-    const execution = requireExecution(interaction);
+    const execution = requireGuildExecution(interaction, { requireChannel: true });
     const player = execution.options.getUser('player');
     if (player === null) throw new ConfigurationError('player is required');
 

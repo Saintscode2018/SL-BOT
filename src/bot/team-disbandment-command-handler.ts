@@ -11,6 +11,7 @@ import type {
 import type { TeamDisbandmentService } from '../services/team-disbandment-service.js';
 import { createErrorEmbed, createSuccessEmbed, createWarningEmbed } from './embeds.js';
 import { getTeamThumbnail } from './emoji-helper.js';
+import { extractAuthorizationInput, requireGuildExecution } from './guild-execution.js';
 import {
   BOT_COLORS,
   BOT_EMOJIS,
@@ -19,48 +20,9 @@ import {
   getUserDisplayName,
 } from './presentation/index.js';
 import { getTeamEmbedColor, resolveTeamPresentation } from './team-presentation.js';
-import type {
-  ButtonInteractionAdapter,
-  CommandInteraction,
-  CommandInteractionOptions,
-} from './types.js';
+import type { ButtonInteractionAdapter, CommandInteraction } from './types.js';
 
 export type TeamDisbandmentClock = () => Date;
-
-interface GuildCommandExecution {
-  guildId: string;
-  guildName: string;
-  channelId: string;
-  options: CommandInteractionOptions;
-  authorization: AuthorizationInput;
-}
-
-function requireExecution(interaction: CommandInteraction): GuildCommandExecution {
-  const { guildId, guildName, guildOwnerId, userId, channelId, options } = interaction;
-  if (
-    guildId === undefined ||
-    guildName === undefined ||
-    guildOwnerId === undefined ||
-    userId === undefined ||
-    channelId === undefined ||
-    options === undefined
-  ) {
-    throw new ConfigurationError('this command must be used in a Discord server text channel');
-  }
-  return {
-    guildId,
-    guildName,
-    channelId,
-    options,
-    authorization: {
-      discordGuildId: guildId,
-      discordUserId: userId,
-      guildOwnerId,
-      memberRoleIds: interaction.memberRoleIds ?? [],
-      hasAdministratorPermission: interaction.hasAdministratorPermission ?? false,
-    },
-  };
-}
 
 function requireButtonAuthorization(interaction: ButtonInteractionAdapter): AuthorizationInput {
   if (
@@ -70,13 +32,7 @@ function requireButtonAuthorization(interaction: ButtonInteractionAdapter): Auth
   ) {
     throw new StaleConfirmationError();
   }
-  return {
-    discordGuildId: interaction.guildId,
-    discordUserId: interaction.userId,
-    guildOwnerId: interaction.guildOwnerId,
-    memberRoleIds: interaction.memberRoleIds ?? [],
-    hasAdministratorPermission: interaction.hasAdministratorPermission ?? false,
-  };
+  return extractAuthorizationInput(interaction);
 }
 
 function cancelledEmbed() {
@@ -106,7 +62,7 @@ export class TeamDisbandmentCommandHandler {
   }
 
   public async begin(interaction: CommandInteraction): Promise<void> {
-    const execution = requireExecution(interaction);
+    const execution = requireGuildExecution(interaction, { requireChannel: true });
     const teamId = execution.options.getString('team');
     if (teamId === null) throw new ConfigurationError('team is required');
 

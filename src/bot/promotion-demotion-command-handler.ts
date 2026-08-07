@@ -3,7 +3,6 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'disc
 import { ConfigurationError, StaleConfirmationError } from '../domain/errors.js';
 import type { StaffMembershipType, StaffRoleCode } from '../domain/roster-mutation.js';
 import { formatTeamIdentity } from '../domain/team-label.js';
-import type { AuthorizationInput } from '../services/authorization-service.js';
 import type { CommandChannelPolicyService } from '../services/command-channel-policy-service.js';
 import type {
   ConfirmationContext,
@@ -16,6 +15,7 @@ import type {
 } from '../services/roster-promotion-demotion-service.js';
 import { getFriendlyPositionName } from '../services/staff-management-service.js';
 import { createErrorEmbed, createSuccessEmbed, createWarningEmbed } from './embeds.js';
+import { requireGuildExecution } from './guild-execution.js';
 import {
   BOT_COLORS,
   BOT_EMOJIS,
@@ -23,48 +23,9 @@ import {
   getUserDisplayName,
 } from './presentation/index.js';
 import { getTeamEmbedColor, resolveTeamPresentation } from './team-presentation.js';
-import type {
-  ButtonInteractionAdapter,
-  CommandInteraction,
-  CommandInteractionOptions,
-} from './types.js';
+import type { ButtonInteractionAdapter, CommandInteraction } from './types.js';
 
 export type DateClock = () => Date;
-
-interface GuildCommandExecution {
-  guildId: string;
-  guildName: string;
-  channelId: string;
-  options: CommandInteractionOptions;
-  authorization: AuthorizationInput;
-}
-
-function requireExecution(interaction: CommandInteraction): GuildCommandExecution {
-  const { guildId, guildName, guildOwnerId, userId, channelId, options } = interaction;
-  if (
-    guildId === undefined ||
-    guildName === undefined ||
-    guildOwnerId === undefined ||
-    userId === undefined ||
-    channelId === undefined ||
-    options === undefined
-  ) {
-    throw new ConfigurationError('this command must be used in a Discord server text channel');
-  }
-  return {
-    guildId,
-    guildName,
-    channelId,
-    options,
-    authorization: {
-      discordGuildId: guildId,
-      discordUserId: userId,
-      guildOwnerId,
-      memberRoleIds: interaction.memberRoleIds ?? [],
-      hasAdministratorPermission: interaction.hasAdministratorPermission ?? false,
-    },
-  };
-}
 
 function confirmationCancelledEmbed() {
   return createWarningEmbed({
@@ -128,7 +89,7 @@ export class RosterPromotionDemotionCommandHandler {
   }
 
   public async beginPromote(interaction: CommandInteraction): Promise<void> {
-    const execution = requireExecution(interaction);
+    const execution = requireGuildExecution(interaction, { requireChannel: true });
     const playerOption = execution.options.getUser('player');
     const rankOption = execution.options.getString('rank');
 
@@ -236,7 +197,7 @@ export class RosterPromotionDemotionCommandHandler {
   }
 
   public async beginDemote(interaction: CommandInteraction): Promise<void> {
-    const execution = requireExecution(interaction);
+    const execution = requireGuildExecution(interaction, { requireChannel: true });
     const staffOption = execution.options.getUser('staff');
 
     if (staffOption === null) throw new ConfigurationError('staff is required');

@@ -3,12 +3,12 @@ import { ChannelType, MessageFlags, SlashCommandBuilder } from 'discord.js';
 import { ConfigurationError, DiscordRoleMissingError, ValidationError } from '../domain/errors.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { formatTeamIdentity } from '../domain/team-label.js';
-import type { AuthorizationInput } from '../services/authorization-service.js';
 import { getFriendlyPositionName, type StaffType } from '../services/staff-management-service.js';
 import { createActorField, createInfoEmbed, createSuccessEmbed } from './embeds.js';
 import { demandCommand, releaseCommand } from './departure-command-definitions.js';
 import { demoteCommand, promoteCommand } from './promotion-demotion-command-definitions.js';
 import { getTeamThumbnail, validateTeamEmoji } from './emoji-helper.js';
+import { requireGuildExecution, type GuildCommandExecution } from './guild-execution.js';
 import {
   BOT_COLORS,
   BOT_EMOJIS,
@@ -34,41 +34,11 @@ import type {
   CommandInteractionOptions,
 } from './types.js';
 
-function requireExecution(interaction: CommandInteraction): {
-  guildId: string;
-  guildName: string;
-  options: CommandInteractionOptions;
-  authorization: AuthorizationInput;
-} {
-  const { guildId, guildName, guildOwnerId, userId, options } = interaction;
-  if (
-    guildId === undefined ||
-    guildName === undefined ||
-    guildOwnerId === undefined ||
-    userId === undefined ||
-    options === undefined
-  ) {
-    throw new ConfigurationError('this command must be used in a Discord server');
-  }
-  return {
-    guildId,
-    guildName,
-    options,
-    authorization: {
-      discordGuildId: guildId,
-      discordUserId: userId,
-      guildOwnerId,
-      memberRoleIds: interaction.memberRoleIds ?? [],
-      hasAdministratorPermission: interaction.hasAdministratorPermission ?? false,
-    },
-  };
-}
-
 async function enforceChannelPolicy(
   interaction: CommandInteraction,
   context: CommandContext,
-): Promise<ReturnType<typeof requireExecution>> {
-  const execution = requireExecution(interaction);
+): Promise<GuildCommandExecution> {
+  const execution = requireGuildExecution(interaction);
   if (interaction.channelId === undefined) {
     throw new ConfigurationError('this command must be used in a Discord channel');
   }
