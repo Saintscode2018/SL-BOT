@@ -16,6 +16,7 @@ import type {
 import { getFriendlyPositionName } from '../services/staff-management-service.js';
 import { createErrorEmbed, createSuccessEmbed, createWarningEmbed } from './embeds.js';
 import { requireGuildExecution } from './guild-execution.js';
+import { requireUser } from './option-parsing.js';
 import {
   BOT_COLORS,
   BOT_EMOJIS,
@@ -90,10 +91,9 @@ export class RosterPromotionDemotionCommandHandler {
 
   public async beginPromote(interaction: CommandInteraction): Promise<void> {
     const execution = requireGuildExecution(interaction, { requireChannel: true });
-    const playerOption = execution.options.getUser('player');
+    const playerOption = requireUser(execution.options, 'player');
     const rankOption = execution.options.getString('rank');
 
-    if (playerOption === null) throw new ConfigurationError('player is required');
     if (rankOption === null || !['ATM', 'PM'].includes(rankOption)) {
       throw new ConfigurationError('rank must be Assistant Team Manager or Player Manager');
     }
@@ -198,9 +198,7 @@ export class RosterPromotionDemotionCommandHandler {
 
   public async beginDemote(interaction: CommandInteraction): Promise<void> {
     const execution = requireGuildExecution(interaction, { requireChannel: true });
-    const staffOption = execution.options.getUser('staff');
-
-    if (staffOption === null) throw new ConfigurationError('staff is required');
+    const staffOption = requireUser(execution.options, 'staff');
 
     await this.channelPolicy.validateChannelPolicy({
       authorization: execution.authorization,

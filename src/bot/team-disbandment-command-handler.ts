@@ -1,6 +1,6 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 
-import { ConfigurationError, StaleConfirmationError } from '../domain/errors.js';
+import { StaleConfirmationError } from '../domain/errors.js';
 import { formatTeamIdentity } from '../domain/team-label.js';
 import type { AuthorizationInput } from '../services/authorization-service.js';
 import type { CommandChannelPolicyService } from '../services/command-channel-policy-service.js';
@@ -12,6 +12,7 @@ import type { TeamDisbandmentService } from '../services/team-disbandment-servic
 import { createErrorEmbed, createSuccessEmbed, createWarningEmbed } from './embeds.js';
 import { getTeamThumbnail } from './emoji-helper.js';
 import { extractAuthorizationInput, requireGuildExecution } from './guild-execution.js';
+import { requireString } from './option-parsing.js';
 import {
   BOT_COLORS,
   BOT_EMOJIS,
@@ -63,8 +64,7 @@ export class TeamDisbandmentCommandHandler {
 
   public async begin(interaction: CommandInteraction): Promise<void> {
     const execution = requireGuildExecution(interaction, { requireChannel: true });
-    const teamId = execution.options.getString('team');
-    if (teamId === null) throw new ConfigurationError('team is required');
+    const teamId = requireString(execution.options, 'team');
 
     await this.channelPolicy.validateChannelPolicy({
       authorization: execution.authorization,

@@ -10,6 +10,13 @@ import { demoteCommand, promoteCommand } from './promotion-demotion-command-defi
 import { getTeamThumbnail, validateTeamEmoji } from './emoji-helper.js';
 import { requireGuildExecution, type GuildCommandExecution } from './guild-execution.js';
 import {
+  requireChannel,
+  requireInteger,
+  requireRole,
+  requireString,
+  requireUser,
+} from './option-parsing.js';
+import {
   BOT_COLORS,
   BOT_EMOJIS,
   BOT_LABELS,
@@ -31,7 +38,6 @@ import type {
   CommandContext,
   CommandDefinition,
   CommandInteraction,
-  CommandInteractionOptions,
 } from './types.js';
 
 async function enforceChannelPolicy(
@@ -92,18 +98,6 @@ function formatRosterAdminWarning(
     return `${BOT_EMOJIS.warning} The roster was updated, but the Audit announcement could not be delivered.`;
   }
   return null;
-}
-
-function requiredString(options: CommandInteractionOptions, name: string): string {
-  const value = options.getString(name);
-  if (value === null) throw new ConfigurationError(`${name} is required`);
-  return value;
-}
-
-function requiredInteger(options: CommandInteractionOptions, name: string): number {
-  const value = options.getInteger(name);
-  if (value === null) throw new ConfigurationError(`${name} is required`);
-  return value;
 }
 
 export function formatStaffDirectoryTeamSection(
@@ -207,30 +201,6 @@ function chunkRosterPlayerLines(lines: readonly string[]): string[] {
   }
   if (current.length > 0) chunks.push(current);
   return chunks;
-}
-
-function requiredUser(
-  options: CommandInteractionOptions,
-  name: string,
-): { id: string; bot: boolean; displayName?: string } {
-  const value = options.getUser(name);
-  if (value === null) throw new ConfigurationError(`${name} is required`);
-  return value;
-}
-
-function requiredRole(options: CommandInteractionOptions, name: string): { id: string } {
-  const value = options.getRole(name);
-  if (value === null) throw new ConfigurationError(`${name} is required`);
-  return value;
-}
-
-function requiredChannel(
-  options: CommandInteractionOptions,
-  name: string,
-): { id: string; type: number } {
-  const value = options.getChannel(name);
-  if (value === null) throw new ConfigurationError(`${name} is required`);
-  return value;
 }
 
 function validateTextChannel(channel: { id: string; type: number }, name: string): void {
@@ -407,10 +377,10 @@ const setupCommand: CommandDefinition = {
     }
 
     if (subcommand === 'channels') {
-      const botCmds = requiredChannel(execution.options, 'bot_commands');
-      const staff = requiredChannel(execution.options, 'staff');
-      const transfer = requiredChannel(execution.options, 'transfer');
-      const audit = requiredChannel(execution.options, 'audit');
+      const botCmds = requireChannel(execution.options, 'bot_commands');
+      const staff = requireChannel(execution.options, 'staff');
+      const transfer = requireChannel(execution.options, 'transfer');
+      const audit = requireChannel(execution.options, 'audit');
 
       validateTextChannel(botCmds, 'bot_commands');
       validateTextChannel(staff, 'staff');
@@ -457,10 +427,10 @@ const setupCommand: CommandDefinition = {
     }
 
     if (subcommand === 'roles') {
-      const botPerms = requiredRole(execution.options, 'bot_permissions');
-      const tm = requiredRole(execution.options, 'team_manager');
-      const atm = requiredRole(execution.options, 'assistant_manager');
-      const pm = requiredRole(execution.options, 'player_manager');
+      const botPerms = requireRole(execution.options, 'bot_permissions');
+      const tm = requireRole(execution.options, 'team_manager');
+      const atm = requireRole(execution.options, 'assistant_manager');
+      const pm = requireRole(execution.options, 'player_manager');
 
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.guildSetupService.setupRoles({
@@ -606,9 +576,9 @@ const teamCommand: CommandDefinition = {
 
     if (subcommand === 'add') {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-      const rawEmoji = requiredString(execution.options, 'emoji');
+      const rawEmoji = requireString(execution.options, 'emoji');
       const validatedEmoji = validateTeamEmoji(rawEmoji, guildEmojis);
-      const role = requiredRole(execution.options, 'role');
+      const role = requireRole(execution.options, 'role');
 
       const club = await context.clubManagementService.create({
         authorization: execution.authorization,
@@ -636,7 +606,7 @@ const teamCommand: CommandDefinition = {
 
     if (subcommand === 'edit') {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-      const teamId = requiredString(execution.options, 'team');
+      const teamId = requireString(execution.options, 'team');
       const role = execution.options.getRole('role');
       const rawEmoji = execution.options.getString('emoji');
 
@@ -749,7 +719,7 @@ const limitCommand: CommandDefinition = {
     const actorDisplayName = getUserDisplayName(interaction, execution.authorization.discordUserId);
 
     if (subcommand === 'default') {
-      const amount = requiredInteger(execution.options, 'amount');
+      const amount = requireInteger(execution.options, 'amount');
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.limitManagementService.setDefaultLimit({
         authorization: execution.authorization,
@@ -769,8 +739,8 @@ const limitCommand: CommandDefinition = {
     }
 
     if (subcommand === 'team') {
-      const teamId = requiredString(execution.options, 'team');
-      const amount = requiredInteger(execution.options, 'amount');
+      const teamId = requireString(execution.options, 'team');
+      const amount = requireInteger(execution.options, 'amount');
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.limitManagementService.setTeamLimit({
         authorization: execution.authorization,
@@ -793,7 +763,7 @@ const limitCommand: CommandDefinition = {
     }
 
     if (subcommand === 'reset') {
-      const teamId = requiredString(execution.options, 'team');
+      const teamId = requireString(execution.options, 'team');
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.limitManagementService.resetTeamLimit({
         authorization: execution.authorization,
@@ -919,9 +889,9 @@ const staffCommand: CommandDefinition = {
     const actorDisplayName = getUserDisplayName(interaction, execution.authorization.discordUserId);
 
     if (subcommand === 'appoint') {
-      const teamId = requiredString(execution.options, 'team');
-      const user = requiredUser(execution.options, 'user');
-      const staffType = requiredString(execution.options, 'staff_type') as StaffType;
+      const teamId = requireString(execution.options, 'team');
+      const user = requireUser(execution.options, 'user');
+      const staffType = requireString(execution.options, 'staff_type') as StaffType;
       const targetDisplayName = user.displayName || getUserDisplayName(interaction, user.id);
 
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -953,8 +923,8 @@ const staffCommand: CommandDefinition = {
     }
 
     if (subcommand === 'remove') {
-      const teamId = requiredString(execution.options, 'team');
-      const staffType = requiredString(execution.options, 'staff_type') as StaffType;
+      const teamId = requireString(execution.options, 'team');
+      const staffType = requireString(execution.options, 'staff_type') as StaffType;
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.staffManagementService.remove(
         execution.authorization,
@@ -1105,14 +1075,14 @@ const rosterCommand: CommandDefinition = {
       if (service === undefined) {
         throw new ConfigurationError('roster administration service is unavailable');
       }
-      const selectedPlayer = requiredUser(execution.options, 'player');
+      const selectedPlayer = requireUser(execution.options, 'player');
       const occurredAt = new Date();
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result =
         subcommand === 'add'
           ? await service.add({
               authorization: execution.authorization,
-              clubId: requiredString(execution.options, 'team'),
+              clubId: requireString(execution.options, 'team'),
               playerDiscordUserId: selectedPlayer.id,
               playerIsBot: selectedPlayer.bot,
               occurredAt,
@@ -1169,7 +1139,7 @@ const rosterCommand: CommandDefinition = {
     }
 
     if (subcommand !== 'view') throw new ConfigurationError('unknown roster subcommand');
-    const teamId = requiredString(execution.options, 'team');
+    const teamId = requireString(execution.options, 'team');
 
     // roster view is private to the invoking user and matches the visual specification
     const result = await context.rosterManagementService.list(execution.guildId, teamId);
@@ -1491,7 +1461,7 @@ const offerCommand: CommandDefinition = {
     ),
   async execute(interaction, context) {
     const execution = await enforceChannelPolicy(interaction, context);
-    const player = requiredUser(execution.options, 'player');
+    const player = requireUser(execution.options, 'player');
     const targetDisplayName = player.displayName || getUserDisplayName(interaction, player.id);
     const actorDisplayName = getUserDisplayName(interaction, execution.authorization.discordUserId);
 

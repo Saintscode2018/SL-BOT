@@ -1,10 +1,6 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 
-import {
-  ConfigurationError,
-  DemandRateLimitedError,
-  StaleConfirmationError,
-} from '../domain/errors.js';
+import { DemandRateLimitedError, StaleConfirmationError } from '../domain/errors.js';
 import { fromStaffRoleCode, type StaffRoleCode } from '../domain/roster-mutation.js';
 import { formatTeamIdentity } from '../domain/team-label.js';
 import type { CommandChannelPolicyService } from '../services/command-channel-policy-service.js';
@@ -21,6 +17,7 @@ import type {
 import { getFriendlyPositionName } from '../services/staff-management-service.js';
 import { createErrorEmbed, createSuccessEmbed, createWarningEmbed } from './embeds.js';
 import { requireGuildExecution } from './guild-execution.js';
+import { requireUser } from './option-parsing.js';
 import {
   BOT_COLORS,
   BOT_EMOJIS,
@@ -204,8 +201,7 @@ export class RosterDepartureCommandHandler {
 
   public async beginRelease(interaction: CommandInteraction): Promise<void> {
     const execution = requireGuildExecution(interaction, { requireChannel: true });
-    const player = execution.options.getUser('player');
-    if (player === null) throw new ConfigurationError('player is required');
+    const player = requireUser(execution.options, 'player');
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await this.channelPolicy.validateChannelPolicy({
