@@ -202,20 +202,6 @@ async function resolveUserDisplayNames(
   return new Map(entries);
 }
 
-async function resolveTeamPresentationAsync<T extends { discordRoleId: string; emoji: string }>(
-  interaction: CommandInteraction,
-  team: T,
-) {
-  const role =
-    (await interaction.resolveGuildRoleMetadata?.(team.discordRoleId)) ??
-    interaction.getGuildRoleMetadata?.(team.discordRoleId) ??
-    null;
-  return {
-    team: { ...team, discordRoleName: role?.name ?? null },
-    role,
-  };
-}
-
 function chunkStaffDirectoryFields(
   fields: Array<{ name: string; value: string; inline: boolean }>,
 ): Array<typeof fields> {
@@ -660,7 +646,7 @@ const teamCommand: CommandDefinition = {
         emoji: validatedEmoji.display,
       });
 
-      const presentation = resolveTeamPresentation(interaction, club);
+      const presentation = await resolveTeamPresentation(interaction, club);
       const thumbnail = getTeamThumbnail(club.emoji);
       const embed = createSuccessEmbed({
         title: `${BOT_EMOJIS.success} Team Added`,
@@ -697,7 +683,7 @@ const teamCommand: CommandDefinition = {
         ...(emojiToUpdate === undefined ? {} : { emoji: emojiToUpdate }),
       });
 
-      const presentation = resolveTeamPresentation(interaction, club);
+      const presentation = await resolveTeamPresentation(interaction, club);
       const thumbnail = getTeamThumbnail(club.emoji);
       const embed = createSuccessEmbed({
         title: `${BOT_EMOJIS.success} Team Updated`,
@@ -822,7 +808,7 @@ const limitCommand: CommandDefinition = {
         amount,
       });
 
-      const presentation = resolveTeamPresentation(interaction, result.club);
+      const presentation = await resolveTeamPresentation(interaction, result.club);
       const embed = createSuccessEmbed({
         title: `${BOT_EMOJIS.success} Team Squad Limit Updated`,
         description: `Updated squad limit for ${formatTeamIdentity(presentation.team, 'message')} to **${result.override}** players.`,
@@ -844,7 +830,7 @@ const limitCommand: CommandDefinition = {
         clubId: teamId,
       });
 
-      const presentation = resolveTeamPresentation(interaction, result.club);
+      const presentation = await resolveTeamPresentation(interaction, result.club);
       const embed = createSuccessEmbed({
         title: `${BOT_EMOJIS.success} Team Squad Limit Reset`,
         description: `Reset squad limit for ${formatTeamIdentity(presentation.team, 'message')} to the guild default (**${result.effectiveLimit}** players).`,
@@ -863,7 +849,7 @@ const limitCommand: CommandDefinition = {
     const view = await context.limitManagementService.viewLimit(execution.guildId, teamId);
 
     if (view.selectedClub !== undefined) {
-      const presentation = resolveTeamPresentation(interaction, view.selectedClub.club);
+      const presentation = await resolveTeamPresentation(interaction, view.selectedClub.club);
       const thumbnail = getTeamThumbnail(view.selectedClub.club.emoji);
       const embed = createInfoEmbed({
         title: 'Squad Limit',
@@ -978,7 +964,7 @@ const staffCommand: CommandDefinition = {
       });
 
       const positionName = getFriendlyPositionName(staffType);
-      const presentation = resolveTeamPresentation(interaction, result.club);
+      const presentation = await resolveTeamPresentation(interaction, result.club);
       const targetFormatted = formatUserWithVisibleName(
         result.user.discordUserId,
         targetDisplayName,
@@ -1012,7 +998,7 @@ const staffCommand: CommandDefinition = {
         targetDisplayName,
       );
       const positionName = getFriendlyPositionName(staffType);
-      const presentation = resolveTeamPresentation(interaction, result.club);
+      const presentation = await resolveTeamPresentation(interaction, result.club);
       const embed = createSuccessEmbed({
         title: `${BOT_EMOJIS.success} Staff Member Removed`,
         description: `Successfully removed ${targetFormatted} as the ${positionName} of ${formatTeamIdentity(presentation.team, 'message')}.`,
@@ -1037,7 +1023,7 @@ const staffCommand: CommandDefinition = {
       const activeTeams = (await context.clubManagementService.listActive(execution.guildId)) ?? [];
       const selectedClubItem = activeTeams.find((item) => item.club.id === selectedTeamId);
       const presentation = selectedClubItem
-        ? await resolveTeamPresentationAsync(interaction, selectedClubItem.club)
+        ? await resolveTeamPresentation(interaction, selectedClubItem.club)
         : null;
       const thumbnail = selectedClubItem ? getTeamThumbnail(selectedClubItem.club.emoji) : null;
 
@@ -1166,7 +1152,7 @@ const rosterCommand: CommandDefinition = {
               playerDiscordUserId: selectedPlayer.id,
               occurredAt,
             });
-      const presentation = await resolveTeamPresentationAsync(interaction, result.club);
+      const presentation = await resolveTeamPresentation(interaction, result.club);
       const playerDisplayName =
         selectedPlayer.displayName?.trim() ||
         (await interaction.resolveGuildMemberDisplayName?.(selectedPlayer.id)) ||
@@ -1223,7 +1209,7 @@ const rosterCommand: CommandDefinition = {
 
     const effectiveLimit = getEffectiveSquadLimit(result.club, settings?.settings);
     const thumbnail = getTeamThumbnail(result.club.emoji);
-    const presentation = await resolveTeamPresentationAsync(interaction, result.club);
+    const presentation = await resolveTeamPresentation(interaction, result.club);
 
     const staffByType = new Map(result.staff.map((m) => [m.membershipType, m.user]));
     const tmUser = staffByType.get('TEAM_MANAGER');
@@ -1357,7 +1343,7 @@ const teamHealthCommand: CommandDefinition = {
 
     if (selectedTeamId !== null) {
       const result = await service.getDetail(execution.guildId, selectedTeamId);
-      const presentation = await resolveTeamPresentationAsync(interaction, result.team.club);
+      const presentation = await resolveTeamPresentation(interaction, result.team.club);
       if (presentation.role === null) throw new DiscordRoleMissingError('TEAM');
 
       const resolvedNames = await resolveUserDisplayNames(
@@ -1408,7 +1394,7 @@ const teamHealthCommand: CommandDefinition = {
 
     const presentedTeams = await Promise.all(
       result.teams.map(async ({ club, activePlayerCount }) => {
-        const presentation = await resolveTeamPresentationAsync(interaction, club);
+        const presentation = await resolveTeamPresentation(interaction, club);
         if (presentation.role === null) throw new DiscordRoleMissingError('TEAM');
         return { presentation, activePlayerCount };
       }),
@@ -1483,7 +1469,7 @@ const folistCommand: CommandDefinition = {
 
     const presentedItems = await Promise.all(
       result.items.map(async ({ club, teamManager }) => {
-        const presentation = await resolveTeamPresentationAsync(interaction, club);
+        const presentation = await resolveTeamPresentation(interaction, club);
         if (presentation.role === null) throw new DiscordRoleMissingError('TEAM');
         return { presentation, teamManager };
       }),
@@ -1546,7 +1532,7 @@ const offerCommand: CommandDefinition = {
       execution.guildId,
       execution.authorization.discordUserId,
     );
-    const sourcePresentation = resolveTeamPresentation(interaction, destinationClub);
+    const sourcePresentation = await resolveTeamPresentation(interaction, destinationClub);
 
     const result = await context.offerDeliveryService.createAndDeliver(
       {
@@ -1565,7 +1551,7 @@ const offerCommand: CommandDefinition = {
     );
 
     const club = result.destinationClub;
-    const presentation = resolveTeamPresentation(interaction, club ?? destinationClub);
+    const presentation = await resolveTeamPresentation(interaction, club ?? destinationClub);
     const thumbnail = getTeamThumbnail(club?.emoji);
 
     const targetFormatted = formatUserWithVisibleName(player.id, targetDisplayName);

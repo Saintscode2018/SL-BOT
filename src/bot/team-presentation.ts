@@ -9,11 +9,19 @@ export interface ResolvedTeamPresentation<T extends TeamIdentitySource> {
   role: GuildRoleMetadata | null;
 }
 
-export function resolveTeamPresentation<T extends TeamIdentitySource>(
-  interaction: Pick<CommandInteraction, 'getGuildRoleMetadata'>,
+export async function resolveTeamPresentation<T extends TeamIdentitySource>(
+  interaction: Pick<CommandInteraction, 'getGuildRoleMetadata' | 'resolveGuildRoleMetadata'>,
   team: T,
-): ResolvedTeamPresentation<T> {
-  const role = interaction.getGuildRoleMetadata?.(team.discordRoleId) ?? null;
+): Promise<ResolvedTeamPresentation<T>> {
+  let role: GuildRoleMetadata | null;
+  try {
+    role = (await interaction.resolveGuildRoleMetadata?.(team.discordRoleId)) ?? null;
+  } catch {
+    role = null;
+  }
+  if (role === null) {
+    role = interaction.getGuildRoleMetadata?.(team.discordRoleId) ?? null;
+  }
   return {
     team: { ...team, discordRoleName: role?.name ?? null },
     role,

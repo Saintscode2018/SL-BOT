@@ -182,7 +182,7 @@ export class RosterDepartureCommandHandler {
       },
     );
 
-    const presentation = resolveTeamPresentation(interaction, eligibility.club);
+    const presentation = await resolveTeamPresentation(interaction, eligibility.club);
     const team = formatTeamIdentity(presentation.team, 'message');
     const color = getTeamEmbedColor(presentation, BOT_COLORS.warning);
     const isStaff = eligibility.staffRole !== null;
@@ -280,7 +280,7 @@ export class RosterDepartureCommandHandler {
           }),
       },
     );
-    const presentation = resolveTeamPresentation(interaction, eligibility.club);
+    const presentation = await resolveTeamPresentation(interaction, eligibility.club);
     const team = formatTeamIdentity(presentation.team, 'message');
     const targetName = player.displayName || getUserDisplayName(interaction, player.id);
     const target = formatUserWithVisibleName(player.id, targetName);
@@ -382,7 +382,7 @@ export class RosterDepartureCommandHandler {
             expectedStaffRole: eligibility.staffRole,
             occurredAt,
           });
-    const presentation = resolveTeamPresentation(interaction, result.club);
+    const presentation = await resolveTeamPresentation(interaction, result.club);
     const team = formatTeamIdentity(presentation.team, 'message');
     const description =
       decision === 'staff-only'
@@ -431,7 +431,7 @@ export class RosterDepartureCommandHandler {
       expectedTargetStaffRole: eligibility.targetStaffRole,
       occurredAt: this.now(),
     });
-    const presentation = resolveTeamPresentation(interaction, result.club);
+    const presentation = await resolveTeamPresentation(interaction, result.club);
     const team = formatTeamIdentity(presentation.team, 'message');
     const target = formatUserWithVisibleName(
       context.targetDiscordUserId,

@@ -181,7 +181,7 @@ export class RosterPromotionDemotionCommandHandler {
       },
     );
 
-    const presentation = resolveTeamPresentation(interaction, eligibility.club);
+    const presentation = await resolveTeamPresentation(interaction, eligibility.club);
     const team = formatTeamIdentity(presentation.team, 'message');
     const color = getTeamEmbedColor(presentation, BOT_COLORS.warning);
     const targetName = playerOption.displayName || getUserDisplayName(interaction, playerOption.id);
@@ -278,7 +278,7 @@ export class RosterPromotionDemotionCommandHandler {
       },
     );
 
-    const presentation = resolveTeamPresentation(interaction, eligibility.club);
+    const presentation = await resolveTeamPresentation(interaction, eligibility.club);
     const team = formatTeamIdentity(presentation.team, 'message');
     const color = getTeamEmbedColor(presentation, BOT_COLORS.warning);
     const targetName = staffOption.displayName || getUserDisplayName(interaction, staffOption.id);
@@ -396,7 +396,7 @@ export class RosterPromotionDemotionCommandHandler {
       occurredAt: this.now(),
     });
 
-    const presentation = resolveTeamPresentation(interaction, result.club);
+    const presentation = await resolveTeamPresentation(interaction, result.club);
     const team = formatTeamIdentity(presentation.team, 'message');
     const targetName = getUserDisplayName(interaction, context.targetDiscordUserId);
     const targetFormatted = formatUserWithVisibleName(context.targetDiscordUserId, targetName);
@@ -450,7 +450,7 @@ export class RosterPromotionDemotionCommandHandler {
       occurredAt: this.now(),
     });
 
-    const presentation = resolveTeamPresentation(interaction, result.club);
+    const presentation = await resolveTeamPresentation(interaction, result.club);
     const team = formatTeamIdentity(presentation.team, 'message');
     const targetName = getUserDisplayName(interaction, context.targetDiscordUserId);
     const targetFormatted = formatUserWithVisibleName(context.targetDiscordUserId, targetName);

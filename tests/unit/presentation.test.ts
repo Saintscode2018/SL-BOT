@@ -25,6 +25,7 @@ import {
   resolveTeamRoleColor,
   sanitizeInlineCode,
 } from '../../src/bot/presentation/index.js';
+import { resolveTeamPresentation } from '../../src/bot/team-presentation.js';
 
 describe('Presentation System Foundation', () => {
   describe('BOT_EMOJIS', () => {
@@ -191,6 +192,76 @@ describe('Presentation System Foundation', () => {
         'Arsenal',
       );
       expect(formatTeamPlainRoleName({ ...sampleTeam, discordRoleName: null })).toBe('Team');
+    });
+  });
+
+  describe('resolveTeamPresentation', () => {
+    const testTeam = {
+      id: 'team-1',
+      emoji: '🦁',
+      discordRoleId: '400000000000000001',
+    };
+
+    it('resolves presentation from warm cache when getGuildRoleMetadata is available', async () => {
+      const interaction = {
+        getGuildRoleMetadata: (id: string) =>
+          id === testTeam.discordRoleId ? { id, name: 'Warm Role', color: 0x112233 } : null,
+      };
+
+      const result = await resolveTeamPresentation(interaction, testTeam);
+      expect(result.team.discordRoleName).toBe('Warm Role');
+      expect(result.role).toEqual({
+        id: testTeam.discordRoleId,
+        name: 'Warm Role',
+        color: 0x112233,
+      });
+    });
+
+    it('resolves presentation from cold cache using resolveGuildRoleMetadata', async () => {
+      const interaction = {
+        getGuildRoleMetadata: () => null,
+        resolveGuildRoleMetadata: (id: string) =>
+          Promise.resolve(
+            id === testTeam.discordRoleId ? { id, name: 'Cold Role', color: 0x445566 } : null,
+          ),
+      };
+
+      const result = await resolveTeamPresentation(interaction, testTeam);
+      expect(result.team.discordRoleName).toBe('Cold Role');
+      expect(result.role).toEqual({
+        id: testTeam.discordRoleId,
+        name: 'Cold Role',
+        color: 0x445566,
+      });
+    });
+
+    it('falls back safely when both async and sync resolution return null or are unavailable', async () => {
+      const interaction = {
+        getGuildRoleMetadata: () => null,
+        resolveGuildRoleMetadata: () => Promise.resolve(null),
+      };
+
+      const result = await resolveTeamPresentation(interaction, testTeam);
+      expect(result.team.discordRoleName).toBeNull();
+      expect(result.role).toBeNull();
+    });
+
+    it('falls back safely when async resolution throws an error', async () => {
+      const interaction = {
+        getGuildRoleMetadata: (id: string) =>
+          id === testTeam.discordRoleId
+            ? { id, name: 'Fallback Warm Role', color: 0x778899 }
+            : null,
+        resolveGuildRoleMetadata: () => Promise.reject(new Error('Discord API Error')),
+      };
+
+      const result = await resolveTeamPresentation(interaction, testTeam);
+      expect(result.team.discordRoleName).toBe('Fallback Warm Role');
+      expect(result.role).toEqual({
+        id: testTeam.discordRoleId,
+        name: 'Fallback Warm Role',
+        color: 0x778899,
+      });
     });
   });
 });

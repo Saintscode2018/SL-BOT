@@ -18,12 +18,11 @@ import {
   createGuildAuthor,
   getUserDisplayName,
 } from './presentation/index.js';
-import { getTeamEmbedColor } from './team-presentation.js';
+import { getTeamEmbedColor, resolveTeamPresentation } from './team-presentation.js';
 import type {
   ButtonInteractionAdapter,
   CommandInteraction,
   CommandInteractionOptions,
-  GuildRoleMetadata,
 } from './types.js';
 
 export type TeamDisbandmentClock = () => Date;
@@ -80,20 +79,6 @@ function requireButtonAuthorization(interaction: ButtonInteractionAdapter): Auth
   };
 }
 
-async function resolveTeamRole(
-  interaction: Pick<
-    CommandInteraction | ButtonInteractionAdapter,
-    'getGuildRoleMetadata' | 'resolveGuildRoleMetadata'
-  >,
-  roleId: string,
-): Promise<GuildRoleMetadata | null> {
-  return (
-    (await interaction.resolveGuildRoleMetadata?.(roleId)) ??
-    interaction.getGuildRoleMetadata?.(roleId) ??
-    null
-  );
-}
-
 function cancelledEmbed() {
   return createWarningEmbed({
     title: `${BOT_EMOJIS.warning} Team Disbandment Cancelled`,
@@ -134,11 +119,7 @@ export class TeamDisbandmentCommandHandler {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const eligibility = await this.service.getEligibility(execution.authorization, teamId);
-    const role = await resolveTeamRole(interaction, eligibility.team.discordRoleId);
-    const team = {
-      ...eligibility.team,
-      discordRoleName: role?.name ?? null,
-    };
+    const { team, role } = await resolveTeamPresentation(interaction, eligibility.team);
     const occurredAt = this.now();
     const confirmation = this.confirmations.create(
       {
@@ -256,7 +237,8 @@ export class TeamDisbandmentCommandHandler {
     authorization: AuthorizationInput,
   ): Promise<void> {
     const eligibility = await this.service.getEligibility(authorization, context.teamId);
-    const role = await resolveTeamRole(interaction, eligibility.team.discordRoleId);
+    const presentation = await resolveTeamPresentation(interaction, eligibility.team);
+    const role = presentation.role;
     const occurredAt = this.now();
     const result = await this.service.disband({
       authorization,

@@ -12,6 +12,7 @@ import type {
   ButtonInteractionAdapter,
   CommandInteraction,
   EditedInteractionResponse,
+  GuildRoleMetadata,
 } from '../../src/bot/types.js';
 import { ConfirmationRegistry } from '../../src/services/confirmation-registry.js';
 import type { TeamDisbandmentService } from '../../src/services/team-disbandment-service.js';
@@ -76,6 +77,10 @@ class CommandFixture implements CommandInteraction {
     getChannel: () => null,
   };
 
+  public async resolveGuildRoleMetadata(): Promise<GuildRoleMetadata | null> {
+    return Promise.resolve(null);
+  }
+
   public getGuildRoleMetadata(roleId: string) {
     return roleId === team.discordRoleId ? { id: roleId, name: 'T1', color: 0x123456 } : null;
   }
@@ -116,6 +121,10 @@ class ButtonFixture implements ButtonInteractionAdapter {
     public readonly customId: string,
     public readonly userId = '500000000000000001',
   ) {}
+
+  public async resolveGuildRoleMetadata(): Promise<GuildRoleMetadata | null> {
+    return Promise.resolve(null);
+  }
 
   public getGuildRoleMetadata(roleId: string) {
     return roleId === team.discordRoleId ? { id: roleId, name: 'T1', color: 0x123456 } : null;
@@ -254,5 +263,36 @@ describe('/team disband command and confirmation', () => {
       ConfirmationAlreadyHandledError,
     );
     expect(disband).toHaveBeenCalledOnce();
+  });
+
+  it('resolves team presentation correctly with a cold role cache during disbandment', async () => {
+    const { handler, disband } = fixture();
+    const interaction = new CommandFixture();
+    vi.spyOn(interaction, 'getGuildRoleMetadata').mockReturnValue(null);
+    vi.spyOn(interaction, 'resolveGuildRoleMetadata').mockResolvedValue({
+      id: team.discordRoleId,
+      name: 'Cold Disband Team',
+      color: 0x990000,
+    });
+
+    await handler.begin(interaction);
+
+    const embed = interaction.edits[0]?.embeds?.[0]?.data;
+    expect(embed?.title).toContain('Confirm Team Disbandment');
+    expect(embed?.color).toBe(0x990000);
+
+    const confirmFixture = new ButtonFixture(customIds(interaction).confirm);
+    vi.spyOn(confirmFixture, 'getGuildRoleMetadata').mockReturnValue(null);
+    vi.spyOn(confirmFixture, 'resolveGuildRoleMetadata').mockResolvedValue({
+      id: team.discordRoleId,
+      name: 'Cold Disband Team',
+      color: 0x990000,
+    });
+
+    await handler.handleButton(confirmFixture);
+    expect(disband).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: team.id, teamName: 'Cold Disband Team' }),
+    );
+    expect(confirmFixture.edits[0]?.embeds?.[0]?.data.color).toBe(0x990000);
   });
 });
