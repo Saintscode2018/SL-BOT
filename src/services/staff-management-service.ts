@@ -46,6 +46,8 @@ export interface StaffAppointmentResult {
   membership: ClubMembership;
   user: LeagueUser;
   club: Club;
+  announcementDelivered?: boolean | null;
+  auditAnnouncementDelivered?: boolean | null;
 }
 
 export interface StaffRemovalResult {
@@ -55,6 +57,7 @@ export interface StaffRemovalResult {
   previousStaffType: StaffType;
   roleMutation: MemberRoleMutationPlan;
   announcementDelivered?: boolean | null;
+  auditAnnouncementDelivered?: boolean | null;
 }
 
 export class StaffManagementService {
@@ -81,6 +84,12 @@ export class StaffManagementService {
       membership: result.staffMembership,
       user: result.user,
       club: result.club,
+      ...(result.announcementDelivered === undefined
+        ? {}
+        : { announcementDelivered: result.announcementDelivered }),
+      ...(result.auditAnnouncementDelivered === undefined
+        ? {}
+        : { auditAnnouncementDelivered: result.auditAnnouncementDelivered }),
     };
   }
 
@@ -121,6 +130,9 @@ export class StaffManagementService {
       ...(result.announcementDelivered === undefined
         ? {}
         : { announcementDelivered: result.announcementDelivered }),
+      ...(result.auditAnnouncementDelivered === undefined
+        ? {}
+        : { auditAnnouncementDelivered: result.auditAnnouncementDelivered }),
     };
   }
 

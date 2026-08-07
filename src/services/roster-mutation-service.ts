@@ -31,6 +31,8 @@ import {
 } from '../domain/errors.js';
 import type { LeagueTransactionType } from '../domain/enums.js';
 import type {
+  AuditAnnouncementOperation,
+  AuditAnnouncementPlan,
   MemberRoleMutationPlan,
   MutationPlans,
   PlannedDiscordRole,
@@ -72,6 +74,7 @@ export interface RosterMutationResult extends MutationPlans {
   previousStaffType: StaffMembershipType | null;
   transaction: LeagueTransaction;
   announcementDelivered?: boolean | null;
+  auditAnnouncementDelivered?: boolean | null;
 }
 
 interface MutationContext {
@@ -473,6 +476,14 @@ export class RosterMutationService {
       currentRosterSize,
       teamManager?.discordUserId ?? null,
     );
+    const auditAnnouncement = this.buildAuditAnnouncement(
+      context,
+      kind,
+      input,
+      staff,
+      previousStaffType,
+      occurredAt,
+    );
     return {
       guild: context.guild,
       club: context.club,
@@ -483,6 +494,7 @@ export class RosterMutationService {
       transaction: leagueTransaction,
       roleMutation,
       announcement,
+      auditAnnouncement,
     };
   }
 
@@ -499,11 +511,11 @@ export class RosterMutationService {
     const staffCode =
       kind === 'APPOINT' || kind === 'PROMOTE'
         ? toStaffRoleCode((input as StaffMutationInput).staffType)
-        : resultingStaff === null
-          ? undefined
-          : toStaffRoleCode(
-              previousStaffType ?? (resultingStaff.membershipType as StaffMembershipType),
-            );
+        : previousStaffType !== null
+          ? toStaffRoleCode(previousStaffType)
+          : resultingStaff !== null
+            ? toStaffRoleCode(resultingStaff.membershipType as StaffMembershipType)
+            : undefined;
     const appointedStaffRole =
       kind === 'APPOINT' || kind === 'PROMOTE'
         ? this.staffRole(context.settings, (input as StaffMutationInput).staffType)
@@ -546,6 +558,60 @@ export class RosterMutationService {
         maximumSize: getEffectiveSquadLimit(context.club, context.settings),
         teamManagerDiscordUserId,
       },
+    };
+  }
+
+  private buildAuditAnnouncement(
+    context: MutationContext,
+    kind: MutationKind,
+    input: MemberMutationInput | StaffMutationInput,
+    resultingStaff: ClubMembership | null,
+    previousStaffType: StaffMembershipType | null,
+    occurredAt: Date,
+  ): AuditAnnouncementPlan | null {
+    if (
+      context.settings?.auditChannelId === null ||
+      context.settings?.auditChannelId === undefined
+    ) {
+      return null;
+    }
+    const staffCode =
+      kind === 'APPOINT' || kind === 'PROMOTE'
+        ? toStaffRoleCode((input as StaffMutationInput).staffType)
+        : previousStaffType !== null
+          ? toStaffRoleCode(previousStaffType)
+          : resultingStaff !== null
+            ? toStaffRoleCode(resultingStaff.membershipType as StaffMembershipType)
+            : undefined;
+    const operation: AuditAnnouncementOperation =
+      kind === 'APPOINT'
+        ? 'STAFF_APPOINTED'
+        : kind === 'REMOVE_STAFF'
+          ? 'STAFF_REMOVED'
+          : kind === 'SIGN'
+            ? 'ROSTER_PLAYER_ADDED'
+            : kind === 'LEAVE_TEAM' || kind === 'LEAVE_STAFF'
+              ? 'ROSTER_DEMANDED'
+              : kind === 'RELEASE'
+                ? 'ROSTER_RELEASED'
+                : kind === 'PROMOTE'
+                  ? 'ROSTER_PROMOTED'
+                  : 'ROSTER_DEMOTED';
+
+    return {
+      discordGuildId: context.guild.discordGuildId,
+      channelId: context.settings.auditChannelId,
+      operation,
+      actorDiscordUserId: context.actor.discordUserId,
+      playerDiscordUserId: context.user.discordUserId,
+      teamIdentity: context.club,
+      occurredAt,
+      ...(staffCode === undefined ? {} : { staffRole: staffCode }),
+      ...(kind === 'LEAVE_STAFF'
+        ? { departureMode: 'STAFF_ONLY' as const }
+        : kind === 'LEAVE_TEAM'
+          ? { departureMode: 'FULL' as const }
+          : {}),
     };
   }
 

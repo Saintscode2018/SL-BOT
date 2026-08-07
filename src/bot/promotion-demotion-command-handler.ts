@@ -14,7 +14,7 @@ import type {
   RosterPromotionDemotionService,
 } from '../services/roster-promotion-demotion-service.js';
 import { getFriendlyPositionName } from '../services/staff-management-service.js';
-import { createSuccessEmbed, createWarningEmbed } from './embeds.js';
+import { createSuccessEmbed, createWarningEmbed, formatRosterAdminWarning } from './embeds.js';
 import { requireGuildExecution } from './guild-execution.js';
 import { requireUser } from './option-parsing.js';
 import { createConfirmationExpiredEmbed, handleConfirmationCancel } from './confirmation-ui.js';
@@ -28,6 +28,15 @@ import { getTeamEmbedColor, resolveTeamPresentation } from './team-presentation.
 import type { ButtonInteractionAdapter, CommandInteraction } from './types.js';
 
 export type DateClock = () => Date;
+
+function addAnnouncementWarning(
+  description: string,
+  transferDelivered: boolean | null | undefined,
+  auditDelivered: boolean | null | undefined,
+): string {
+  const warning = formatRosterAdminWarning(transferDelivered, auditDelivered);
+  return warning === null ? description : `${description}\n\n${warning}`;
+}
 
 function expectedRole(role: StaffRoleCode | null): StaffRoleCode | undefined {
   return role ?? undefined;
@@ -344,7 +353,12 @@ export class RosterPromotionDemotionCommandHandler {
       ? `<@&${staffRoleId}>`
       : `@${eligibility.destinationStaffRole}`;
 
-    const description = `${targetFormatted} has been promoted to ${staffRoleMention} for ${team}.`;
+    const baseDescription = `${targetFormatted} has been promoted to ${staffRoleMention} for ${team}.`;
+    const description = addAnnouncementWarning(
+      baseDescription,
+      result.announcementDelivered,
+      result.auditAnnouncementDelivered,
+    );
 
     await interaction.editReply({
       embeds: [
@@ -393,7 +407,12 @@ export class RosterPromotionDemotionCommandHandler {
     const targetName = getUserDisplayName(interaction, context.targetDiscordUserId);
     const targetFormatted = formatUserWithVisibleName(context.targetDiscordUserId, targetName);
 
-    const description = `${targetFormatted} has been demoted to player for ${team}.`;
+    const baseDescription = `${targetFormatted} has been demoted to player for ${team}.`;
+    const description = addAnnouncementWarning(
+      baseDescription,
+      result.announcementDelivered,
+      result.auditAnnouncementDelivered,
+    );
 
     await interaction.editReply({
       embeds: [

@@ -1,7 +1,11 @@
 import { EmbedBuilder, type APIEmbedField } from 'discord.js';
 
-import { BOT_COLORS, EMBED_COLORS } from './presentation/colors.js';
-import { formatUserWithVisibleName } from './presentation/index.js';
+import {
+  BOT_COLORS,
+  BOT_EMOJIS,
+  EMBED_COLORS,
+  formatUserWithVisibleName,
+} from './presentation/index.js';
 
 export { EMBED_COLORS };
 
@@ -17,8 +21,35 @@ export interface EmbedOptions {
   timestamp?: Date;
 }
 
+export function formatRosterAdminWarning(
+  transferDelivered: boolean | null | undefined,
+  auditDelivered: boolean | null | undefined,
+): string | null {
+  if (transferDelivered === false && auditDelivered === false) {
+    return `${BOT_EMOJIS.warning} The roster was updated, but the Audit and Transfer Market announcements could not be delivered.`;
+  }
+  if (transferDelivered === false) {
+    return `${BOT_EMOJIS.warning} The roster was updated, but the Transfer Market announcement could not be delivered.`;
+  }
+  if (auditDelivered === false) {
+    return `${BOT_EMOJIS.warning} The roster was updated, but the Audit announcement could not be delivered.`;
+  }
+  return null;
+}
+
 export function createActorField(
-  verb: 'Configured' | 'Updated' | 'Added' | 'Removed' | 'Appointed' | 'Edited' | 'Reset',
+  verb:
+    | 'Configured'
+    | 'Updated'
+    | 'Added'
+    | 'Removed'
+    | 'Appointed'
+    | 'Edited'
+    | 'Reset'
+    | 'Demanded'
+    | 'Released'
+    | 'Promoted'
+    | 'Demoted',
   userId: string,
   displayName?: string | null,
 ): APIEmbedField {

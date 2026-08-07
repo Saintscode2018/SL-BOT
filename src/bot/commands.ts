@@ -4,7 +4,12 @@ import { ConfigurationError, DiscordRoleMissingError, ValidationError } from '..
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { formatTeamIdentity } from '../domain/team-label.js';
 import { getFriendlyPositionName, type StaffType } from '../services/staff-management-service.js';
-import { createActorField, createInfoEmbed, createSuccessEmbed } from './embeds.js';
+import {
+  createActorField,
+  createInfoEmbed,
+  createSuccessEmbed,
+  formatRosterAdminWarning,
+} from './embeds.js';
 import { demandCommand, releaseCommand } from './departure-command-definitions.js';
 import { demoteCommand, promoteCommand } from './promotion-demotion-command-definitions.js';
 import { getTeamThumbnail, validateTeamEmoji } from './emoji-helper.js';
@@ -84,21 +89,7 @@ function withAuditWarning(description: string, auditPublished: boolean): string 
   return auditPublished ? description : `${description}\n\n${auditDeliveryWarning}`;
 }
 
-function formatRosterAdminWarning(
-  transferDelivered: boolean | null | undefined,
-  auditDelivered: boolean | null | undefined,
-): string | null {
-  if (transferDelivered === false && auditDelivered === false) {
-    return `${BOT_EMOJIS.warning} The roster was updated, but the Audit and Transfer Market announcements could not be delivered.`;
-  }
-  if (transferDelivered === false) {
-    return `${BOT_EMOJIS.warning} The roster was updated, but the Transfer Market announcement could not be delivered.`;
-  }
-  if (auditDelivered === false) {
-    return `${BOT_EMOJIS.warning} The roster was updated, but the Audit announcement could not be delivered.`;
-  }
-  return null;
-}
+export { formatRosterAdminWarning };
 
 export function formatStaffDirectoryTeamSection(
   formattedTeamIdentity: string,
@@ -909,9 +900,16 @@ const staffCommand: CommandDefinition = {
         result.user.discordUserId,
         targetDisplayName,
       );
+      const baseDescription = `Successfully appointed ${targetFormatted} as the ${positionName} of ${formatTeamIdentity(presentation.team, 'message')}.`;
+      const warning = formatRosterAdminWarning(
+        result.announcementDelivered,
+        result.auditAnnouncementDelivered,
+      );
+      const description =
+        warning === null ? `${baseDescription}` : `${baseDescription}\n\n${warning}`;
       const embed = createSuccessEmbed({
         title: `${BOT_EMOJIS.success} Staff Member Appointed`,
-        description: `Successfully appointed ${targetFormatted} as the ${positionName} of ${formatTeamIdentity(presentation.team, 'message')}.`,
+        description,
         color: getTeamEmbedColor(presentation, BOT_COLORS.success),
         fields: [
           createActorField('Appointed', execution.authorization.discordUserId, actorDisplayName),
@@ -939,9 +937,16 @@ const staffCommand: CommandDefinition = {
       );
       const positionName = getFriendlyPositionName(staffType);
       const presentation = await resolveTeamPresentation(interaction, result.club);
+      const baseDescription = `Successfully removed ${targetFormatted} as the ${positionName} of ${formatTeamIdentity(presentation.team, 'message')}.`;
+      const warning = formatRosterAdminWarning(
+        result.announcementDelivered,
+        result.auditAnnouncementDelivered,
+      );
+      const description =
+        warning === null ? `${baseDescription}` : `${baseDescription}\n\n${warning}`;
       const embed = createSuccessEmbed({
         title: `${BOT_EMOJIS.success} Staff Member Removed`,
-        description: `Successfully removed ${targetFormatted} as the ${positionName} of ${formatTeamIdentity(presentation.team, 'message')}.`,
+        description,
         color: getTeamEmbedColor(presentation, BOT_COLORS.success),
         fields: [
           createActorField('Removed', execution.authorization.discordUserId, actorDisplayName),

@@ -61,7 +61,15 @@ export interface TransferAnnouncementPlan {
   presentation?: TransferAnnouncementPresentation;
 }
 
-export type AuditAnnouncementOperation = 'ROSTER_PLAYER_ADDED' | 'ROSTER_PLAYER_REMOVED';
+export type AuditAnnouncementOperation =
+  | 'ROSTER_PLAYER_ADDED'
+  | 'ROSTER_PLAYER_REMOVED'
+  | 'STAFF_APPOINTED'
+  | 'STAFF_REMOVED'
+  | 'ROSTER_DEMANDED'
+  | 'ROSTER_RELEASED'
+  | 'ROSTER_PROMOTED'
+  | 'ROSTER_DEMOTED';
 
 export interface AuditAnnouncementPlan {
   discordGuildId: string;
@@ -71,6 +79,8 @@ export interface AuditAnnouncementPlan {
   playerDiscordUserId: string;
   teamIdentity: TeamIdentitySource;
   occurredAt: Date;
+  staffRole?: StaffRoleCode;
+  departureMode?: 'STAFF_ONLY' | 'FULL';
   presentation?: TransferAnnouncementPresentation;
 }
 

@@ -45,6 +45,7 @@ describe('roster mutation service', () => {
     guild = await guilds.create({ discordGuildId, name: 'Stage 4B League' });
     await guilds.upsertSettings(guild.id, {
       transferChannelId: '300000000000000001',
+      auditChannelId: '300000000000000002',
       teamManagerRoleId: '400000000000000001',
       assistantManagerRoleId: '400000000000000002',
       playerManagerRoleId: '400000000000000003',
@@ -104,6 +105,11 @@ describe('roster mutation service', () => {
         type: 'APPOINTED',
         staffRole: code,
         staffRoleId: result.roleMutation.addRoles[1]?.id,
+      });
+      expect(result.auditAnnouncement).toMatchObject({
+        operation: 'STAFF_APPOINTED',
+        staffRole: code,
+        playerDiscordUserId: memberId,
       });
       await expect(
         database.client.clubMembership.count({
@@ -219,6 +225,11 @@ describe('roster mutation service', () => {
       expect(announcements.publish).toHaveBeenCalledWith(
         expect.objectContaining({ type: 'DEMOTED', discordUserId: memberId }),
       );
+      expect(removed.auditAnnouncement).toMatchObject({
+        operation: 'STAFF_REMOVED',
+        staffRole: purpose,
+        playerDiscordUserId: memberId,
+      });
     },
   );
 

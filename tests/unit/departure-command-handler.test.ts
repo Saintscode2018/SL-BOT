@@ -518,4 +518,23 @@ describe('/release confirmation flow', () => {
     expect(fixture.departures.release).not.toHaveBeenCalled();
     fixture.confirmations.clear();
   });
+
+  it('surfaces delivery warnings for Audit and Transfer failures on release', async () => {
+    const fixture = setup();
+    const command = new FakeCommandInteraction('release', targetId);
+    await fixture.handler.beginRelease(command);
+    const releaseId = buttonJson(command).find(({ label }) => label === 'Release')?.custom_id;
+    if (!releaseId) throw new Error('missing release id');
+
+    fixture.departures.release.mockResolvedValueOnce({
+      ...mutationResult(),
+      announcementDelivered: false,
+      auditAnnouncementDelivered: false,
+    });
+    const button = new FakeButton(releaseId);
+    await fixture.handler.handleButton(button);
+    expect(button.edits[0]?.embeds?.[0]?.data.description).toContain(
+      '⚠️ The roster was updated, but the Audit and Transfer Market announcements could not be delivered.',
+    );
+  });
 });

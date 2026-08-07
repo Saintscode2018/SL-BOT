@@ -15,7 +15,7 @@ import type {
   RosterDepartureService,
 } from '../services/roster-departure-service.js';
 import { getFriendlyPositionName } from '../services/staff-management-service.js';
-import { createSuccessEmbed, createWarningEmbed } from './embeds.js';
+import { createSuccessEmbed, createWarningEmbed, formatRosterAdminWarning } from './embeds.js';
 import { requireGuildExecution } from './guild-execution.js';
 import { requireUser } from './option-parsing.js';
 import { createConfirmationExpiredEmbed, handleConfirmationCancel } from './confirmation-ui.js';
@@ -31,13 +31,13 @@ import type { ButtonInteractionAdapter, CommandInteraction } from './types.js';
 
 export type DateClock = () => Date;
 
-const announcementWarning = `${BOT_EMOJIS.warning} The roster and Discord roles were updated, but the Transfer Market announcement could not be delivered.`;
-
 function addAnnouncementWarning(
   description: string,
-  delivered: boolean | null | undefined,
+  transferDelivered: boolean | null | undefined,
+  auditDelivered: boolean | null | undefined,
 ): string {
-  return delivered === false ? `${description}\n\n${announcementWarning}` : description;
+  const warning = formatRosterAdminWarning(transferDelivered, auditDelivered);
+  return warning === null ? description : `${description}\n\n${warning}`;
 }
 
 function expectedRole(role: StaffRoleCode | null): StaffRoleCode | undefined {
@@ -325,10 +325,12 @@ export class RosterDepartureCommandHandler {
         ? addAnnouncementWarning(
             `You have left your ${getFriendlyPositionName(fromStaffRoleCode(eligibility.staffRole!))} position and remain a player for ${team}.`,
             result.announcementDelivered,
+            result.auditAnnouncementDelivered,
           )
         : addAnnouncementWarning(
             `You have left ${team} and are now a free agent.`,
             result.announcementDelivered,
+            result.auditAnnouncementDelivered,
           );
     await interaction.editReply({
       embeds: [
@@ -380,6 +382,7 @@ export class RosterDepartureCommandHandler {
           description: addAnnouncementWarning(
             `${target} has been released from ${team}.`,
             result.announcementDelivered,
+            result.auditAnnouncementDelivered,
           ),
           color: getTeamEmbedColor(presentation, BOT_COLORS.success),
         }),
