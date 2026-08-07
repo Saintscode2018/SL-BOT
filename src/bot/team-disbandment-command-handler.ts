@@ -9,10 +9,11 @@ import type {
   ConfirmationRegistry,
 } from '../services/confirmation-registry.js';
 import type { TeamDisbandmentService } from '../services/team-disbandment-service.js';
-import { createErrorEmbed, createSuccessEmbed, createWarningEmbed } from './embeds.js';
+import { createSuccessEmbed, createWarningEmbed } from './embeds.js';
 import { getTeamThumbnail } from './emoji-helper.js';
 import { extractAuthorizationInput, requireGuildExecution } from './guild-execution.js';
 import { requireString } from './option-parsing.js';
+import { createConfirmationExpiredEmbed, handleConfirmationCancel } from './confirmation-ui.js';
 import {
   BOT_COLORS,
   BOT_EMOJIS,
@@ -34,20 +35,6 @@ function requireButtonAuthorization(interaction: ButtonInteractionAdapter): Auth
     throw new StaleConfirmationError();
   }
   return extractAuthorizationInput(interaction);
-}
-
-function cancelledEmbed() {
-  return createWarningEmbed({
-    title: `${BOT_EMOJIS.warning} Team Disbandment Cancelled`,
-    description: 'No database or Discord role changes were made.',
-  });
-}
-
-function expiredEmbed() {
-  return createErrorEmbed({
-    title: `${BOT_EMOJIS.error} Confirmation Expired`,
-    description: 'This confirmation expired after two minutes. Run `/team disband` again to retry.',
-  });
 }
 
 export class TeamDisbandmentCommandHandler {
@@ -89,7 +76,15 @@ export class TeamDisbandmentCommandHandler {
         prefix: 'team-disband-confirm',
         now: occurredAt,
         onExpire: async () => {
-          await interaction.editReply({ embeds: [expiredEmbed()], components: [] });
+          await interaction.editReply({
+            embeds: [
+              createConfirmationExpiredEmbed({
+                description:
+                  'This confirmation expired after two minutes. Run `/team disband` again to retry.',
+              }),
+            ],
+            components: [],
+          });
         },
       },
     );
@@ -154,15 +149,10 @@ export class TeamDisbandmentCommandHandler {
     if (interaction.guildId === undefined) throw new StaleConfirmationError();
 
     if (interaction.customId.endsWith(':cancel')) {
-      await this.confirmations.cancel(
-        interaction.customId,
-        interaction.userId,
-        this.now(),
-        interaction.guildId,
-      );
-      await interaction.deferUpdate();
-      await interaction.editReply({ embeds: [cancelledEmbed()], components: [] });
-      return true;
+      return handleConfirmationCancel(interaction, this.confirmations, this.now(), {
+        title: `${BOT_EMOJIS.warning} Team Disbandment Cancelled`,
+        description: 'No database or Discord role changes were made.',
+      });
     }
 
     const consumed = this.confirmations.consumeDecision(

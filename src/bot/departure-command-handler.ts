@@ -15,9 +15,10 @@ import type {
   RosterDepartureService,
 } from '../services/roster-departure-service.js';
 import { getFriendlyPositionName } from '../services/staff-management-service.js';
-import { createErrorEmbed, createSuccessEmbed, createWarningEmbed } from './embeds.js';
+import { createSuccessEmbed, createWarningEmbed } from './embeds.js';
 import { requireGuildExecution } from './guild-execution.js';
 import { requireUser } from './option-parsing.js';
+import { createConfirmationExpiredEmbed, handleConfirmationCancel } from './confirmation-ui.js';
 import {
   BOT_COLORS,
   BOT_EMOJIS,
@@ -31,20 +32,6 @@ import type { ButtonInteractionAdapter, CommandInteraction } from './types.js';
 export type DateClock = () => Date;
 
 const announcementWarning = `${BOT_EMOJIS.warning} The roster and Discord roles were updated, but the Transfer Market announcement could not be delivered.`;
-
-function confirmationCancelledEmbed() {
-  return createWarningEmbed({
-    title: `${BOT_EMOJIS.warning} Action Cancelled`,
-    description: 'No roster or Discord role changes were made.',
-  });
-}
-
-function confirmationExpiredEmbed() {
-  return createErrorEmbed({
-    title: `${BOT_EMOJIS.error} Confirmation Expired`,
-    description: 'This confirmation expired after two minutes. Run the command again to retry.',
-  });
-}
 
 function addAnnouncementWarning(
   description: string,
@@ -133,7 +120,7 @@ export class RosterDepartureCommandHandler {
         now: this.now(),
         onExpire: async () => {
           await interaction.editReply({
-            embeds: [confirmationExpiredEmbed()],
+            embeds: [createConfirmationExpiredEmbed()],
             components: [],
           });
         },
@@ -232,7 +219,7 @@ export class RosterDepartureCommandHandler {
         now: this.now(),
         onExpire: () =>
           interaction.editReply({
-            embeds: [confirmationExpiredEmbed()],
+            embeds: [createConfirmationExpiredEmbed()],
             components: [],
           }),
       },
@@ -280,15 +267,7 @@ export class RosterDepartureCommandHandler {
     if (interaction.guildId === undefined) throw new StaleConfirmationError();
 
     if (interaction.customId.endsWith(':cancel')) {
-      await this.confirmations.cancel(
-        interaction.customId,
-        interaction.userId,
-        this.now(),
-        interaction.guildId,
-      );
-      await interaction.deferUpdate();
-      await interaction.editReply({ embeds: [confirmationCancelledEmbed()], components: [] });
-      return true;
+      return handleConfirmationCancel(interaction, this.confirmations, this.now());
     }
 
     const consumed = this.confirmations.consumeDecision(
