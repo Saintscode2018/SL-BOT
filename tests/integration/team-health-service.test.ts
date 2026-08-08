@@ -14,6 +14,7 @@ import {
   clearDatabase,
   createTestDatabase,
   destroyTestDatabase,
+  grantBotPermission,
   type TestDatabase,
 } from '../helpers/database.js';
 
@@ -57,6 +58,7 @@ describe('team health service and policy', () => {
     const foreignGuild = await client.guild.create({
       data: { discordGuildId: foreignDiscordGuildId, name: 'Foreign League' },
     });
+    await grantBotPermission(client, discordGuildId, ownerId);
     const firstActive = await client.club.create({
       data: {
         guildId: guild.id,
@@ -189,7 +191,7 @@ describe('team health service and policy', () => {
     );
   });
 
-  it('allows owner, administrator, and Bot Permissions callers in Staff Commands', async () => {
+  it('allows database Bot Permission callers in Staff Commands', async () => {
     const policy = new CommandChannelPolicyService(client);
     const inputs: AuthorizationInput[] = [
       {
@@ -197,20 +199,6 @@ describe('team health service and policy', () => {
         discordUserId: ownerId,
         guildOwnerId: ownerId,
         memberRoleIds: [],
-        hasAdministratorPermission: false,
-      },
-      {
-        discordGuildId,
-        discordUserId: '300000000000000002',
-        guildOwnerId: ownerId,
-        memberRoleIds: [],
-        hasAdministratorPermission: true,
-      },
-      {
-        discordGuildId,
-        discordUserId: '300000000000000003',
-        guildOwnerId: ownerId,
-        memberRoleIds: [botPermissionsRoleId],
         hasAdministratorPermission: false,
       },
     ];

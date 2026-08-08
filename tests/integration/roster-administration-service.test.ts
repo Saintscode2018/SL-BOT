@@ -29,6 +29,7 @@ import {
   clearDatabase,
   createTestDatabase,
   destroyTestDatabase,
+  grantBotPermission,
   type TestDatabase,
 } from '../helpers/database.js';
 import { MemoryLogger } from '../helpers/memory-logger.js';
@@ -94,6 +95,7 @@ describe('administrative roster service', () => {
       botPermissionsRoleId: '810000000000000011',
       defaultSquadLimit: 2,
     });
+    await grantBotPermission(database.client, discordGuildId, ownerId);
     const clubs = new ClubRepository(database.client);
     team = await clubs.create({
       guildId: guild.id,

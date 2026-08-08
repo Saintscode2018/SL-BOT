@@ -139,6 +139,14 @@ class DiscordCommandOptions implements CommandInteractionOptions {
     }
   }
 
+  public getSubcommandGroup(): string | null {
+    try {
+      return this.interaction.options.getSubcommandGroup();
+    } catch {
+      return null;
+    }
+  }
+
   public getString(name: string): string | null {
     return this.interaction.options.getString(name);
   }

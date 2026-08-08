@@ -47,9 +47,35 @@ export class AdministrativePermissionDeniedError extends AuthorizationError {
   }
 }
 
-export class DebugAdministratorPermissionRequiredError extends AuthorizationError {
+export class BotPermissionManagementError extends DomainError {}
+
+export class BotPermissionAlreadyGrantedError extends BotPermissionManagementError {
   public constructor() {
-    super('Discord Administrator permission is required to use /debugreset.');
+    super('That user already has a standard Bot Permission.');
+  }
+}
+
+export class BotPermissionAdminAlreadyGrantedError extends BotPermissionManagementError {
+  public constructor() {
+    super('That user is already a Bot Permission Admin.');
+  }
+}
+
+export class BotPermissionAdminProtectedError extends BotPermissionManagementError {
+  public constructor() {
+    super('Bot Permission Admins cannot be removed with `/setup botperm remove`.');
+  }
+}
+
+export class BotPermissionNotFoundError extends BotPermissionManagementError {
+  public constructor() {
+    super('That user does not have a standard Bot Permission.');
+  }
+}
+
+export class LastBotPermissionRemovalError extends BotPermissionManagementError {
+  public constructor() {
+    super('The final Bot Permission cannot be removed because the server would be locked out.');
   }
 }
 

@@ -1,4 +1,4 @@
-import type { Guild, GuildSettings, Prisma } from '@prisma/client';
+import { Prisma, type Guild, type GuildSettings } from '@prisma/client';
 
 import { EntityNotFoundError } from '../domain/errors.js';
 import type { DatabaseClient } from '../domain/types.js';
@@ -66,6 +66,17 @@ export class GuildRepository {
     } catch (error: unknown) {
       return translateDatabaseError(error, 'create guild');
     }
+  }
+
+  public async acquireWriteLock(discordGuildId: string): Promise<void> {
+    const validatedId = discordSnowflakeSchema.parse(discordGuildId);
+    await this.db.$executeRaw(
+      Prisma.sql`
+        UPDATE "Guild"
+        SET "updatedAt" = "updatedAt"
+        WHERE "discordGuildId" = ${validatedId}
+      `,
+    );
   }
 
   public async upsertByDiscordGuildId(input: CreateGuildInput): Promise<Guild> {

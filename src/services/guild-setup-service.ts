@@ -74,9 +74,12 @@ export class GuildSetupService {
     guildName: string;
     offerTimeoutSeconds?: number;
   }): Promise<GuildSetupResult> {
-    await new AuthorizationService(this.database).assertCanSetup(input.authorization);
     return this.database.$transaction(async (transaction) => {
       const guilds = new GuildRepository(transaction);
+      await guilds.acquireWriteLock(input.authorization.discordGuildId);
+      await new AuthorizationService(transaction).assertCanSetup(input.authorization, {
+        allowDiscordAdministratorBootstrap: true,
+      });
       const existing = await guilds.getByDiscordGuildId(input.authorization.discordGuildId);
       const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
         input.authorization.discordUserId,
@@ -113,9 +116,12 @@ export class GuildSetupService {
   }
 
   public async setupChannels(input: SetupChannelsInput): Promise<GuildSetupResult> {
-    await new AuthorizationService(this.database).assertCanSetup(input.authorization);
     return this.database.$transaction(async (transaction) => {
       const guilds = new GuildRepository(transaction);
+      await guilds.acquireWriteLock(input.authorization.discordGuildId);
+      await new AuthorizationService(transaction).assertCanSetup(input.authorization, {
+        allowDiscordAdministratorBootstrap: true,
+      });
       const existing = await guilds.getByDiscordGuildId(input.authorization.discordGuildId);
       const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
         input.authorization.discordUserId,
@@ -158,9 +164,10 @@ export class GuildSetupService {
   }
 
   public async setupRoles(input: SetupRolesInput): Promise<GuildSetupResult> {
-    await new AuthorizationService(this.database).assertCanSetup(input.authorization);
     return this.database.$transaction(async (transaction) => {
       const guilds = new GuildRepository(transaction);
+      await guilds.acquireWriteLock(input.authorization.discordGuildId);
+      await new AuthorizationService(transaction).assertCanSetup(input.authorization);
       const existing = await guilds.getByDiscordGuildId(input.authorization.discordGuildId);
       const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
         input.authorization.discordUserId,
@@ -203,9 +210,10 @@ export class GuildSetupService {
   }
 
   public async setup(input: SetupGuildInput): Promise<GuildSetupResult> {
-    await new AuthorizationService(this.database).assertCanSetup(input.authorization);
     return this.database.$transaction(async (transaction) => {
       const guilds = new GuildRepository(transaction);
+      await guilds.acquireWriteLock(input.authorization.discordGuildId);
+      await new AuthorizationService(transaction).assertCanSetup(input.authorization);
       const existing = await guilds.getByDiscordGuildId(input.authorization.discordGuildId);
       const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
         input.authorization.discordUserId,
@@ -279,7 +287,7 @@ export class GuildSetupService {
     if (!settings?.staffChannelId) missing.push('Staff Channel');
     if (!settings?.transferChannelId) missing.push('Transfer Channel');
     if (!settings?.auditChannelId) missing.push('Audit Channel');
-    if (!settings?.botPermissionsRoleId) missing.push('Bot Permissions Role');
+    if (!settings?.botPermissionsRoleId) missing.push('Legacy Bot Permissions Role');
     if (!settings?.teamManagerRoleId) missing.push('Team Manager Role');
     if (!settings?.assistantManagerRoleId) missing.push('Assistant Manager Role');
     if (!settings?.playerManagerRoleId) missing.push('Player Manager Role');

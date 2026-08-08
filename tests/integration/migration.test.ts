@@ -73,6 +73,7 @@ describe('database migrations', () => {
           'Offer',
           'LeagueTransaction',
           'AuditEvent',
+          'BotPermission',
           '_prisma_migrations',
         ]),
       );
@@ -315,6 +316,18 @@ describe('database migrations', () => {
           { encoding: 'utf8' },
         ),
       );
+      sqlite.exec(
+        readFileSync(
+          join(
+            process.cwd(),
+            'prisma',
+            'migrations',
+            '20260808220000_database_bot_permissions',
+            'migration.sql',
+          ),
+          { encoding: 'utf8' },
+        ),
+      );
 
       const settings = sqlite
         .prepare(
@@ -332,6 +345,9 @@ describe('database migrations', () => {
         playerManagerRoleId: '300000000000000004',
         defaultSquadLimit: 23,
         offerTimeoutSeconds: 7200,
+      });
+      expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "BotPermission"').get()).toEqual({
+        count: 0,
       });
 
       const clubColumns = sqlite

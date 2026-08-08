@@ -235,7 +235,9 @@ describe('franchise owner list presentation, policy, and command execution', () 
   });
 
   describe('authorization and channel policy for /folist', () => {
-    // Mock authorization check function simulating CommandChannelPolicyService behavior for folist
+    const databasePermissionUserId = '300000000000000010';
+
+    // Mock the database permission lookup used by AuthorizationService.
     async function checkPolicy(
       authorization: AuthorizationInput,
       channelId: string,
@@ -245,11 +247,7 @@ describe('franchise owner list presentation, policy, and command execution', () 
       if (!hasConfiguredSettings) {
         throw new AdministrativePermissionDeniedError();
       }
-      const isOwner = authorization.discordUserId === authorization.guildOwnerId;
-      const isAdmin = authorization.hasAdministratorPermission;
-      const hasBotPerms = authorization.memberRoleIds.includes(botPermissionsRoleId);
-
-      if (!isOwner && !isAdmin && !hasBotPerms) {
+      if (authorization.discordUserId !== databasePermissionUserId) {
         throw new AdministrativePermissionDeniedError();
       }
       if (channelId !== staffChannelId) {
@@ -257,7 +255,7 @@ describe('franchise owner list presentation, policy, and command execution', () 
       }
     }
 
-    it('allows server owner in Staff Commands channel', async () => {
+    it('denies server owner without a database Bot Permission', async () => {
       const auth: AuthorizationInput = {
         discordGuildId,
         discordUserId: ownerId,
@@ -265,10 +263,12 @@ describe('franchise owner list presentation, policy, and command execution', () 
         memberRoleIds: [],
         hasAdministratorPermission: false,
       };
-      await expect(checkPolicy(auth, staffChannelId)).resolves.toBeUndefined();
+      await expect(checkPolicy(auth, staffChannelId)).rejects.toBeInstanceOf(
+        AdministrativePermissionDeniedError,
+      );
     });
 
-    it('allows Discord Administrator in Staff Commands channel', async () => {
+    it('denies Discord Administrator without a database Bot Permission', async () => {
       const auth: AuthorizationInput = {
         discordGuildId,
         discordUserId: '300000000000000002',
@@ -276,15 +276,30 @@ describe('franchise owner list presentation, policy, and command execution', () 
         memberRoleIds: [],
         hasAdministratorPermission: true,
       };
-      await expect(checkPolicy(auth, staffChannelId)).resolves.toBeUndefined();
+      await expect(checkPolicy(auth, staffChannelId)).rejects.toBeInstanceOf(
+        AdministrativePermissionDeniedError,
+      );
     });
 
-    it('allows Bot Permissions role member in Staff Commands channel', async () => {
+    it('denies legacy Bot Permissions role member without a database Bot Permission', async () => {
       const auth: AuthorizationInput = {
         discordGuildId,
         discordUserId: '300000000000000003',
         guildOwnerId: ownerId,
         memberRoleIds: [botPermissionsRoleId],
+        hasAdministratorPermission: false,
+      };
+      await expect(checkPolicy(auth, staffChannelId)).rejects.toBeInstanceOf(
+        AdministrativePermissionDeniedError,
+      );
+    });
+
+    it('allows a database Bot Permission holder in Staff Commands channel', async () => {
+      const auth: AuthorizationInput = {
+        discordGuildId,
+        discordUserId: databasePermissionUserId,
+        guildOwnerId: ownerId,
+        memberRoleIds: [],
         hasAdministratorPermission: false,
       };
       await expect(checkPolicy(auth, staffChannelId)).resolves.toBeUndefined();
@@ -347,7 +362,7 @@ describe('franchise owner list presentation, policy, and command execution', () 
     it('denies authorized caller when invoked in wrong channel', async () => {
       const auth: AuthorizationInput = {
         discordGuildId,
-        discordUserId: ownerId,
+        discordUserId: databasePermissionUserId,
         guildOwnerId: ownerId,
         memberRoleIds: [],
         hasAdministratorPermission: false,

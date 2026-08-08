@@ -18,6 +18,7 @@ import {
   clearDatabase,
   createTestDatabase,
   destroyTestDatabase,
+  grantBotPermission,
   type TestDatabase,
 } from '../helpers/database.js';
 
@@ -84,6 +85,7 @@ describe('TeamSwapService Integration Tests', () => {
       },
     });
     guildId = guild.id;
+    await grantBotPermission(client, discordGuildId, ownerId);
 
     const team1 = await client.club.create({
       data: { guildId, discordRoleId: team1RoleId, emoji: '🦁' },
@@ -112,20 +114,20 @@ describe('TeamSwapService Integration Tests', () => {
   });
 
   describe('Authorization & Policy Scenarios', () => {
-    it('authorizes guild owner, admin, and bot permissions role', async () => {
+    it('authorizes only the database Bot Permission holder', async () => {
       await expect(
         service.getEligibility(authInput(ownerId), team1Id, team2Id),
       ).resolves.toBeDefined();
       await expect(
         service.getEligibility(authInput(adminUserId, { hasAdmin: true }), team1Id, team2Id),
-      ).resolves.toBeDefined();
+      ).rejects.toBeInstanceOf(AuthorizationError);
       await expect(
         service.getEligibility(
           authInput('600000000000000001', { roleIds: [botPermissionsRoleId] }),
           team1Id,
           team2Id,
         ),
-      ).resolves.toBeDefined();
+      ).rejects.toBeInstanceOf(AuthorizationError);
     });
 
     it('denies TM/ATM/PM/ordinary players who lack global authorization', async () => {

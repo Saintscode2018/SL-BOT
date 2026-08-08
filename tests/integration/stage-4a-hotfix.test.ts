@@ -26,6 +26,7 @@ import {
   clearDatabase,
   createTestDatabase,
   destroyTestDatabase,
+  grantBotPermission,
   type TestDatabase,
 } from '../helpers/database.js';
 import { MemoryLogger } from '../helpers/memory-logger.js';
@@ -261,6 +262,8 @@ describe('Stage 4A Hotfix Verification', () => {
       transferChannelId: '333333333333333333',
       auditChannelId: '444444444444444444',
     });
+    await grantBotPermission(context.client, guildId, adminAuth.discordUserId);
+    await grantBotPermission(context.client, guildId, botPermsUserAuth.discordUserId);
     await commandContext.guildSetupService.setupRoles({
       authorization: adminAuth,
       guildName: 'Test League',
@@ -272,7 +275,7 @@ describe('Stage 4A Hotfix Verification', () => {
   }
 
   describe('Authorization Rules', () => {
-    it('grants global access to user with botPermissionsRoleId or Discord Administrator', async () => {
+    it('grants global access to database Bot Permission holders', async () => {
       await setupLeagueAndChannels();
       const authService = new AuthorizationService(context.client);
 

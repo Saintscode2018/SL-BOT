@@ -39,14 +39,14 @@ Composite `Club(id, guildId)` references remain intact for memberships, offers, 
 
 ## Authorization and channel policy
 
-Global authorization is granted to the guild owner, a Discord Administrator, or a member with `botPermissionsRoleId`. Active TM/ATM/PM database appointments provide club-scoped authority only.
+Global authorization is granted only by a guild-scoped database `BOTPERM` or `BOTPERM_ADMIN` record. Guild ownership, Discord Administrator permission, and `botPermissionsRoleId` have no effect after bootstrap. A Discord Administrator may bootstrap `/setup league`, `/setup channels`, and the first `/setup botperm add` only while the guild has zero permission records. Active TM/ATM/PM database appointments provide club-scoped authority only, with database Bot Permissions remaining the global override where `AuthorizationService.authorizeClubAction` is used.
 
 - Bot-or-Staff: `/health`, `/team list`, `/staff list`, `/roster view`, `/limit view`, `/offer`, `/demand`, `/release`, `/promote`, and `/demote`. These commands are rejected in Transfer Market, Audit, and arbitrary channels; their own authorization rules still apply.
 - Demand rate limiting is a fixed one-minute in-memory expiry per guild/user. Only an allowed acquisition stores a new expiry; blocked retries do not mutate it, and channel policy runs first so wrong-channel attempts do not consume or refresh it.
-- Administrative Staff-only: `/setup *`, `/team add|edit|disband`, `/limit default|team|reset`, `/staff appoint|remove`, `/roster add|remove`, `/teamhealth [team]`, and `/folist`. Roster add/remove additionally require guild-owner, Discord Administrator, or configured Bot Permissions authorization.
-- Debug: `/debugreset`, Discord Administrator only and Staff-restricted once configured.
+- Administrative Staff-only: setup mutations, `/team add|edit|disband`, `/limit default|team|reset`, `/staff appoint|remove`, `/roster add|remove`, `/teamhealth [team]`, and `/folist`. Global administrative authorization requires database `BOTPERM`/`BOTPERM_ADMIN`; the read-only permission views may use Bot Commands or Staff Commands.
+- Debug: `/debugreset`, database `BOTPERM`/`BOTPERM_ADMIN` only and Staff-restricted once configured. Reset preserves permission records and the parent guild identity while deleting settings, league data, and audit history so recovery cannot depend on a permanent Discord bypass.
 
-The scope is selected after reading grouped subcommands. Administrative permission is checked before protected Staff-channel guidance is revealed; non-global callers (including ordinary players and TM/ATM/PM callers without global administrative roles) receive channel guidance mentioning only Bot Commands (`Use this command in <#botCommandsChannelId>.`) to ensure Staff Commands is never disclosed. Globally authorized callers receive concise guidance mentioning both channels for BOT_OR_STAFF commands (`Use this command in <#botCommandsChannelId> or <#staffCommandsChannelId>.`) and staff-channel guidance for STAFF_ONLY commands (`Use this command in <#staffCommandsChannelId>.`). Channel-not-configured errors remain distinct. `/setup` allows Discord-Administrator bootstrap before Staff is configured. Transfer Market and Audit are output-only bot-operation channels. Unknown or stale commands receive a safe ephemeral rejection.
+The scope is selected after reading grouped subcommands. Administrative permission is checked before protected Staff-channel guidance is revealed; non-global callers (including ordinary players and TM/ATM/PM callers without global administrative roles) receive channel guidance mentioning only Bot Commands (`Use this command in <#botCommandsChannelId>.`) to ensure Staff Commands is never disclosed. Globally authorized callers receive concise guidance mentioning both channels for BOT_OR_STAFF commands (`Use this command in <#botCommandsChannelId> or <#staffCommandsChannelId>.`) and staff-channel guidance for STAFF_ONLY commands (`Use this command in <#staffCommandsChannelId>.`). Channel-not-configured errors remain distinct. Discord-Administrator bootstrap is limited to `/setup league` and `/setup channels` while there are zero DB permission records; the first `/setup botperm add` additionally requires the configured Staff channel. Transfer Market and Audit are output-only bot-operation channels. Unknown or stale commands receive a safe ephemeral rejection.
 
 ## Presentation
 
@@ -95,7 +95,7 @@ Transfer Market is the movement-announcement boundary; Audit remains the configu
 
 ## Team disbandment boundary
 
-`/team disband team:<team>` replaces the public `/team remove` concept. It is an ephemeral, initiator-owned two-minute destructive confirmation restricted to the configured Staff Commands channel and global administrators (owner, Discord Administrator, or Bot Permissions role). The handler owns Discord presentation and confirmation state; `TeamDisbandmentService` owns validation and persistence.
+`/team disband team:<team>` replaces the public `/team remove` concept. It is an ephemeral, initiator-owned two-minute destructive confirmation restricted to the configured Staff Commands channel and database Bot Permission holders. The handler owns Discord presentation and confirmation state; `TeamDisbandmentService` owns validation and persistence.
 
 The service groups active memberships by user and builds one deduplicated role plan per affected Discord member. Every plan removes the team-specific role; TM/ATM/PM memberships additionally remove the configured matching staff role. There is no global Player role. The batch role coordinator force-fetches cold-cache members through the existing gateway, applies members sequentially, and compensates prior members in reverse order when any later role operation fails. Missing members or infeasible roles fail safely before database state changes. If the database transaction fails after role removal, all applied role plans are compensated; failures are logged and surfaced rather than reported as success.
 
@@ -113,7 +113,7 @@ Full demand/release role plans remove the team role and the matching configured 
 
 ## Setup auditing
 
-`GuildSetupService` owns league, channel, role, and read-only view operations. Successful setup mutations persist before `SetupAuditService` performs best-effort Discord publication. Channel setup uses the newly saved audit channel. Adapter failure is logged without rollback. Setup view has no team-identity settings section and never publishes. General mutation auditing remains out of scope.
+`GuildSetupService` owns league, channel, role, and read-only view operations. `BotPermissionService` owns atomic permission add, promotion, protected removal, listing, and DB audit events. Successful setup and permission mutations persist before `SetupAuditService` performs best-effort Discord Audit publication. Channel setup uses the newly saved audit channel. Adapter failure is logged without rollback. Views never create DB audit events or Discord announcements.
 
 ## Squad limits
 

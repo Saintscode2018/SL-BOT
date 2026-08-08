@@ -3,7 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, type BotPermission } from '@prisma/client';
+
+import type { BotPermissionLevel } from '../../src/domain/enums.js';
 
 export interface TestDatabase {
   client: PrismaClient;
@@ -44,6 +46,7 @@ export function createTestDatabase(): TestDatabase {
 }
 
 export async function clearDatabase(client: PrismaClient): Promise<void> {
+  await client.botPermission.deleteMany();
   await client.auditEvent.deleteMany();
   await client.leagueTransaction.deleteMany();
   await client.offer.deleteMany();
@@ -52,6 +55,30 @@ export async function clearDatabase(client: PrismaClient): Promise<void> {
   await client.club.deleteMany();
   await client.leagueUser.deleteMany();
   await client.guild.deleteMany();
+}
+
+export async function grantBotPermission(
+  client: PrismaClient,
+  discordGuildId: string,
+  discordUserId: string,
+  level: BotPermissionLevel = 'BOTPERM',
+): Promise<BotPermission> {
+  const guild = await client.guild.findUniqueOrThrow({ where: { discordGuildId } });
+  const user = await client.leagueUser.upsert({
+    where: { discordUserId },
+    create: { discordUserId },
+    update: {},
+  });
+  return client.botPermission.upsert({
+    where: { guildId_userId: { guildId: guild.id, userId: user.id } },
+    create: {
+      guildId: guild.id,
+      userId: user.id,
+      level,
+      grantedByUserId: user.id,
+    },
+    update: { level, grantedByUserId: user.id },
+  });
 }
 
 export async function destroyTestDatabase(database: TestDatabase): Promise<void> {

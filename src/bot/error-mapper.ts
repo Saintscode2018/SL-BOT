@@ -7,12 +7,12 @@ import {
   AmbiguousActivePlayerMembershipError,
   AuthorizationError,
   BotCommandsChannelNotConfiguredError,
+  BotPermissionManagementError,
   BotUserNotAllowedError,
   CallerHasNoStaffAppointmentError,
   ClubInactiveError,
   ConfigurationError,
   ConflictError,
-  DebugAdministratorPermissionRequiredError,
   DemandRateLimitedError,
   DiscordManageRolesPermissionError,
   DiscordMemberMissingError,
@@ -83,8 +83,8 @@ export function mapDiscordError(error: unknown): MappedErrorResponse {
   if (error instanceof AdministrativePermissionDeniedError) {
     title = `${BOT_EMOJIS.error} Permission Denied`;
     description = error.message;
-  } else if (error instanceof DebugAdministratorPermissionRequiredError) {
-    title = `${BOT_EMOJIS.error} Permission Denied`;
+  } else if (error instanceof BotPermissionManagementError) {
+    title = `${BOT_EMOJIS.error} Bot Permission Not Changed`;
     description = error.message;
   } else if (error instanceof AdministrativeWrongChannelError) {
     title = `${BOT_EMOJIS.error} Wrong Command Channel`;
@@ -99,14 +99,13 @@ export function mapDiscordError(error: unknown): MappedErrorResponse {
   } else if (error instanceof StaffChannelNotConfiguredError) {
     title = `${BOT_EMOJIS.error} Staff Channel Not Configured`;
     description =
-      'A Discord Administrator must configure the staff channel with `/setup channels` before this command can be used.';
+      'Configure the staff channel with `/setup channels` before this command can be used.';
   } else if (error instanceof BotCommandsChannelNotConfiguredError) {
     title = `${BOT_EMOJIS.error} Bot Commands Channel Not Configured`;
-    description =
-      'A Discord Administrator must configure the league channels with `/setup channels`.';
+    description = 'Configure the league channels with `/setup channels`.';
   } else if (error instanceof LeagueSetupRequiredError) {
     title = `${BOT_EMOJIS.error} League Setup Required`;
-    description = 'A Discord Administrator must run `/setup league` first.';
+    description = 'Run `/setup league` first.';
   } else if (error instanceof DuplicateTeamRoleError) {
     title = `${BOT_EMOJIS.error} Team Role Already in Use`;
     description = `The role <@&${error.roleId}> is already assigned to ${error.teamIdentity}.\n\nChoose a different Discord role.`;
@@ -207,8 +206,7 @@ export function mapDiscordError(error: unknown): MappedErrorResponse {
     description = error.message;
   } else if (error instanceof AuthorizationError) {
     title = `${BOT_EMOJIS.error} Permission Denied`;
-    description =
-      error.message || 'You need the configured bot permissions role to use this command.';
+    description = error.message || 'A database Bot Permission is required to use this command.';
   } else if (
     error instanceof GuildNotConfiguredError ||
     error instanceof GuildConfigurationNotFoundError

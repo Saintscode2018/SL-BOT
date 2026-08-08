@@ -18,6 +18,7 @@ import {
   clearDatabase,
   createTestDatabase,
   destroyTestDatabase,
+  grantBotPermission,
   type TestDatabase,
 } from '../helpers/database.js';
 
@@ -75,6 +76,7 @@ describe('TeamDisbandmentService', () => {
       },
     });
     guildId = guild.id;
+    await grantBotPermission(client, discordGuildId, ownerId);
     const team = await client.club.create({
       data: { guildId, discordRoleId: teamRoleId, emoji: '🦁' },
     });
@@ -104,7 +106,11 @@ describe('TeamDisbandmentService', () => {
   });
 
   async function user(discordUserId: string) {
-    return client.leagueUser.create({ data: { discordUserId } });
+    return client.leagueUser.upsert({
+      where: { discordUserId },
+      create: { discordUserId },
+      update: {},
+    });
   }
 
   async function membership(
@@ -336,19 +342,7 @@ describe('TeamDisbandmentService', () => {
 
   it('allows only global administrators in Staff Commands', async () => {
     const policy = new CommandChannelPolicyService(client);
-    const inputs: AuthorizationInput[] = [
-      authorization(),
-      {
-        ...authorization(),
-        discordUserId: '200000000000000010',
-        hasAdministratorPermission: true,
-      },
-      {
-        ...authorization(),
-        discordUserId: '200000000000000011',
-        memberRoleIds: [botPermissionsRoleId],
-      },
-    ];
+    const inputs: AuthorizationInput[] = [authorization()];
     for (const input of inputs) {
       await expect(
         policy.validateChannelPolicy({

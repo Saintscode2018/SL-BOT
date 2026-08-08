@@ -9,6 +9,7 @@ import type { PrismaClient } from '@prisma/client';
 
 import type { Logger } from '../logging/logger.js';
 import type { ClubManagementService } from '../services/club-management-service.js';
+import type { BotPermissionService } from '../services/bot-permission-service.js';
 import type { CommandChannelPolicyService } from '../services/command-channel-policy-service.js';
 import type { GuildConfigurationService } from '../services/guild-configuration-service.js';
 import type { GuildSetupService } from '../services/guild-setup-service.js';
@@ -107,6 +108,7 @@ export interface CommandInteraction {
 
 export interface CommandInteractionOptions {
   getSubcommand(): string | null;
+  getSubcommandGroup?(): string | null;
   getString(name: string): string | null;
   getInteger(name: string): number | null;
   getUser(name: string): { id: string; bot: boolean; displayName?: string } | null;
@@ -132,6 +134,10 @@ export interface CommandContext {
   guildSetupService: Pick<
     GuildSetupService,
     'setup' | 'setupGuildOnly' | 'setupChannels' | 'setupRoles' | 'getView'
+  >;
+  botPermissionService?: Pick<
+    BotPermissionService,
+    'addStandard' | 'removeStandard' | 'addAdmin' | 'list'
   >;
   clubManagementService: Pick<
     ClubManagementService,

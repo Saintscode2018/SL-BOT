@@ -1,7 +1,9 @@
 import type { Guild, GuildSettings } from '@prisma/client';
 
+import { botPermissionLevelSchema, type BotPermissionLevel } from '../domain/enums.js';
 import { AuthorizationError, GuildNotConfiguredError } from '../domain/errors.js';
 import type { DatabaseClient } from '../domain/types.js';
+import { BotPermissionRepository } from '../repositories/bot-permission-repository.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
 import { MembershipRepository } from '../repositories/membership-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
@@ -17,10 +19,10 @@ export interface AuthorizationInput {
 export interface AuthorizationResult {
   guild: Guild;
   settings: GuildSettings;
-  kind: 'owner' | 'administrator' | 'league_admin' | 'club_staff';
+  kind: BotPermissionLevel | 'club_staff';
 }
 
-export type GlobalAuthorizationKind = 'owner' | 'administrator' | 'league_admin';
+export type GlobalAuthorizationKind = BotPermissionLevel;
 
 export class AuthorizationService {
   public constructor(private readonly database: DatabaseClient) {}
@@ -28,28 +30,41 @@ export class AuthorizationService {
   public async getGlobalAuthorizationKind(
     input: AuthorizationInput,
   ): Promise<GlobalAuthorizationKind | null> {
-    if (input.discordUserId === input.guildOwnerId) return 'owner';
-    if (input.hasAdministratorPermission) return 'administrator';
-
-    const guilds = new GuildRepository(this.database);
-    const guild = await guilds.getByDiscordGuildId(input.discordGuildId);
-    if (guild === null) return null;
-    const settings = await guilds.getSettings(guild.id);
-    if (
-      settings?.botPermissionsRoleId !== null &&
-      settings?.botPermissionsRoleId !== undefined &&
-      input.memberRoleIds.includes(settings.botPermissionsRoleId)
-    ) {
-      return 'league_admin';
-    }
-    return null;
+    const permission = await new BotPermissionRepository(this.database).getForDiscordIdentity(
+      input.discordGuildId,
+      input.discordUserId,
+    );
+    return permission === null ? null : botPermissionLevelSchema.parse(permission.level);
   }
 
-  public async assertCanSetup(input: AuthorizationInput): Promise<void> {
+  public async hasAnyBotPermissions(discordGuildId: string): Promise<boolean> {
+    const guild = await new GuildRepository(this.database).getByDiscordGuildId(discordGuildId);
+    if (guild === null) return false;
+    return (await new BotPermissionRepository(this.database).countForGuild(guild.id)) > 0;
+  }
+
+  public async assertCanSetup(
+    input: AuthorizationInput,
+    options: { allowDiscordAdministratorBootstrap?: boolean } = {},
+  ): Promise<void> {
     if ((await this.getGlobalAuthorizationKind(input)) !== null) return;
-    throw new AuthorizationError(
-      'You need the configured bot permissions role to use this command.',
-    );
+    if (
+      options.allowDiscordAdministratorBootstrap === true &&
+      input.hasAdministratorPermission &&
+      !(await this.hasAnyBotPermissions(input.discordGuildId))
+    ) {
+      return;
+    }
+    throw new AuthorizationError('A database Bot Permission is required to use this command.');
+  }
+
+  public async assertCanManageBotPermissions(
+    input: AuthorizationInput,
+    options: { allowFirstDiscordAdministratorGrant?: boolean } = {},
+  ): Promise<void> {
+    await this.assertCanSetup(input, {
+      allowDiscordAdministratorBootstrap: options.allowFirstDiscordAdministratorGrant === true,
+    });
   }
 
   public async authorizeLeagueAdministration(
@@ -58,9 +73,7 @@ export class AuthorizationService {
     const configuration = await this.loadConfiguration(input.discordGuildId);
     const kind = await this.getGlobalAuthorizationKind(input);
     if (kind !== null) return { ...configuration, kind };
-    throw new AuthorizationError(
-      'You need the configured bot permissions role to use this command.',
-    );
+    throw new AuthorizationError('A database Bot Permission is required to use this command.');
   }
 
   public async authorizeClubAction(
@@ -68,18 +81,9 @@ export class AuthorizationService {
     clubId: string,
   ): Promise<AuthorizationResult> {
     const configuration = await this.loadConfiguration(input.discordGuildId);
-    if (input.discordUserId === input.guildOwnerId) {
-      return { ...configuration, kind: 'owner' };
-    }
-    if (input.hasAdministratorPermission) {
-      return { ...configuration, kind: 'administrator' };
-    }
-    if (
-      configuration.settings.botPermissionsRoleId !== null &&
-      input.memberRoleIds.includes(configuration.settings.botPermissionsRoleId)
-    ) {
-      return { ...configuration, kind: 'league_admin' };
-    }
+    const globalKind = await this.getGlobalAuthorizationKind(input);
+    if (globalKind !== null) return { ...configuration, kind: globalKind };
+
     const user = await new UserRepository(this.database).getByDiscordUserId(input.discordUserId);
     if (user !== null) {
       const membership = await new MembershipRepository(

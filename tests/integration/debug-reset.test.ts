@@ -102,6 +102,19 @@ async function seedGuild(
       entityId: transaction.id,
     },
   });
+  const permissionUser = await database.leagueUser.upsert({
+    where: { discordUserId: initiatingUserId },
+    create: { discordUserId: initiatingUserId },
+    update: {},
+  });
+  await database.botPermission.create({
+    data: {
+      guildId: guild.id,
+      userId: permissionUser.id,
+      level: 'BOTPERM',
+      grantedByUserId: permissionUser.id,
+    },
+  });
   return {
     guildId: guild.id,
     clubId: club.id,
@@ -123,7 +136,10 @@ function button(
   const update = vi.fn();
   const interaction = {
     customId,
+    guildId: firstDiscordGuildId,
+    guild: { ownerId: initiatingUserId },
     user: { id: userId },
+    member: { roles: { cache: new Map() } },
     memberPermissions: { has: () => administrator },
     reply,
     update,
@@ -136,6 +152,7 @@ function resetInteraction(input: {
   administrator?: boolean;
   accepted?: ButtonInteraction[];
   roleIds?: string[];
+  userId?: string;
 }): {
   interaction: ChatInputCommandInteraction;
   reply: ReturnType<typeof vi.fn>;
@@ -158,7 +175,8 @@ function resetInteraction(input: {
   const editReply = vi.fn(() => Promise.resolve());
   const interaction = {
     guildId: firstDiscordGuildId,
-    user: { id: initiatingUserId },
+    guild: { ownerId: initiatingUserId },
+    user: { id: input.userId ?? initiatingUserId },
     member: { roles: { cache: new Map((input.roleIds ?? []).map((roleId) => [roleId, {}])) } },
     memberPermissions: { has: () => input.administrator ?? true },
     reply,
@@ -213,7 +231,9 @@ describe('debug reset', () => {
     expect(otherConfirm.reply).not.toHaveBeenCalled();
     expect(otherCancel.reply).not.toHaveBeenCalled();
     expect(originalConfirm.update).toHaveBeenCalledOnce();
-    expect(await context.client.guild.count()).toBe(0);
+    expect(await context.client.guild.count()).toBe(1);
+    expect(await context.client.guildSettings.count()).toBe(0);
+    expect(await context.client.botPermission.count()).toBe(1);
   });
 
   it('cancels without deleting data', async () => {
@@ -234,9 +254,10 @@ describe('debug reset', () => {
     expect(cancel.update).toHaveBeenCalledOnce();
   });
 
-  it('denies a bot permissions role user without Discord Administrator permission', async () => {
+  it('denies the old role and Discord Administrator when the caller lacks a DB permission', async () => {
     const botPermissionsRoleId = '800000000000000001';
     const seeded = await seedGuild(context.client, firstDiscordGuildId, '1');
+    await context.client.botPermission.deleteMany({ where: { guildId: seeded.guildId } });
     await context.client.guildSettings.update({
       where: { guildId: seeded.guildId },
       data: { botPermissionsRoleId },
@@ -253,6 +274,20 @@ describe('debug reset', () => {
     expect(reset.reply).not.toHaveBeenCalled();
   });
 
+  it('allows a DB permission holder without Discord Administrator permission', async () => {
+    await seedGuild(context.client, firstDiscordGuildId, '1');
+    const cancel = button(
+      `${DEBUG_RESET_CANCEL_CUSTOM_ID_PREFIX}${initiatingUserId}`,
+      initiatingUserId,
+      false,
+    );
+    const reset = resetInteraction({ candidates: [cancel.interaction], administrator: false });
+
+    await expect(sendDebugResetPrompt(reset.interaction, context.client)).resolves.toBeUndefined();
+    expect(reset.reply).toHaveBeenCalledOnce();
+    expect(cancel.update).toHaveBeenCalledOnce();
+  });
+
   it('deletes only the current guild data and preserves schema and migrations', async () => {
     const first = await seedGuild(context.client, firstDiscordGuildId, '1');
     const second = await seedGuild(context.client, secondDiscordGuildId, '2');
@@ -262,7 +297,8 @@ describe('debug reset', () => {
 
     await performGuildDebugReset(context.client, firstDiscordGuildId);
 
-    expect(await context.client.guild.findUnique({ where: { id: first.guildId } })).toBeNull();
+    expect(await context.client.guild.findUnique({ where: { id: first.guildId } })).not.toBeNull();
+    expect(await context.client.botPermission.count({ where: { guildId: first.guildId } })).toBe(1);
     expect(await context.client.guildSettings.count({ where: { guildId: first.guildId } })).toBe(0);
     expect(await context.client.club.count({ where: { guildId: first.guildId } })).toBe(0);
     expect(await context.client.clubMembership.count({ where: { guildId: first.guildId } })).toBe(
@@ -374,7 +410,7 @@ describe('debug reset', () => {
 
       const setupAuditService = {
         publish: vi.fn(async () => {
-          expect(await context.client.guild.count()).toBe(0);
+          expect(await context.client.guild.count()).toBe(1);
           return true;
         }),
       };
@@ -421,7 +457,7 @@ describe('debug reset', () => {
       await sendDebugResetPrompt(reset.interaction, context.client, setupAuditService);
 
       expect(setupAuditService.publish).not.toHaveBeenCalled();
-      expect(await context.client.guild.count()).toBe(0);
+      expect(await context.client.guild.count()).toBe(1);
       expect(confirm.update).toHaveBeenCalledOnce();
       const updateCall = confirm.update.mock.calls[0] as [
         { embeds: Array<{ data: { description?: string } }> },
@@ -449,13 +485,13 @@ describe('debug reset', () => {
       await sendDebugResetPrompt(reset.interaction, context.client, setupAuditService);
 
       expect(setupAuditService.publish).toHaveBeenCalledOnce();
-      expect(await context.client.guild.count()).toBe(0);
+      expect(await context.client.guild.count()).toBe(1);
       expect(confirm.update).toHaveBeenCalledOnce();
       const updateCall = confirm.update.mock.calls[0] as [
         { embeds: Array<{ data: { description?: string } }> },
       ];
       expect(updateCall[0].embeds[0]?.data.description).toContain(
-        'All SL Bot data for this server was removed, but the Audit announcement could not be delivered.',
+        'All SL Bot league and setup data for this server was removed, but the Audit announcement could not be delivered.',
       );
     });
 
@@ -517,7 +553,11 @@ describe('debug reset', () => {
       expect(await context.client.guild.count()).toBe(1);
 
       // 3. Unauthorized
-      const resetUnauth = resetInteraction({ candidates: [], administrator: false });
+      const resetUnauth = resetInteraction({
+        candidates: [],
+        administrator: true,
+        userId: '200000000000000099',
+      });
       await expect(
         sendDebugResetPrompt(resetUnauth.interaction, context.client, setupAuditService),
       ).rejects.toBeInstanceOf(AuthorizationError);
@@ -544,8 +584,10 @@ describe('debug reset', () => {
 
       await sendDebugResetPrompt(reset.interaction, context.client, setupAuditService);
 
-      // Settings and guild are completely gone from DB
+      // Settings are gone while guild identity and permissions remain for recovery.
       expect(await context.client.guildSettings.count()).toBe(0);
+      expect(await context.client.guild.count()).toBe(1);
+      expect(await context.client.botPermission.count()).toBe(1);
       // Yet audit message was successfully published using pre-reset captured channelId
       expect(setupAuditService.publish).toHaveBeenCalledWith(
         expect.objectContaining({ channelId: auditChannelId }),

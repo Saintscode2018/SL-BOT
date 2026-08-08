@@ -9,6 +9,10 @@ export const membershipTypes = [
 export type MembershipType = (typeof membershipTypes)[number];
 export const membershipTypeSchema = z.enum(membershipTypes);
 
+export const botPermissionLevels = ['BOTPERM', 'BOTPERM_ADMIN'] as const;
+export type BotPermissionLevel = (typeof botPermissionLevels)[number];
+export const botPermissionLevelSchema = z.enum(botPermissionLevels);
+
 export const membershipStatuses = ['ACTIVE', 'ENDED'] as const;
 export type MembershipStatus = (typeof membershipStatuses)[number];
 export const membershipStatusSchema = z.enum(membershipStatuses);

@@ -10,6 +10,7 @@ import {
   clearDatabase,
   createTestDatabase,
   destroyTestDatabase,
+  grantBotPermission,
   type TestDatabase,
 } from '../helpers/database.js';
 
@@ -69,6 +70,12 @@ describe('Stage 4A Services and Policies', () => {
 
     it('configures roles via setupRoles', async () => {
       const setupService = new GuildSetupService(context.client);
+      await setupService.setupGuildOnly({ authorization: ownerAuth(), guildName: 'Test Guild' });
+      await grantBotPermission(
+        context.client,
+        ownerAuth().discordGuildId,
+        ownerAuth().discordUserId,
+      );
       const result = await setupService.setupRoles({
         authorization: ownerAuth(),
         guildName: 'Test Guild',
@@ -96,7 +103,7 @@ describe('Stage 4A Services and Policies', () => {
       expect(view.defaultSquadLimit).toBe(17);
       expect(view.missingConfigurations).toContain('Bot Commands Channel');
       expect(view.missingConfigurations).toContain('Staff Channel');
-      expect(view.missingConfigurations).toContain('Bot Permissions Role');
+      expect(view.missingConfigurations).toContain('Legacy Bot Permissions Role');
     });
   });
 
@@ -134,6 +141,11 @@ describe('Stage 4A Services and Policies', () => {
         transferChannelId: '333333333333333333',
         auditChannelId: '444444444444444444',
       });
+      await grantBotPermission(
+        context.client,
+        ownerAuth().discordGuildId,
+        ownerAuth().discordUserId,
+      );
 
       const policyService = new CommandChannelPolicyService(context.client);
 
@@ -178,6 +190,11 @@ describe('Stage 4A Services and Policies', () => {
         transferChannelId: '333333333333333333',
         auditChannelId: '444444444444444444',
       });
+      await grantBotPermission(
+        context.client,
+        ownerAuth().discordGuildId,
+        ownerAuth().discordUserId,
+      );
 
       const policyService = new CommandChannelPolicyService(context.client);
 
@@ -210,6 +227,11 @@ describe('Stage 4A Services and Policies', () => {
         authorization: ownerAuth(),
         guildName: 'Test Guild',
       });
+      await grantBotPermission(
+        context.client,
+        ownerAuth().discordGuildId,
+        ownerAuth().discordUserId,
+      );
 
       const clubService = new ClubManagementService(context.client);
       const club = await clubService.create({
@@ -257,6 +279,11 @@ describe('Stage 4A Services and Policies', () => {
         authorization: ownerAuth(),
         guildName: 'Test Guild',
       });
+      await grantBotPermission(
+        context.client,
+        ownerAuth().discordGuildId,
+        ownerAuth().discordUserId,
+      );
 
       const limitService = new LimitManagementService(context.client);
       await expect(
@@ -276,6 +303,11 @@ describe('Stage 4A Services and Policies', () => {
         authorization: ownerAuth(),
         guildName: 'Test Guild',
       });
+      await grantBotPermission(
+        context.client,
+        ownerAuth().discordGuildId,
+        ownerAuth().discordUserId,
+      );
 
       const clubService = new ClubManagementService(context.client);
       const club = await clubService.create({
@@ -307,6 +339,11 @@ describe('Stage 4A Services and Policies', () => {
         authorization: ownerAuth(),
         guildName: 'Test Guild',
       });
+      await grantBotPermission(
+        context.client,
+        ownerAuth().discordGuildId,
+        ownerAuth().discordUserId,
+      );
 
       const clubService = new ClubManagementService(context.client);
       const club = await clubService.create({

@@ -1,6 +1,11 @@
 import { ChannelType, MessageFlags, SlashCommandBuilder } from 'discord.js';
 
-import { ConfigurationError, DiscordRoleMissingError, ValidationError } from '../domain/errors.js';
+import {
+  BotUserNotAllowedError,
+  ConfigurationError,
+  DiscordRoleMissingError,
+  ValidationError,
+} from '../domain/errors.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { formatTeamIdentity } from '../domain/team-label.js';
 import { getFriendlyPositionName, type StaffType } from '../services/staff-management-service.js';
@@ -58,6 +63,7 @@ async function enforceChannelPolicy(
     channelId: interaction.channelId,
     commandName: interaction.commandName,
     subcommand: execution.options.getSubcommand(),
+    subcommandGroup: execution.options.getSubcommandGroup?.() ?? null,
   });
   return execution;
 }
@@ -102,6 +108,23 @@ async function publishSetupAudit(
 
 function withAuditWarning(description: string, auditPublished: boolean): string {
   return auditPublished ? description : `${description}\n\n${auditDeliveryWarning}`;
+}
+
+async function resolveVisibleUserName(
+  interaction: CommandInteraction,
+  userId: string,
+): Promise<string> {
+  const cached = interaction.getGuildMemberDisplayName?.(userId);
+  if (cached && cached.trim().length > 0) return cached.trim();
+  const resolved = await interaction.resolveGuildMemberDisplayName?.(userId);
+  return resolved && resolved.trim().length > 0 ? resolved.trim() : 'Unknown User';
+}
+
+function requireBotPermissionService(context: CommandContext) {
+  if (context.botPermissionService === undefined) {
+    throw new ConfigurationError('bot permission service is unavailable');
+  }
+  return context.botPermissionService;
 }
 
 export { formatRosterAdminWarning };
@@ -270,6 +293,46 @@ const setupCommand: CommandDefinition = {
   data: new SlashCommandBuilder()
     .setName('setup')
     .setDescription('Configure SL Bot for this league')
+    .addSubcommandGroup((group) =>
+      group
+        .setName('botperm')
+        .setDescription('Manage standard database Bot Permissions')
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName('add')
+            .setDescription('Grant a standard Bot Permission')
+            .addUserOption((option) =>
+              option.setName('user').setDescription('User to authorize').setRequired(true),
+            ),
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName('remove')
+            .setDescription('Remove a standard Bot Permission')
+            .addUserOption((option) =>
+              option.setName('user').setDescription('User to remove').setRequired(true),
+            ),
+        )
+        .addSubcommand((subcommand) =>
+          subcommand.setName('view').setDescription('View all database Bot Permissions'),
+        ),
+    )
+    .addSubcommandGroup((group) =>
+      group
+        .setName('botpermadmin')
+        .setDescription('Manage protected Bot Permission Admins')
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName('add')
+            .setDescription('Add or promote a Bot Permission Admin')
+            .addUserOption((option) =>
+              option.setName('user').setDescription('User to authorize').setRequired(true),
+            ),
+        )
+        .addSubcommand((subcommand) =>
+          subcommand.setName('view').setDescription('View Bot Permission Admins'),
+        ),
+    )
     .addSubcommand((subcommand) =>
       subcommand
         .setName('league')
@@ -322,7 +385,7 @@ const setupCommand: CommandDefinition = {
         .addRoleOption((option) =>
           option
             .setName('bot_permissions')
-            .setDescription('Role with global bot administrative permissions')
+            .setDescription('Legacy Bot Permissions role (stored for compatibility only)')
             .setRequired(true),
         )
         .addRoleOption((option) =>
@@ -344,7 +407,131 @@ const setupCommand: CommandDefinition = {
   async execute(interaction, context) {
     const execution = await enforceChannelPolicy(interaction, context);
     const subcommand = execution.options.getSubcommand();
+    const subcommandGroup = execution.options.getSubcommandGroup?.() ?? null;
     const actorDisplayName = getUserDisplayName(interaction, execution.authorization.discordUserId);
+
+    if (subcommandGroup === 'botperm' || subcommandGroup === 'botpermadmin') {
+      const service = requireBotPermissionService(context);
+      const now = new Date();
+      const author = createGuildAuthor({
+        guildName: execution.guildName,
+        guildIconUrl: interaction.guildIconUrl,
+      });
+      const footer = createActorFooter({
+        verb: subcommand === 'view' ? 'Viewed' : 'Updated',
+        username: actorDisplayName,
+        timestamp: now,
+      });
+
+      if (subcommand === 'view') {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        const result = await service.list(execution.authorization);
+        const resolved = await Promise.all(
+          result.permissions.map(async (permission) => ({
+            permission,
+            displayName: await resolveVisibleUserName(interaction, permission.user.discordUserId),
+          })),
+        );
+        const admins = resolved.filter(({ permission }) => permission.level === 'BOTPERM_ADMIN');
+        const standards = resolved.filter(({ permission }) => permission.level === 'BOTPERM');
+        const lines = (entries: typeof resolved) =>
+          entries.length === 0
+            ? BOT_LABELS.none
+            : entries
+                .map(({ permission, displayName }) =>
+                  formatUserWithVisibleName(permission.user.discordUserId, displayName),
+                )
+                .join('\n');
+        const fields =
+          subcommandGroup === 'botpermadmin'
+            ? [{ name: 'Bot Permission Admins', value: lines(admins), inline: false }]
+            : [
+                { name: 'Bot Permission Admins', value: lines(admins), inline: false },
+                { name: 'Standard Bot Permissions', value: lines(standards), inline: false },
+              ];
+        const embed = createInfoEmbed({
+          title:
+            subcommandGroup === 'botpermadmin'
+              ? `${BOT_EMOJIS.botPermissions} Bot Permission Admins`
+              : `${BOT_EMOJIS.botPermissions} Bot Permissions`,
+          author,
+          fields,
+          footer: footer.text,
+          ...(footer.iconURL ? { footerIconURL: footer.iconURL } : {}),
+        });
+        await interaction.editReply({ embeds: [embed] });
+        return;
+      }
+
+      const target = requireUser(execution.options, 'user');
+      if (target.bot) throw new BotUserNotAllowedError('bots cannot hold Bot Permissions');
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      const result =
+        subcommandGroup === 'botpermadmin'
+          ? await service.addAdmin({
+              authorization: execution.authorization,
+              targetDiscordUserId: target.id,
+            })
+          : subcommand === 'add'
+            ? await service.addStandard({
+                authorization: execution.authorization,
+                targetDiscordUserId: target.id,
+              })
+            : await service.removeStandard({
+                authorization: execution.authorization,
+                targetDiscordUserId: target.id,
+              });
+      const targetDisplayName = getUserDisplayName(interaction, target.id, target.displayName);
+      const formattedTarget = formatUserWithVisibleName(target.id, targetDisplayName);
+      const before = result.beforeLevel ?? 'None';
+      const after = result.afterLevel ?? 'None';
+      const verb =
+        result.mutation === 'removed'
+          ? 'Removed'
+          : result.mutation === 'promoted'
+            ? 'Promoted'
+            : 'Added';
+      const title =
+        result.mutation === 'removed'
+          ? `${BOT_EMOJIS.success} Bot Permission Removed`
+          : result.afterLevel === 'BOTPERM_ADMIN'
+            ? `${BOT_EMOJIS.success} Bot Permission Admin ${result.mutation === 'promoted' ? 'Promoted' : 'Added'}`
+            : `${BOT_EMOJIS.success} Bot Permission Added`;
+      const description =
+        result.mutation === 'removed'
+          ? `${formattedTarget} no longer has a standard Bot Permission.`
+          : result.afterLevel === 'BOTPERM_ADMIN'
+            ? `${formattedTarget} is now a Bot Permission Admin.`
+            : `${formattedTarget} now has a standard Bot Permission.`;
+      const auditFields = [
+        { name: 'User', value: formattedTarget, inline: false },
+        { name: 'Before', value: before, inline: true },
+        { name: 'After', value: after, inline: true },
+      ];
+      const auditPublished = await publishSetupAudit(context, {
+        channelId: result.auditChannelId,
+        title,
+        description,
+        fields: auditFields,
+        actorDiscordUserId: execution.authorization.discordUserId,
+        actorVerb: verb,
+      });
+      const mutationFooter = createActorFooter({
+        verb,
+        username: actorDisplayName,
+        timestamp: now,
+      });
+      const embed = createSuccessEmbed({
+        title,
+        author,
+        description: withAuditWarning(description, auditPublished),
+        fields: auditFields,
+        footer: mutationFooter.text,
+        ...(mutationFooter.iconURL ? { footerIconURL: mutationFooter.iconURL } : {}),
+      });
+      await interaction.editReply({ embeds: [embed] });
+      return;
+    }
 
     if (subcommand === 'league') {
       const timeoutMinutes = execution.options.getInteger('offer_timeout_minutes');
@@ -449,7 +636,7 @@ const setupCommand: CommandDefinition = {
       });
 
       const roleBlock = [
-        `${BOT_EMOJIS.botPermissions} Bot Permissions: <@&${botPerms.id}>`,
+        `${BOT_EMOJIS.botPermissions} Legacy Bot Permissions: <@&${botPerms.id}>`,
         `${BOT_EMOJIS.teamManager} ${BOT_LABELS.teamManager}: <@&${tm.id}>`,
         `${BOT_EMOJIS.assistantTeamManager} ${BOT_LABELS.assistantTeamManager}: <@&${atm.id}>`,
         `${BOT_EMOJIS.playerManager} ${BOT_LABELS.playerManager}: <@&${pm.id}>`,
@@ -489,7 +676,7 @@ const setupCommand: CommandDefinition = {
       ].join('\n');
 
       const roleLines = [
-        `${BOT_EMOJIS.botPermissions} Bot Permissions: ${view.roles.botPermissionsRoleId ? `<@&${view.roles.botPermissionsRoleId}>` : 'Not configured'}`,
+        `${BOT_EMOJIS.botPermissions} Legacy Bot Permissions: ${view.roles.botPermissionsRoleId ? `<@&${view.roles.botPermissionsRoleId}>` : 'Not configured'}`,
         `${BOT_EMOJIS.teamManager} ${BOT_LABELS.teamManager}: ${view.roles.teamManagerRoleId ? `<@&${view.roles.teamManagerRoleId}>` : 'Not configured'}`,
         `${BOT_EMOJIS.assistantTeamManager} ${BOT_LABELS.assistantTeamManager}: ${view.roles.assistantManagerRoleId ? `<@&${view.roles.assistantManagerRoleId}>` : 'Not configured'}`,
         `${BOT_EMOJIS.playerManager} ${BOT_LABELS.playerManager}: ${view.roles.playerManagerRoleId ? `<@&${view.roles.playerManagerRoleId}>` : 'Not configured'}`,

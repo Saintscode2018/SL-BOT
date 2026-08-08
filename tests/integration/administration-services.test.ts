@@ -49,6 +49,7 @@ import {
   clearDatabase,
   createTestDatabase,
   destroyTestDatabase,
+  grantBotPermission,
   type TestDatabase,
 } from '../helpers/database.js';
 import { MemoryLogger } from '../helpers/memory-logger.js';
@@ -83,8 +84,14 @@ describe('administration services', () => {
 
   beforeEach(async () => {
     await clearDatabase(database.client);
-    const result = await new GuildSetupService(database.client).setup({
-      authorization: authorization(),
+    const setupService = new GuildSetupService(database.client);
+    await setupService.setupGuildOnly({
+      authorization: authorization(administratorId),
+      guildName: 'Development League',
+    });
+    await grantBotPermission(database.client, guildId, ownerId);
+    const result = await setupService.setup({
+      authorization: authorization(ownerId),
       guildName: 'Development League',
       transferChannelId: '910000000000000001',
       auditChannelId: '910000000000000002',
@@ -133,12 +140,17 @@ describe('administration services', () => {
     });
   }
 
-  it('allows owners and administrators to configure while rejecting other users', async () => {
+  it('allows database Bot Permissions to configure while rejecting Discord administrators and other users', async () => {
+    await expect(
+      new AuthorizationService(database.client).authorizeLeagueAdministration(
+        authorization(ownerId),
+      ),
+    ).resolves.toMatchObject({ kind: 'BOTPERM' });
     await expect(
       new AuthorizationService(database.client).authorizeLeagueAdministration(
         authorization(administratorId),
       ),
-    ).resolves.toMatchObject({ kind: 'administrator' });
+    ).rejects.toBeInstanceOf(AuthorizationError);
     await expect(
       new GuildSetupService(database.client).setup({
         authorization: authorization(outsiderId),
@@ -155,7 +167,7 @@ describe('administration services', () => {
 
   it('reruns guild setup as an update and writes an audit event', async () => {
     const result = await new GuildSetupService(database.client).setup({
-      authorization: authorization(administratorId),
+      authorization: authorization(ownerId),
       guildName: 'Renamed League',
       transferChannelId: '910000000000000010',
       auditChannelId: '910000000000000011',
@@ -167,7 +179,7 @@ describe('administration services', () => {
     expect(result).toMatchObject({ created: false, guild: { name: 'Renamed League' } });
     await expect(
       database.client.auditEvent.count({ where: { eventType: guildConfiguredAuditEventType } }),
-    ).resolves.toBe(2);
+    ).resolves.toBe(3);
   });
 
   it('creates teams and rejects a duplicate Discord role', async () => {

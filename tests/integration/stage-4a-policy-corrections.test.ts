@@ -15,6 +15,7 @@ import {
   clearDatabase,
   createTestDatabase,
   destroyTestDatabase,
+  grantBotPermission,
   type TestDatabase,
 } from '../helpers/database.js';
 
@@ -68,6 +69,8 @@ describe('authorization aware channel policy', () => {
       transferChannelId: '333333333333333333',
       auditChannelId: '444444444444444444',
     });
+    await grantBotPermission(database.client, guildId, administrator.discordUserId);
+    await grantBotPermission(database.client, guildId, botPermissionsUser.discordUserId);
     await setup.setupRoles({
       authorization: administrator,
       guildName: 'Development League',
@@ -177,7 +180,7 @@ describe('authorization aware channel policy', () => {
     const policy = new CommandChannelPolicyService(database.client);
 
     for (const subcommand of ['add', 'remove'] as const) {
-      for (const authorization of [owner, discordAdministrator, botPermissionsUser]) {
+      for (const authorization of [owner, botPermissionsUser]) {
         await expect(
           policy.validateChannelPolicy({
             authorization,
@@ -187,6 +190,14 @@ describe('authorization aware channel policy', () => {
           }),
         ).resolves.toBeUndefined();
       }
+      await expect(
+        policy.validateChannelPolicy({
+          authorization: discordAdministrator,
+          commandName: 'roster',
+          subcommand,
+          channelId: staffChannelId,
+        }),
+      ).rejects.toBeInstanceOf(AdministrativePermissionDeniedError);
 
       for (const memberRoleIds of [
         ['666666666666666666'],
@@ -221,6 +232,7 @@ describe('authorization aware channel policy', () => {
       authorization: administrator,
       guildName: 'Development League',
     });
+    await grantBotPermission(database.client, guildId, administrator.discordUserId);
     const error = await policyError({
       authorization: administrator,
       commandName: 'team',
@@ -233,6 +245,7 @@ describe('authorization aware channel policy', () => {
   it('does not grant setup bootstrap to the bot permissions role', async () => {
     const setup = new GuildSetupService(database.client);
     await setup.setupGuildOnly({ authorization: administrator, guildName: 'Development League' });
+    await grantBotPermission(database.client, guildId, administrator.discordUserId);
     await setup.setupRoles({
       authorization: administrator,
       guildName: 'Development League',
@@ -374,10 +387,10 @@ describe('authorization aware channel policy', () => {
     expect(mapped.description).toBe(`Use this command in <#${botCommandsChannelId}>.`);
   });
 
-  it('keeps debug reset administrator only and staff channel restricted', async () => {
+  it('keeps debug reset database-authorized and staff channel restricted', async () => {
     await configureChannelsAndRoles();
     const roleOnlyError = await policyError({
-      authorization: botPermissionsUser,
+      authorization: { ...ordinaryUser, memberRoleIds: [botPermissionsRoleId] },
       commandName: 'debugreset',
       channelId: staffChannelId,
     });

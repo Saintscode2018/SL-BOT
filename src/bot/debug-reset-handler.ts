@@ -10,6 +10,10 @@ import {
 } from 'discord.js';
 
 import { AuthorizationError, ConfigurationError } from '../domain/errors.js';
+import {
+  AuthorizationService,
+  type AuthorizationInput,
+} from '../services/authorization-service.js';
 import type { SetupAuditService } from '../services/setup-audit-service.js';
 import {
   createErrorEmbed,
@@ -22,6 +26,36 @@ import { BOT_EMOJIS } from './presentation/index.js';
 export const DEBUG_RESET_CONFIRM_CUSTOM_ID_PREFIX = 'debugreset_confirm_';
 export const DEBUG_RESET_CANCEL_CUSTOM_ID_PREFIX = 'debugreset_cancel_';
 
+function debugResetAuthorization(
+  interaction: ChatInputCommandInteraction | ButtonInteraction,
+): AuthorizationInput {
+  const roles = interaction.member?.roles;
+  return {
+    discordGuildId: interaction.guildId!,
+    discordUserId: interaction.user.id,
+    guildOwnerId: interaction.guild?.ownerId ?? '',
+    memberRoleIds:
+      roles === undefined ? [] : Array.isArray(roles) ? roles : [...roles.cache.keys()],
+    hasAdministratorPermission: interaction.memberPermissions?.has('Administrator') ?? false,
+  };
+}
+
+async function assertCanDebugReset(
+  interaction: ChatInputCommandInteraction | ButtonInteraction,
+  database: PrismaClient,
+): Promise<void> {
+  if (!interaction.guildId) {
+    throw new ConfigurationError('this command must be used in a Discord server');
+  }
+  if (
+    (await new AuthorizationService(database).getGlobalAuthorizationKind(
+      debugResetAuthorization(interaction),
+    )) === null
+  ) {
+    throw new AuthorizationError('A database Bot Permission is required to use /debugreset.');
+  }
+}
+
 export async function sendDebugResetPrompt(
   interaction: ChatInputCommandInteraction,
   database: PrismaClient,
@@ -31,9 +65,7 @@ export async function sendDebugResetPrompt(
     throw new ConfigurationError('the debugreset command is disabled');
   }
 
-  if (!interaction.memberPermissions?.has('Administrator')) {
-    throw new AuthorizationError('only Discord Administrators can execute debugreset');
-  }
+  await assertCanDebugReset(interaction, database);
 
   const userId = interaction.user.id;
   const customIdConfirm = `${DEBUG_RESET_CONFIRM_CUSTOM_ID_PREFIX}${userId}`;
@@ -111,13 +143,15 @@ export async function sendDebugResetPrompt(
     return;
   }
 
-  // recheck admin permission
-  if (!confirmation.memberPermissions?.has('Administrator')) {
+  // Recheck the database permission at confirmation time.
+  try {
+    await assertCanDebugReset(confirmation, database);
+  } catch {
     await confirmation.update({
       embeds: [
         createErrorEmbed({
           title: `${BOT_EMOJIS.error} Permission Denied`,
-          description: 'Administrator permission is required.',
+          description: 'A database Bot Permission is required.',
         }),
       ],
       components: [],
@@ -160,10 +194,10 @@ export async function sendDebugResetPrompt(
   const warning = formatRosterAdminWarning(
     undefined,
     auditDelivered,
-    'All SL Bot data for this server was removed',
+    'All SL Bot league and setup data for this server was removed',
   );
   const baseDescription =
-    'All SL Bot data for this server has been removed.\n\nThe server can now be configured again with /setup league.';
+    'All SL Bot league and setup data for this server has been removed. Database Bot Permissions were preserved to prevent an administrative lockout.\n\nThe server can now be configured again with /setup league.';
   const description = warning !== null ? `${baseDescription}\n\n${warning}` : baseDescription;
 
   await confirmation.update({
@@ -194,6 +228,5 @@ export async function performGuildDebugReset(
     await tx.clubMembership.deleteMany({ where: { guildId: guild.id } });
     await tx.club.deleteMany({ where: { guildId: guild.id } });
     await tx.guildSettings.deleteMany({ where: { guildId: guild.id } });
-    await tx.guild.deleteMany({ where: { id: guild.id } });
   });
 }

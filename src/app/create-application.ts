@@ -30,6 +30,7 @@ import { ClubRepository } from '../repositories/club-repository.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
 import { AuditAnnouncementService } from '../services/audit-announcement-service.js';
 import { ClubManagementService } from '../services/club-management-service.js';
+import { BotPermissionService } from '../services/bot-permission-service.js';
 import { CommandChannelPolicyService } from '../services/command-channel-policy-service.js';
 import { ConfirmationRegistry } from '../services/confirmation-registry.js';
 import { DatabaseHealthService } from '../services/database-health-service.js';
@@ -166,6 +167,7 @@ export function createApplication(
     guildConfigurationService,
     offerAcceptanceService,
     guildSetupService: new GuildSetupService(prisma),
+    botPermissionService: new BotPermissionService(prisma),
     clubManagementService: new ClubManagementService(prisma),
     staffManagementService: new StaffManagementService(prisma, rosterMutations),
     rosterManagementService: new RosterManagementService(prisma),

@@ -26,6 +26,7 @@ import {
   clearDatabase,
   createTestDatabase,
   destroyTestDatabase,
+  grantBotPermission,
   type TestDatabase,
 } from '../helpers/database.js';
 import { MemoryLogger } from '../helpers/memory-logger.js';
@@ -152,6 +153,7 @@ describe('roster autocomplete command correlation', () => {
       transferChannelId: '700000000000000005',
       auditChannelId: '700000000000000006',
     });
+    await grantBotPermission(database.client, discordGuildId, ownerId);
     context = {
       logger: new MemoryLogger(),
       database: database.client,

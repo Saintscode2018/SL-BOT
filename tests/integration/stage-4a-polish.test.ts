@@ -35,6 +35,7 @@ import {
   clearDatabase,
   createTestDatabase,
   destroyTestDatabase,
+  grantBotPermission,
   type TestDatabase,
 } from '../helpers/database.js';
 import { MemoryLogger } from '../helpers/memory-logger.js';
@@ -267,6 +268,7 @@ describe('Stage 4A Polish Verification', () => {
       transferChannelId: '333333333333333333',
       auditChannelId: '444444444444444444',
     });
+    await grantBotPermission(context.client, guildId, adminAuth.discordUserId);
     await guildSetupService.setupRoles({
       authorization: adminAuth,
       guildName: 'Development League',
@@ -636,6 +638,7 @@ describe('Stage 4A Polish Verification', () => {
         memberRoleIds: ['555555555555555555'],
         hasAdministratorPermission: false,
       };
+      await grantBotPermission(context.client, guildId, globalBotPermissionAuth.discordUserId);
 
       const interaction = new MockCommandInteraction(
         'offer',
