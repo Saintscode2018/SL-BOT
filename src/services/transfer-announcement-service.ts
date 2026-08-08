@@ -26,7 +26,7 @@ export class TransferAnnouncementService {
       this.logger.error('transfer-market announcement delivery failed', error, {
         discordGuildId: plan.discordGuildId,
         announcementType: plan.type,
-        discordUserId: plan.discordUserId,
+        discordUserId: plan.type === 'TEAM_DISBANDED' ? undefined : plan.discordUserId,
       });
       return false;
     }

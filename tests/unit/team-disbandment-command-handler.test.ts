@@ -163,6 +163,8 @@ function fixture() {
       affectedUserCount: 2,
       expiredOfferCount: 3,
       affectedUsers: [],
+      announcementDelivered: null as boolean | null,
+      auditAnnouncementDelivered: null as boolean | null,
     }),
   );
   const service = { getEligibility, disband } as unknown as TeamDisbandmentService;
@@ -295,4 +297,50 @@ describe('/team disband command and confirmation', () => {
     );
     expect(confirmFixture.edits[0]?.embeds?.[0]?.data.color).toBe(0x990000);
   });
+
+  it.each([
+    [true, true, false, false],
+    [false, true, true, false],
+    [true, false, false, true],
+    [false, false, true, true],
+    [null, null, false, false],
+  ])(
+    'presents delivery warning in private response when auditDelivered=%s and transferDelivered=%s',
+    async (auditDelivered, transferDelivered, expectAuditWarn, expectTransferWarn) => {
+      const { handler, disband } = fixture();
+      vi.mocked(disband).mockResolvedValueOnce({
+        guild,
+        team,
+        endedMembershipCount: 3,
+        affectedUserCount: 2,
+        expiredOfferCount: 1,
+        affectedUsers: [],
+        auditAnnouncementDelivered: auditDelivered,
+        announcementDelivered: transferDelivered,
+      });
+
+      const interaction = new CommandFixture();
+      await handler.begin(interaction);
+      const confirm = new ButtonFixture(customIds(interaction).confirm);
+
+      await handler.handleButton(confirm);
+      const description = confirm.edits[0]?.embeds?.[0]?.data.description ?? '';
+
+      if (expectAuditWarn && expectTransferWarn) {
+        expect(description).toContain(
+          'The team was disbanded, but the Audit and Transfer Market announcements could not be delivered.',
+        );
+      } else if (expectAuditWarn) {
+        expect(description).toContain(
+          'The team was disbanded, but the Audit announcement could not be delivered.',
+        );
+      } else if (expectTransferWarn) {
+        expect(description).toContain(
+          'The team was disbanded, but the Transfer Market announcement could not be delivered.',
+        );
+      } else {
+        expect(description).not.toContain('could not be delivered');
+      }
+    },
+  );
 });

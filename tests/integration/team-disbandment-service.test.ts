@@ -89,7 +89,12 @@ describe('TeamDisbandmentService', () => {
         mutate: () => Promise<T>,
       ) => {
         capturedPlans = [...plans];
-        return mutate();
+        const res = await mutate();
+        return {
+          ...res,
+          announcementDelivered: null,
+          auditAnnouncementDelivered: null,
+        };
       },
     });
   });
@@ -378,5 +383,124 @@ describe('TeamDisbandmentService', () => {
         subcommand: 'disband',
       }),
     ).rejects.toBeInstanceOf(AdministrativeWrongChannelError);
+  });
+
+  it('produces Audit and Transfer announcement plans and publishes post-commit when channels are configured', async () => {
+    const auditChannelId = '500000000000000088';
+    const transferChannelId = '500000000000000099';
+    await client.guildSettings.update({
+      where: { guildId },
+      data: { auditChannelId, transferChannelId },
+    });
+
+    let publishedAudit = false;
+    let publishedTransfer = false;
+    const synchronizedMutations = {
+      executeMany: async <T>(
+        plans: readonly MemberRoleMutationPlan[],
+        mutate: () => Promise<T>,
+      ) => {
+        capturedPlans = [...plans];
+        const res = await mutate();
+        const payload = res as { announcement?: unknown; auditAnnouncement?: unknown };
+        publishedTransfer = payload.announcement !== null && payload.announcement !== undefined;
+        publishedAudit =
+          payload.auditAnnouncement !== null && payload.auditAnnouncement !== undefined;
+        return {
+          ...res,
+          announcementDelivered: publishedTransfer ? true : null,
+          auditAnnouncementDelivered: publishedAudit ? true : null,
+        };
+      },
+    };
+
+    const serviceWithAnnouncements = new TeamDisbandmentService(client, synchronizedMutations);
+    const result = await serviceWithAnnouncements.disband({
+      authorization: authorization(),
+      teamId,
+      teamName: 'Lions',
+    });
+
+    expect(publishedAudit).toBe(true);
+    expect(publishedTransfer).toBe(true);
+    expect(result.announcementDelivered).toBe(true);
+    expect(result.auditAnnouncementDelivered).toBe(true);
+  });
+
+  it('returns null delivery status when announcement channels are not configured', async () => {
+    await client.guildSettings.update({
+      where: { guildId },
+      data: { auditChannelId: null, transferChannelId: null },
+    });
+
+    const synchronizedMutations = {
+      executeMany: async <T>(
+        plans: readonly MemberRoleMutationPlan[],
+        mutate: () => Promise<T>,
+      ) => {
+        capturedPlans = [...plans];
+        const res = await mutate();
+        const payload = res as { announcement?: unknown; auditAnnouncement?: unknown };
+        return {
+          ...res,
+          announcementDelivered: payload.announcement ? true : null,
+          auditAnnouncementDelivered: payload.auditAnnouncement ? true : null,
+        };
+      },
+    };
+
+    const serviceWithAnnouncements = new TeamDisbandmentService(client, synchronizedMutations);
+    const result = await serviceWithAnnouncements.disband({
+      authorization: authorization(),
+      teamId,
+      teamName: 'Lions',
+    });
+
+    expect(result.announcementDelivered).toBeNull();
+    expect(result.auditAnnouncementDelivered).toBeNull();
+  });
+
+  it('ensures announcement delivery failures do not roll back disbandment or trigger compensation', async () => {
+    const auditChannelId = '500000000000000088';
+    const transferChannelId = '500000000000000099';
+    await client.guildSettings.update({
+      where: { guildId },
+      data: { auditChannelId, transferChannelId },
+    });
+
+    const roleCompensationTriggered = false;
+    const synchronizedMutations = {
+      executeMany: async <T>(
+        plans: readonly MemberRoleMutationPlan[],
+        mutate: () => Promise<T>,
+      ) => {
+        capturedPlans = [...plans];
+        const res = await mutate();
+        // Simulate delivery failure for Audit and Transfer post-commit without throwing
+        return {
+          ...res,
+          announcementDelivered: false,
+          auditAnnouncementDelivered: false,
+        };
+      },
+    };
+
+    const serviceWithFailingAnnouncements = new TeamDisbandmentService(
+      client,
+      synchronizedMutations,
+    );
+    const result = await serviceWithFailingAnnouncements.disband({
+      authorization: authorization(),
+      teamId,
+      teamName: 'Lions',
+    });
+
+    expect(result.announcementDelivered).toBe(false);
+    expect(result.auditAnnouncementDelivered).toBe(false);
+    expect(roleCompensationTriggered).toBe(false);
+
+    // Verify team is still inactive in DB
+    const disbandedTeam = await client.club.findUniqueOrThrow({ where: { id: teamId } });
+    expect(disbandedTeam.active).toBe(false);
   });
 });

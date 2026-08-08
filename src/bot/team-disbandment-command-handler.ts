@@ -9,7 +9,7 @@ import type {
   ConfirmationRegistry,
 } from '../services/confirmation-registry.js';
 import type { TeamDisbandmentService } from '../services/team-disbandment-service.js';
-import { createSuccessEmbed, createWarningEmbed } from './embeds.js';
+import { createSuccessEmbed, createWarningEmbed, formatRosterAdminWarning } from './embeds.js';
 import { getTeamThumbnail } from './emoji-helper.js';
 import { extractAuthorizationInput, requireGuildExecution } from './guild-execution.js';
 import { requireString } from './option-parsing.js';
@@ -203,7 +203,12 @@ export class TeamDisbandmentCommandHandler {
       username: actorName,
       timestamp: occurredAt,
     });
-    const description = [
+    const warning = formatRosterAdminWarning(
+      result.announcementDelivered,
+      result.auditAnnouncementDelivered,
+      'The team was disbanded',
+    );
+    const descriptionLines = [
       `${formatTeamIdentity(team, 'message')} has been disbanded.`,
       '',
       `> Staff and player memberships ended: **${result.endedMembershipCount}**`,
@@ -211,7 +216,11 @@ export class TeamDisbandmentCommandHandler {
       `> Outstanding offers expired: **${result.expiredOfferCount}**`,
       '> Discord team role preserved',
       '> Team emoji preserved',
-    ].join('\n');
+    ];
+    if (warning !== null) {
+      descriptionLines.push('', warning);
+    }
+    const description = descriptionLines.join('\n');
 
     await interaction.editReply({
       embeds: [

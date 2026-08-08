@@ -14,7 +14,12 @@ import {
   TeamNotFoundError,
 } from '../domain/errors.js';
 import type { MembershipType } from '../domain/enums.js';
-import type { MemberRoleMutationPlan, PlannedDiscordRole } from '../domain/roster-mutation.js';
+import type {
+  MemberRoleMutationPlan,
+  PlannedDiscordRole,
+  AuditAnnouncementPlan,
+  TransferAnnouncementPlan,
+} from '../domain/roster-mutation.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { ClubRepository } from '../repositories/club-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
@@ -44,6 +49,8 @@ export interface TeamDisbandmentResult {
   affectedUserCount: number;
   expiredOfferCount: number;
   affectedUsers: TeamDisbandmentAffectedUser[];
+  announcementDelivered?: boolean | null;
+  auditAnnouncementDelivered?: boolean | null;
 }
 
 export interface DisbandTeamInput {
@@ -85,6 +92,19 @@ export class TeamDisbandmentService {
     const affectedUsers = this.groupAffectedUsers(activeMemberships);
     const rolePlans = this.buildRolePlans(eligibility, affectedUsers);
     const expectedMembershipIds = activeMemberships.map(({ id }) => id).sort();
+
+    const announcement: TransferAnnouncementPlan | null = eligibility.settings.transferChannelId
+      ? {
+          discordGuildId: eligibility.guild.discordGuildId,
+          channelId: eligibility.settings.transferChannelId,
+          type: 'TEAM_DISBANDED',
+          teamIdentity: {
+            discordRoleId: eligibility.team.discordRoleId,
+            emoji: eligibility.team.emoji,
+          },
+          occurredAt,
+        }
+      : null;
 
     return this.synchronizedMutations.executeMany(rolePlans, () =>
       this.database.$transaction(async (transaction) => {
@@ -168,6 +188,25 @@ export class TeamDisbandmentService {
           },
         });
 
+        const auditAnnouncement: AuditAnnouncementPlan | null = eligibility.settings.auditChannelId
+          ? {
+              discordGuildId: authorization.guild.discordGuildId,
+              channelId: eligibility.settings.auditChannelId,
+              operation: 'TEAM_DISBANDED',
+              actorDiscordUserId: input.authorization.discordUserId,
+              teamIdentity: {
+                discordRoleId: team.discordRoleId,
+                emoji: team.emoji,
+              },
+              occurredAt,
+              disbandDetails: {
+                endedMembershipCount: ended.count,
+                affectedUserCount: affectedUsers.length,
+                expiredOfferCount: expired.count,
+              },
+            }
+          : null;
+
         return {
           guild: authorization.guild,
           team: deactivatedTeam,
@@ -175,6 +214,8 @@ export class TeamDisbandmentService {
           affectedUserCount: affectedUsers.length,
           expiredOfferCount: expired.count,
           affectedUsers,
+          announcement,
+          auditAnnouncement,
         };
       }),
     );

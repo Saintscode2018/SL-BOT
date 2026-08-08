@@ -49,16 +49,28 @@ export class DiscordAuditAnnouncementAdapter implements AuditAnnouncementAdapter
     const subjectName = plan.presentation?.subject?.username || 'Unknown User';
     const actorName = plan.presentation?.actor?.username || 'Unknown User';
 
-    const playerFormatted = formatUserWithVisibleName(plan.playerDiscordUserId, subjectName);
+    const playerFormatted =
+      plan.operation === 'TEAM_DISBANDED'
+        ? ''
+        : formatUserWithVisibleName(plan.playerDiscordUserId, subjectName);
     const teamFormatted = formatTeamIdentity(plan.teamIdentity, 'message');
     const thumbnail = getTeamThumbnail(plan.teamIdentity.emoji);
     const author = createGuildAuthor({ guildName: serverName, guildIconUrl: serverIconUrl });
 
     let title: string;
     let description: string;
-    let verb: 'Added' | 'Removed' | 'Appointed' | 'Demanded' | 'Released' | 'Promoted' | 'Demoted';
+    let verb:
+      | 'Added'
+      | 'Removed'
+      | 'Appointed'
+      | 'Demanded'
+      | 'Released'
+      | 'Promoted'
+      | 'Demoted'
+      | 'Disbanded';
 
-    const positionName = getRolePositionName(plan.staffRole);
+    const positionName =
+      plan.operation === 'TEAM_DISBANDED' ? '' : getRolePositionName(plan.staffRole);
 
     switch (plan.operation) {
       case 'ROSTER_PLAYER_ADDED':
@@ -106,6 +118,17 @@ export class DiscordAuditAnnouncementAdapter implements AuditAnnouncementAdapter
         title = `${BOT_EMOJIS.success} Staff Member Demoted`;
         description = `${playerFormatted} was demoted to player for ${teamFormatted}.`;
         verb = 'Demoted';
+        break;
+      case 'TEAM_DISBANDED':
+        title = `${BOT_EMOJIS.success} Team Disbanded`;
+        description = [
+          `${teamFormatted} was disbanded.`,
+          '',
+          `> Staff and player memberships ended: **${plan.disbandDetails?.endedMembershipCount ?? 0}**`,
+          `> Members moved to free agency: **${plan.disbandDetails?.affectedUserCount ?? 0}**`,
+          `> Outstanding offers expired: **${plan.disbandDetails?.expiredOfferCount ?? 0}**`,
+        ].join('\n');
+        verb = 'Disbanded';
         break;
     }
 

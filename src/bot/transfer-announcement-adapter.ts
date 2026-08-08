@@ -13,6 +13,7 @@ import {
   createActorFooter,
   createGuildAuthor,
   createPlayerFooter,
+  createTimestampedFooter,
   formatBlockquote,
   formatTeamPlainRoleName,
   formatUserWithVisibleName,
@@ -20,6 +21,9 @@ import {
 } from './presentation/index.js';
 
 function announcementDescription(plan: TransferAnnouncementPlan): string {
+  if (plan.type === 'TEAM_DISBANDED') {
+    return `${formatTeamIdentity(plan.teamIdentity, 'message')} has officially disbanded.`;
+  }
   const subjectName = plan.presentation?.subject?.username || 'Unknown User';
   const member = formatUserWithVisibleName(plan.discordUserId, subjectName);
   const team = formatTeamIdentity(plan.teamIdentity, 'message');
@@ -63,10 +67,38 @@ export class DiscordTransferAnnouncementAdapter implements TransferAnnouncementA
       discordRoleId: plan.teamIdentity.discordRoleId,
       discordRoleName: plan.presentation?.teamRoleName,
     });
-    const subjectName = plan.presentation?.subject?.username || 'Unknown User';
-    const memberFormatted = formatUserWithVisibleName(plan.discordUserId, subjectName);
     const team = formatTeamIdentity(plan.teamIdentity, 'message');
     const thumbnail = getTeamThumbnail(plan.teamIdentity.emoji);
+    const author = createGuildAuthor({ guildName: serverName, guildIconUrl: serverIconUrl });
+
+    if (plan.type === 'TEAM_DISBANDED') {
+      const footer = createTimestampedFooter({
+        text: 'Team Disbanded',
+        timestamp: plan.occurredAt,
+      });
+      const descriptionLines = [
+        `${team} has officially disbanded.`,
+        'Its members are now free agents and outstanding pending offers involving the team have been expired.',
+      ];
+      const embed = createInfoEmbed({
+        author,
+        title: `${BOT_EMOJIS.warning} Team Disbanded - ${teamRoleName}`,
+        description: formatBlockquote(descriptionLines),
+        color: resolveTeamRoleColor(roleColor, BOT_COLORS.info),
+        thumbnail,
+        footer: footer.text,
+      });
+
+      await channel
+        .send({ allowedMentions: { parse: [] }, embeds: [embed] })
+        .catch((error: unknown) => {
+          throw new TransferAnnouncementDeliveryError({ cause: error });
+        });
+      return;
+    }
+
+    const subjectName = plan.presentation?.subject?.username || 'Unknown User';
+    const memberFormatted = formatUserWithVisibleName(plan.discordUserId, subjectName);
 
     const actorFormatted =
       plan.actorDiscordUserId === undefined
@@ -77,7 +109,6 @@ export class DiscordTransferAnnouncementAdapter implements TransferAnnouncementA
           );
     const actorUsername = plan.presentation?.actor?.username.trim() || 'Unknown User';
     const actorAvatarUrl = plan.presentation?.actor?.avatarUrl ?? null;
-    const author = createGuildAuthor({ guildName: serverName, guildIconUrl: serverIconUrl });
 
     const tmUserId = plan.roster?.teamManagerDiscordUserId;
     const tmUsername = plan.presentation?.teamManager?.username;

@@ -48,9 +48,12 @@ export class DiscordTransferAnnouncementPresentationProvider implements Transfer
         serverIconUrl: typeof guild.iconURL === 'function' ? guild.iconURL() : null,
         teamRoleName: teamRole?.name ?? null,
         teamRoleColor: teamRole?.color ?? null,
-        subject: resolveUser(guild, plan.discordUserId),
-        actor: resolveUser(guild, plan.actorDiscordUserId),
-        teamManager: resolveUser(guild, plan.roster?.teamManagerDiscordUserId ?? undefined),
+        subject: plan.type === 'TEAM_DISBANDED' ? null : resolveUser(guild, plan.discordUserId),
+        actor: plan.type === 'TEAM_DISBANDED' ? null : resolveUser(guild, plan.actorDiscordUserId),
+        teamManager:
+          plan.type === 'TEAM_DISBANDED'
+            ? null
+            : resolveUser(guild, plan.roster?.teamManagerDiscordUserId ?? undefined),
       },
     });
   }

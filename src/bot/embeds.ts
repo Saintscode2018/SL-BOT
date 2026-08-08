@@ -24,15 +24,16 @@ export interface EmbedOptions {
 export function formatRosterAdminWarning(
   transferDelivered: boolean | null | undefined,
   auditDelivered: boolean | null | undefined,
+  actionDescription: string = 'The roster was updated',
 ): string | null {
   if (transferDelivered === false && auditDelivered === false) {
-    return `${BOT_EMOJIS.warning} The roster was updated, but the Audit and Transfer Market announcements could not be delivered.`;
+    return `${BOT_EMOJIS.warning} ${actionDescription}, but the Audit and Transfer Market announcements could not be delivered.`;
   }
   if (transferDelivered === false) {
-    return `${BOT_EMOJIS.warning} The roster was updated, but the Transfer Market announcement could not be delivered.`;
+    return `${BOT_EMOJIS.warning} ${actionDescription}, but the Transfer Market announcement could not be delivered.`;
   }
   if (auditDelivered === false) {
-    return `${BOT_EMOJIS.warning} The roster was updated, but the Audit announcement could not be delivered.`;
+    return `${BOT_EMOJIS.warning} ${actionDescription}, but the Audit announcement could not be delivered.`;
   }
   return null;
 }
@@ -49,7 +50,8 @@ export function createActorField(
     | 'Demanded'
     | 'Released'
     | 'Promoted'
-    | 'Demoted',
+    | 'Demoted'
+    | 'Disbanded',
   userId: string,
   displayName?: string | null,
 ): APIEmbedField {

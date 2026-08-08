@@ -45,7 +45,8 @@ export class DiscordAuditAnnouncementPresentationProvider implements AuditAnnoun
         serverIconUrl: typeof guild.iconURL === 'function' ? guild.iconURL() : null,
         teamRoleName: teamRole?.name ?? null,
         teamRoleColor: teamRole?.color ?? null,
-        subject: resolveUser(guild, plan.playerDiscordUserId),
+        subject:
+          plan.operation === 'TEAM_DISBANDED' ? null : resolveUser(guild, plan.playerDiscordUserId),
         actor: resolveUser(guild, plan.actorDiscordUserId),
       },
     });

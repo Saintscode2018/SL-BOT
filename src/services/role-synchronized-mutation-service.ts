@@ -12,7 +12,7 @@ export interface TransferAnnouncementPublisher {
   publish(plan: NonNullable<MutationPlans['announcement']>): Promise<boolean>;
 }
 
-export type SynchronizedMutationResult<T extends MutationPlans> = T & {
+export type SynchronizedMutationResult<T> = T & {
   announcementDelivered: boolean | null;
   auditAnnouncementDelivered: boolean | null;
 };
@@ -54,7 +54,7 @@ export class RoleSynchronizedMutationService {
   public async executeMany<T>(
     rolePlans: readonly MemberRoleMutationPlan[],
     mutate: () => Promise<T>,
-  ): Promise<T> {
+  ): Promise<SynchronizedMutationResult<T>> {
     const applied: Array<{ plan: MemberRoleMutationPlan; mutation: AppliedMemberRoleMutation }> =
       [];
 
@@ -67,12 +67,27 @@ export class RoleSynchronizedMutationService {
       throw roleError;
     }
 
+    let result: T;
     try {
-      return await mutate();
+      result = await mutate();
     } catch (databaseError: unknown) {
       await this.compensateApplied(applied, databaseError, 'database mutation failed');
       throw databaseError;
     }
+
+    const payload = result as Partial<MutationPlans>;
+
+    const announcementDelivered =
+      payload.announcement === null || payload.announcement === undefined
+        ? null
+        : await this.announcements.publish(payload.announcement);
+
+    const auditAnnouncementDelivered =
+      payload.auditAnnouncement === null || payload.auditAnnouncement === undefined
+        ? null
+        : await this.auditAnnouncements.publish(payload.auditAnnouncement);
+
+    return { ...result, announcementDelivered, auditAnnouncementDelivered };
   }
 
   private async compensateDatabaseFailure(
