@@ -24,6 +24,9 @@ function announcementDescription(plan: TransferAnnouncementPlan): string {
   if (plan.type === 'TEAM_DISBANDED') {
     return `${formatTeamIdentity(plan.teamIdentity, 'message')} has officially disbanded.`;
   }
+  if (plan.type === 'TEAM_SWAPPED') {
+    return `${formatTeamIdentity(plan.team1Identity, 'message')} and ${formatTeamIdentity(plan.team2Identity, 'message')} have exchanged active rosters.`;
+  }
   const subjectName = plan.presentation?.subject?.username || 'Unknown User';
   const member = formatUserWithVisibleName(plan.discordUserId, subjectName);
   const team = formatTeamIdentity(plan.teamIdentity, 'message');
@@ -62,6 +65,37 @@ export class DiscordTransferAnnouncementAdapter implements TransferAnnouncementA
     const roleColor = plan.presentation?.teamRoleColor;
     const serverName = plan.presentation?.serverName.trim() || 'Discord Server';
     const serverIconUrl = plan.presentation?.serverIconUrl ?? null;
+    const author = createGuildAuthor({ guildName: serverName, guildIconUrl: serverIconUrl });
+
+    if (plan.type === 'TEAM_SWAPPED') {
+      const footer = createTimestampedFooter({
+        text: 'Teams Swapped',
+        timestamp: plan.occurredAt,
+      });
+      const t1 = formatTeamIdentity(plan.team1Identity, 'message');
+      const t2 = formatTeamIdentity(plan.team2Identity, 'message');
+      const descriptionLines = [
+        `${t1} and ${t2} have exchanged their active populations.`,
+        '',
+        `**${plan.swapDetails.team2MovedCount}** members moved to ${t1}.`,
+        `**${plan.swapDetails.team1MovedCount}** members moved to ${t2}.`,
+      ];
+      const embed = createInfoEmbed({
+        author,
+        title: `${BOT_EMOJIS.info} Teams Swapped`,
+        description: formatBlockquote(descriptionLines),
+        color: BOT_COLORS.info,
+        footer: footer.text,
+      });
+
+      await channel
+        .send({ allowedMentions: { parse: [] }, embeds: [embed] })
+        .catch((error: unknown) => {
+          throw new TransferAnnouncementDeliveryError({ cause: error });
+        });
+      return;
+    }
+
     const teamRoleName = formatTeamPlainRoleName({
       emoji: plan.teamIdentity.emoji,
       discordRoleId: plan.teamIdentity.discordRoleId,
@@ -69,7 +103,6 @@ export class DiscordTransferAnnouncementAdapter implements TransferAnnouncementA
     });
     const team = formatTeamIdentity(plan.teamIdentity, 'message');
     const thumbnail = getTeamThumbnail(plan.teamIdentity.emoji);
-    const author = createGuildAuthor({ guildName: serverName, guildIconUrl: serverIconUrl });
 
     if (plan.type === 'TEAM_DISBANDED') {
       const footer = createTimestampedFooter({

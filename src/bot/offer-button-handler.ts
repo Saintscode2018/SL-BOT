@@ -156,11 +156,15 @@ export class OfferButtonHandler {
         tmUsername,
         activePlayerCount:
           result.acceptedPresentation?.activePlayerCount ??
-          result.announcement?.roster?.currentSize ??
+          (result.announcement && 'roster' in result.announcement
+            ? result.announcement.roster?.currentSize
+            : undefined) ??
           1,
         effectiveSquadLimit:
           result.acceptedPresentation?.effectiveSquadLimit ??
-          result.announcement?.roster?.maximumSize ??
+          (result.announcement && 'roster' in result.announcement
+            ? result.announcement.roster?.maximumSize
+            : undefined) ??
           17,
       };
 

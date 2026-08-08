@@ -4,6 +4,7 @@ import { createDiscordClient } from '../bot/client.js';
 import { RosterDepartureCommandHandler } from '../bot/departure-command-handler.js';
 import { RosterPromotionDemotionCommandHandler } from '../bot/promotion-demotion-command-handler.js';
 import { TeamDisbandmentCommandHandler } from '../bot/team-disbandment-command-handler.js';
+import { TeamSwapCommandHandler } from '../bot/team-swap-command-handler.js';
 import { loadCommands } from '../bot/command-loader.js';
 import { commandDefinitions } from '../bot/commands.js';
 import { EventRegistry } from '../bot/event-registry.js';
@@ -53,6 +54,7 @@ import { SetupAuditService } from '../services/setup-audit-service.js';
 import { TransferAnnouncementService } from '../services/transfer-announcement-service.js';
 import { TeamHealthService } from '../services/team-health-service.js';
 import { TeamDisbandmentService } from '../services/team-disbandment-service.js';
+import { TeamSwapService } from '../services/team-swap-service.js';
 import { FranchiseOwnerListService } from '../services/franchise-owner-list-service.js';
 import { Application, type DatabaseLifecycle } from './application.js';
 
@@ -122,6 +124,11 @@ export function createApplication(
     new TeamDisbandmentService(prisma, synchronizedMutations),
     confirmations,
   );
+  const teamSwapCommandHandler = new TeamSwapCommandHandler(
+    commandChannelPolicy,
+    new TeamSwapService(prisma, synchronizedMutations),
+    confirmations,
+  );
   const offerAcceptanceService = new OfferAcceptanceService(
     prisma,
     undefined,
@@ -170,6 +177,7 @@ export function createApplication(
     departureCommandHandler,
     promotionDemotionCommandHandler,
     teamDisbandmentCommandHandler,
+    teamSwapCommandHandler,
     setupAuditService,
     teamHealthService: new TeamHealthService(prisma),
     franchiseOwnerListService: new FranchiseOwnerListService(prisma),

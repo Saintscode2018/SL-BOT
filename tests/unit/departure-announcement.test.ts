@@ -2,14 +2,17 @@ import type { Client, EmbedBuilder } from 'discord.js';
 import { describe, expect, it, vi } from 'vitest';
 
 import { DiscordTransferAnnouncementAdapter } from '../../src/bot/transfer-announcement-adapter.js';
-import type { TransferAnnouncementPlan } from '../../src/domain/roster-mutation.js';
+import type {
+  TransferAnnouncementPlan,
+  UserTransferAnnouncementPlan,
+} from '../../src/domain/roster-mutation.js';
 
 const playerId = '300000000000000001';
 const actorId = '300000000000000099';
 const tmId = '300000000000000009';
 const occurredAt = new Date('2026-08-02T12:00:00.000Z');
 
-function plan(type: 'DEMANDED' | 'RELEASED' | 'DEMOTED'): TransferAnnouncementPlan {
+function plan(type: 'DEMANDED' | 'RELEASED' | 'DEMOTED'): UserTransferAnnouncementPlan {
   return {
     discordGuildId: '100000000000000001',
     channelId: '200000000000000001',

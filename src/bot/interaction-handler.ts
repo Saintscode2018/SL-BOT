@@ -584,6 +584,7 @@ export function createInteractionCreateHandler(
         context.promotionDemotionCommandHandler?.canHandle(adapted.customId) ?? false;
       const isTeamDisbandment =
         context.teamDisbandmentCommandHandler?.canHandle(adapted.customId) ?? false;
+      const isTeamSwap = context.teamSwapCommandHandler?.canHandle(adapted.customId) ?? false;
       try {
         if (isDeparture) {
           await context.departureCommandHandler!.handleButton(adapted);
@@ -591,6 +592,8 @@ export function createInteractionCreateHandler(
           await context.promotionDemotionCommandHandler!.handleButton(adapted);
         } else if (isTeamDisbandment) {
           await context.teamDisbandmentCommandHandler!.handleButton(adapted);
+        } else if (isTeamSwap) {
+          await context.teamSwapCommandHandler!.handleButton(adapted);
         } else {
           await context.offerButtonHandler.handle(adapted);
         }
@@ -604,7 +607,9 @@ export function createInteractionCreateHandler(
         if (adapted.deferred && !adapted.replied) {
           await adapted.editReply({
             embeds: [mapped.embed],
-            ...(isDeparture || isPromotionDemotion || isTeamDisbandment ? { components: [] } : {}),
+            ...(isDeparture || isPromotionDemotion || isTeamDisbandment || isTeamSwap
+              ? { components: [] }
+              : {}),
           });
         } else if (adapted.replied) {
           await adapted.followUp(response);

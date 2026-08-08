@@ -51,11 +51,17 @@ export class DiscordAuditAnnouncementAdapter implements AuditAnnouncementAdapter
     const actorName = presentation?.actor?.username || 'Unknown User';
 
     const playerFormatted =
-      plan.operation === 'TEAM_DISBANDED'
-        ? ''
-        : formatUserWithVisibleName(plan.playerDiscordUserId, subjectName);
-    const teamFormatted = formatTeamIdentity(plan.teamIdentity, 'message');
-    const thumbnail = getTeamThumbnail(plan.teamIdentity.emoji);
+      'playerDiscordUserId' in plan
+        ? formatUserWithVisibleName(plan.playerDiscordUserId, subjectName)
+        : '';
+    const teamFormatted =
+      'teamIdentity' in plan ? formatTeamIdentity(plan.teamIdentity, 'message') : '';
+    const thumbnail =
+      'teamIdentity' in plan
+        ? getTeamThumbnail(plan.teamIdentity.emoji)
+        : 'team1Identity' in plan
+          ? getTeamThumbnail(plan.team1Identity.emoji)
+          : null;
     const author = createGuildAuthor({ guildName: serverName, guildIconUrl: serverIconUrl });
 
     let title: string;
@@ -125,6 +131,19 @@ export class DiscordAuditAnnouncementAdapter implements AuditAnnouncementAdapter
         ].join('\n');
         fields.push(createActorField('Disbanded', plan.actorDiscordUserId, actorName));
         break;
+      case 'TEAM_SWAPPED': {
+        const team1Formatted = formatTeamIdentity(plan.team1Identity, 'message');
+        const team2Formatted = formatTeamIdentity(plan.team2Identity, 'message');
+        title = `${BOT_EMOJIS.success} Team Population Swap`;
+        description = [
+          `Active populations were swapped between ${team1Formatted} and ${team2Formatted}.`,
+          '',
+          `> Members moved to ${team1Formatted}: **${plan.swapDetails.team2MovedCount}**`,
+          `> Members moved to ${team2Formatted}: **${plan.swapDetails.team1MovedCount}**`,
+        ].join('\n');
+        fields.push(createActorField('Swapped', plan.actorDiscordUserId, actorName));
+        break;
+      }
       case 'OFFER_CREATED':
         title = `${BOT_EMOJIS.success} Contract Offer Created`;
         description = `A contract offer for ${teamFormatted} was created for ${playerFormatted}.`;

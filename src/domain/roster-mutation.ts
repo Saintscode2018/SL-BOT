@@ -77,9 +77,30 @@ export interface TeamDisbandTransferAnnouncementPlan {
   presentation?: TransferAnnouncementPresentation;
 }
 
+export interface TeamSwapDetails {
+  team1MovedCount: number;
+  team2MovedCount: number;
+  team1StaffCount?: number;
+  team1PlayerCount?: number;
+  team2StaffCount?: number;
+  team2PlayerCount?: number;
+}
+
+export interface TeamSwapTransferAnnouncementPlan {
+  discordGuildId: string;
+  channelId: string;
+  type: 'TEAM_SWAPPED';
+  team1Identity: TeamIdentitySource;
+  team2Identity: TeamIdentitySource;
+  occurredAt: Date;
+  swapDetails: TeamSwapDetails;
+  presentation?: TransferAnnouncementPresentation;
+}
+
 export type TransferAnnouncementPlan =
   | UserTransferAnnouncementPlan
-  | TeamDisbandTransferAnnouncementPlan;
+  | TeamDisbandTransferAnnouncementPlan
+  | TeamSwapTransferAnnouncementPlan;
 
 export type UserAuditAnnouncementOperation =
   | 'ROSTER_PLAYER_ADDED'
@@ -96,6 +117,7 @@ export type OfferAuditAnnouncementOperation = 'OFFER_CREATED' | 'OFFER_DECLINED'
 export type AuditAnnouncementOperation =
   | UserAuditAnnouncementOperation
   | 'TEAM_DISBANDED'
+  | 'TEAM_SWAPPED'
   | OfferAuditAnnouncementOperation;
 
 export interface TeamDisbandDetails {
@@ -127,6 +149,18 @@ export interface TeamDisbandAuditAnnouncementPlan {
   staffRole?: StaffRoleCode;
   departureMode?: 'STAFF_ONLY' | 'FULL';
   disbandDetails?: TeamDisbandDetails;
+  presentation?: TransferAnnouncementPresentation;
+}
+
+export interface TeamSwapAuditAnnouncementPlan {
+  discordGuildId: string;
+  channelId: string;
+  operation: 'TEAM_SWAPPED';
+  actorDiscordUserId: string;
+  team1Identity: TeamIdentitySource;
+  team2Identity: TeamIdentitySource;
+  occurredAt: Date;
+  swapDetails: TeamSwapDetails;
   presentation?: TransferAnnouncementPresentation;
 }
 
@@ -168,6 +202,7 @@ export type OfferAuditAnnouncementPlan =
 export type AuditAnnouncementPlan =
   | UserAuditAnnouncementPlan
   | TeamDisbandAuditAnnouncementPlan
+  | TeamSwapAuditAnnouncementPlan
   | OfferAuditAnnouncementPlan;
 
 export interface MutationPlans {

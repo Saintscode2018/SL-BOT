@@ -348,7 +348,10 @@ export class RosterPromotionDemotionCommandHandler {
     const targetName = getUserDisplayName(interaction, context.targetDiscordUserId);
     const targetFormatted = formatUserWithVisibleName(context.targetDiscordUserId, targetName);
 
-    const staffRoleId = result.announcement?.staffRoleId;
+    const staffRoleId =
+      result.announcement && 'staffRoleId' in result.announcement
+        ? result.announcement.staffRoleId
+        : undefined;
     const staffRoleMention = staffRoleId
       ? `<@&${staffRoleId}>`
       : `@${eligibility.destinationStaffRole}`;

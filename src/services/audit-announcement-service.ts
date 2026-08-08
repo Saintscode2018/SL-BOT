@@ -32,8 +32,13 @@ export class AuditAnnouncementService implements AuditAnnouncementPublisher {
         operation: plan.operation,
         actorDiscordUserId: 'actorDiscordUserId' in plan ? plan.actorDiscordUserId : undefined,
         playerDiscordUserId:
-          plan.operation === 'TEAM_DISBANDED' ? undefined : plan.playerDiscordUserId,
-        teamRoleId: plan.teamIdentity.discordRoleId,
+          plan.operation === 'TEAM_DISBANDED' || plan.operation === 'TEAM_SWAPPED'
+            ? undefined
+            : plan.playerDiscordUserId,
+        teamRoleId:
+          'teamIdentity' in plan
+            ? plan.teamIdentity.discordRoleId
+            : plan.team1Identity.discordRoleId,
         channelId: plan.channelId,
       });
       return false;

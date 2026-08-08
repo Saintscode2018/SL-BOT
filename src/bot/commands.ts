@@ -565,6 +565,25 @@ const teamCommand: CommandDefinition = {
             .setRequired(true),
         ),
     )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('swap')
+        .setDescription('Swap active populations between two teams')
+        .addStringOption((option) =>
+          option
+            .setName('team1')
+            .setDescription('First team')
+            .setAutocomplete(true)
+            .setRequired(true),
+        )
+        .addStringOption((option) =>
+          option
+            .setName('team2')
+            .setDescription('Second team')
+            .setAutocomplete(true)
+            .setRequired(true),
+        ),
+    )
     .addSubcommand((subcommand) => subcommand.setName('list').setDescription('List active teams')),
   async execute(interaction, context) {
     if (interaction.options?.getSubcommand() === 'disband') {
@@ -572,6 +591,14 @@ const teamCommand: CommandDefinition = {
         throw new ConfigurationError('team disbandment handler is unavailable');
       }
       await context.teamDisbandmentCommandHandler.begin(interaction);
+      return;
+    }
+
+    if (interaction.options?.getSubcommand() === 'swap') {
+      if (context.teamSwapCommandHandler === undefined) {
+        throw new ConfigurationError('team swap handler is unavailable');
+      }
+      await context.teamSwapCommandHandler.begin(interaction);
       return;
     }
 

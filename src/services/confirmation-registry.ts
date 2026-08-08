@@ -8,7 +8,13 @@ import {
 } from '../domain/errors.js';
 import type { Logger } from '../logging/logger.js';
 
-export type ConfirmationActionType = 'DEMAND' | 'RELEASE' | 'PROMOTE' | 'DEMOTE' | 'DISBAND';
+export type ConfirmationActionType =
+  | 'DEMAND'
+  | 'RELEASE'
+  | 'PROMOTE'
+  | 'DEMOTE'
+  | 'DISBAND'
+  | 'SWAP';
 export type ConfirmationTerminalState = 'CONSUMED' | 'CANCELLED' | 'EXPIRED';
 
 export interface ConfirmationContext {
@@ -17,6 +23,7 @@ export interface ConfirmationContext {
   discordGuildId: string;
   initiatorDiscordUserId: string;
   teamId: string;
+  team2Id?: string;
   targetDiscordUserId?: string;
   initiatorStaffRole?: 'TM' | 'ATM' | 'PM';
   targetStaffRole?: 'TM' | 'ATM' | 'PM';
@@ -203,6 +210,7 @@ export class ConfirmationRegistry {
       discordGuildId: record.discordGuildId,
       initiatorDiscordUserId: record.initiatorDiscordUserId,
       teamId: record.teamId,
+      ...(record.team2Id === undefined ? {} : { team2Id: record.team2Id }),
       ...(record.targetDiscordUserId === undefined
         ? {}
         : { targetDiscordUserId: record.targetDiscordUserId }),

@@ -40,6 +40,18 @@ export class DiscordTransferAnnouncementPresentationProvider implements Transfer
   public resolve(plan: TransferAnnouncementPlan): Promise<TransferAnnouncementPlan> {
     const guild = this.client.guilds.cache.get(plan.discordGuildId);
     if (guild === undefined) return Promise.resolve(plan);
+    if (plan.type === 'TEAM_SWAPPED') {
+      return Promise.resolve({
+        ...plan,
+        presentation: {
+          serverName: guild.name,
+          serverIconUrl: typeof guild.iconURL === 'function' ? guild.iconURL() : null,
+          subject: null,
+          actor: null,
+          teamManager: null,
+        },
+      });
+    }
     const teamRole = guild.roles.cache.get(plan.teamIdentity.discordRoleId);
     return Promise.resolve({
       ...plan,

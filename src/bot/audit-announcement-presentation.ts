@@ -44,6 +44,17 @@ export class DiscordAuditAnnouncementPresentationProvider implements AuditAnnoun
     }
     const guild = this.client.guilds.cache.get(plan.discordGuildId);
     if (guild === undefined) return Promise.resolve(plan);
+    if (plan.operation === 'TEAM_SWAPPED') {
+      return Promise.resolve({
+        ...plan,
+        presentation: {
+          serverName: guild.name,
+          serverIconUrl: typeof guild.iconURL === 'function' ? guild.iconURL() : null,
+          subject: null,
+          actor: resolveUser(guild, plan.actorDiscordUserId),
+        },
+      });
+    }
     const teamRole = guild.roles.cache.get(plan.teamIdentity.discordRoleId);
     return Promise.resolve({
       ...plan,
