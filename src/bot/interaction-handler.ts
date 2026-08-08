@@ -304,8 +304,11 @@ export class DiscordCommandInteraction implements CommandInteraction {
     return resolveGuildRoleMetadata(this.interaction, this.logger, roleId);
   }
 
-  public async executeDebugReset(database: CommandContext['database']): Promise<void> {
-    await sendDebugResetPrompt(this.interaction, database);
+  public async executeDebugReset(
+    database: CommandContext['database'],
+    setupAuditService?: CommandContext['setupAuditService'],
+  ): Promise<void> {
+    await sendDebugResetPrompt(this.interaction, database, setupAuditService);
   }
 
   public async reply(response: SafeInteractionResponse): Promise<void> {

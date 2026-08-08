@@ -1664,7 +1664,7 @@ export const debugResetCommand: CommandDefinition = {
     if (interaction.executeDebugReset === undefined) {
       throw new ConfigurationError('debug reset interaction support is unavailable');
     }
-    await interaction.executeDebugReset(context.database);
+    await interaction.executeDebugReset(context.database, context.setupAuditService);
   },
 };
 

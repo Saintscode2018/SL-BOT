@@ -92,7 +92,10 @@ export interface CommandInteraction {
   getGuildMemberDisplayName?(userId: string): string | null;
   resolveGuildRoleMetadata?(roleId: string): Promise<GuildRoleMetadata | null>;
   resolveGuildMemberDisplayName?(userId: string): Promise<string | null>;
-  executeDebugReset?(database: PrismaClient): Promise<void>;
+  executeDebugReset?(
+    database: PrismaClient,
+    setupAuditService?: Pick<SetupAuditService, 'publish'>,
+  ): Promise<void>;
   reply(response: SafeInteractionResponse): Promise<void>;
 
   deferReply(response?: DeferredInteractionResponse): Promise<void>;

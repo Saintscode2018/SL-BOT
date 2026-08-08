@@ -155,7 +155,7 @@ function resetInteraction(input: {
       },
     }),
   );
-  const editReply = vi.fn();
+  const editReply = vi.fn(() => Promise.resolve());
   const interaction = {
     guildId: firstDiscordGuildId,
     user: { id: initiatingUserId },
@@ -360,6 +360,197 @@ describe('debug reset', () => {
     expect(messages.setTerminalState).not.toHaveBeenCalled();
     expect(delivery.recordMessageUpdateFailure).not.toHaveBeenCalled();
     expect(await context.client.offer.count()).toBe(0);
+  });
+
+  describe('audit channel publishing', () => {
+    const auditChannelId = '900000000000000001';
+
+    it('captures audit context before deletion and publishes audit message only after successful reset', async () => {
+      const seeded = await seedGuild(context.client, firstDiscordGuildId, '1');
+      await context.client.guildSettings.update({
+        where: { guildId: seeded.guildId },
+        data: { auditChannelId },
+      });
+
+      const setupAuditService = {
+        publish: vi.fn(async () => {
+          expect(await context.client.guild.count()).toBe(0);
+          return true;
+        }),
+      };
+
+      const confirm = button(
+        `${DEBUG_RESET_CONFIRM_CUSTOM_ID_PREFIX}${initiatingUserId}`,
+        initiatingUserId,
+      );
+      const reset = resetInteraction({ candidates: [confirm.interaction] });
+
+      await sendDebugResetPrompt(reset.interaction, context.client, setupAuditService);
+
+      expect(setupAuditService.publish).toHaveBeenCalledOnce();
+      expect(setupAuditService.publish).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channelId: auditChannelId,
+          title: 'Debug Reset Completed',
+          description: 'Development/debug data for this server was reset successfully.',
+          actorDiscordUserId: initiatingUserId,
+          actorVerb: 'Reset',
+        }),
+      );
+
+      expect(confirm.update).toHaveBeenCalledOnce();
+      const updateCall = confirm.update.mock.calls[0] as [
+        { embeds: Array<{ data: { title?: string; description?: string } }> },
+      ];
+      expect(updateCall[0].embeds[0]?.data.title).toContain('Debug Data Reset');
+      expect(updateCall[0].embeds[0]?.data.description).not.toContain('could not be delivered');
+    });
+
+    it('skips audit channel delivery cleanly when unconfigured', async () => {
+      await seedGuild(context.client, firstDiscordGuildId, '1');
+      const setupAuditService = {
+        publish: vi.fn(() => Promise.resolve(true)),
+      };
+
+      const confirm = button(
+        `${DEBUG_RESET_CONFIRM_CUSTOM_ID_PREFIX}${initiatingUserId}`,
+        initiatingUserId,
+      );
+      const reset = resetInteraction({ candidates: [confirm.interaction] });
+
+      await sendDebugResetPrompt(reset.interaction, context.client, setupAuditService);
+
+      expect(setupAuditService.publish).not.toHaveBeenCalled();
+      expect(await context.client.guild.count()).toBe(0);
+      expect(confirm.update).toHaveBeenCalledOnce();
+      const updateCall = confirm.update.mock.calls[0] as [
+        { embeds: Array<{ data: { description?: string } }> },
+      ];
+      expect(updateCall[0].embeds[0]?.data.description).not.toContain('could not be delivered');
+    });
+
+    it('appends private warning when configured audit channel delivery fails', async () => {
+      const seeded = await seedGuild(context.client, firstDiscordGuildId, '1');
+      await context.client.guildSettings.update({
+        where: { guildId: seeded.guildId },
+        data: { auditChannelId },
+      });
+
+      const setupAuditService = {
+        publish: vi.fn(() => Promise.resolve(false)),
+      };
+
+      const confirm = button(
+        `${DEBUG_RESET_CONFIRM_CUSTOM_ID_PREFIX}${initiatingUserId}`,
+        initiatingUserId,
+      );
+      const reset = resetInteraction({ candidates: [confirm.interaction] });
+
+      await sendDebugResetPrompt(reset.interaction, context.client, setupAuditService);
+
+      expect(setupAuditService.publish).toHaveBeenCalledOnce();
+      expect(await context.client.guild.count()).toBe(0);
+      expect(confirm.update).toHaveBeenCalledOnce();
+      const updateCall = confirm.update.mock.calls[0] as [
+        { embeds: Array<{ data: { description?: string } }> },
+      ];
+      expect(updateCall[0].embeds[0]?.data.description).toContain(
+        'All SL Bot data for this server was removed, but the Audit announcement could not be delivered.',
+      );
+    });
+
+    it('does not publish audit message if reset transaction fails and does not attempt second reset', async () => {
+      const seeded = await seedGuild(context.client, firstDiscordGuildId, '1');
+      await context.client.guildSettings.update({
+        where: { guildId: seeded.guildId },
+        data: { auditChannelId },
+      });
+
+      const setupAuditService = {
+        publish: vi.fn(() => Promise.resolve(true)),
+      };
+
+      await context.client.$executeRawUnsafe(
+        "create trigger prevent_club_delete_audit_test before delete on Club begin select raise(abort, 'blocked'); end",
+      );
+
+      try {
+        const confirm = button(
+          `${DEBUG_RESET_CONFIRM_CUSTOM_ID_PREFIX}${initiatingUserId}`,
+          initiatingUserId,
+        );
+        const reset = resetInteraction({ candidates: [confirm.interaction] });
+
+        await expect(
+          sendDebugResetPrompt(reset.interaction, context.client, setupAuditService),
+        ).rejects.toThrow();
+
+        expect(setupAuditService.publish).not.toHaveBeenCalled();
+        expect(await context.client.guild.count()).toBe(1);
+      } finally {
+        await context.client.$executeRawUnsafe(
+          'drop trigger if exists prevent_club_delete_audit_test',
+        );
+      }
+    });
+
+    it('performs no audit publication and no reset on cancel, timeout, or unauthorized interaction', async () => {
+      await seedGuild(context.client, firstDiscordGuildId, '1');
+      const setupAuditService = {
+        publish: vi.fn(() => Promise.resolve(true)),
+      };
+
+      // 1. Cancel
+      const cancel = button(
+        `${DEBUG_RESET_CANCEL_CUSTOM_ID_PREFIX}${initiatingUserId}`,
+        initiatingUserId,
+      );
+      const resetCancel = resetInteraction({ candidates: [cancel.interaction] });
+      await sendDebugResetPrompt(resetCancel.interaction, context.client, setupAuditService);
+      expect(setupAuditService.publish).not.toHaveBeenCalled();
+      expect(await context.client.guild.count()).toBe(1);
+
+      // 2. Timeout/expired
+      const resetTimeout = resetInteraction({ candidates: [] });
+      await sendDebugResetPrompt(resetTimeout.interaction, context.client, setupAuditService);
+      expect(setupAuditService.publish).not.toHaveBeenCalled();
+      expect(await context.client.guild.count()).toBe(1);
+
+      // 3. Unauthorized
+      const resetUnauth = resetInteraction({ candidates: [], administrator: false });
+      await expect(
+        sendDebugResetPrompt(resetUnauth.interaction, context.client, setupAuditService),
+      ).rejects.toBeInstanceOf(AuthorizationError);
+      expect(setupAuditService.publish).not.toHaveBeenCalled();
+      expect(await context.client.guild.count()).toBe(1);
+    });
+
+    it('proves no post-reset settings query is executed for audit channel delivery', async () => {
+      const seeded = await seedGuild(context.client, firstDiscordGuildId, '1');
+      await context.client.guildSettings.update({
+        where: { guildId: seeded.guildId },
+        data: { auditChannelId },
+      });
+
+      const setupAuditService = {
+        publish: vi.fn(() => Promise.resolve(true)),
+      };
+
+      const confirm = button(
+        `${DEBUG_RESET_CONFIRM_CUSTOM_ID_PREFIX}${initiatingUserId}`,
+        initiatingUserId,
+      );
+      const reset = resetInteraction({ candidates: [confirm.interaction] });
+
+      await sendDebugResetPrompt(reset.interaction, context.client, setupAuditService);
+
+      // Settings and guild are completely gone from DB
+      expect(await context.client.guildSettings.count()).toBe(0);
+      // Yet audit message was successfully published using pre-reset captured channelId
+      expect(setupAuditService.publish).toHaveBeenCalledWith(
+        expect.objectContaining({ channelId: auditChannelId }),
+      );
+    });
   });
 });
 
