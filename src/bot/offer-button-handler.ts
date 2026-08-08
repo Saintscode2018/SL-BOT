@@ -16,6 +16,7 @@ import type {
   GuildRoleMetadata,
   SafeInteractionResponse,
 } from './types.js';
+import { formatRosterAdminWarning } from './embeds.js';
 import { parseOfferCustomId } from './offer-custom-id.js';
 
 export interface OfferButtonInteraction {
@@ -158,7 +159,14 @@ export class OfferButtonHandler {
         'ACCEPTED',
         presentationPayload,
       );
-      await this.respond(interaction, 'Offer accepted successfully.');
+      const warning = formatRosterAdminWarning(
+        result.announcementDelivered,
+        result.auditAnnouncementDelivered,
+      );
+      const responseText = warning
+        ? `Offer accepted successfully.\n\n${warning}`
+        : 'Offer accepted successfully.';
+      await this.respond(interaction, responseText);
       return true;
     } catch (error: unknown) {
       if (error instanceof OfferExpiredError) {

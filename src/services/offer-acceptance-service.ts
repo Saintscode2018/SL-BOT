@@ -50,6 +50,7 @@ export interface OfferAcceptanceResult extends MutationPlans {
   transaction: LeagueTransaction;
   transactionType: 'SIGNING';
   announcementDelivered?: boolean | null;
+  auditAnnouncementDelivered?: boolean | null;
   acceptedPresentation?: AcceptedOfferPresentationData;
 }
 
@@ -333,6 +334,18 @@ export class OfferAcceptanceService {
                   maximumSize: effectiveLimit,
                   teamManagerDiscordUserId: teamManager?.discordUserId ?? null,
                 },
+              },
+        auditAnnouncement:
+          settings?.auditChannelId === null || settings?.auditChannelId === undefined
+            ? null
+            : {
+                discordGuildId: guild.discordGuildId,
+                channelId: settings.auditChannelId,
+                operation: 'ROSTER_PLAYER_ADDED',
+                actorDiscordUserId: player.discordUserId,
+                playerDiscordUserId: player.discordUserId,
+                teamIdentity: destinationClub,
+                occurredAt: acceptedAt,
               },
       },
     };

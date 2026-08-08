@@ -15,6 +15,7 @@ import type {
   OfferMessageAdapter,
   OfferMessageReference,
 } from '../../src/services/offer-delivery-service.js';
+import type { OfferAcceptanceResult } from '../../src/services/offer-acceptance-service.js';
 import type { OfferResponseService } from '../../src/services/offer-response-service.js';
 
 describe('Presentation Hotfix - Hard Regression Guards & Presentation Logic', () => {
@@ -396,6 +397,151 @@ describe('Presentation Hotfix - Hard Regression Guards & Presentation Logic', ()
       await expect(handler.handle(mockInteraction)).rejects.toThrow('Already declined');
       expect(deferUpdateFn).toHaveBeenCalledTimes(1);
       expect(replyFn).not.toHaveBeenCalled();
+    });
+
+    it('formats appropriate warnings on accepted offer response based on announcement delivery results', async () => {
+      const editReplyFn = vi.fn().mockResolvedValue(undefined);
+      const createInteraction = (): OfferButtonInteraction => ({
+        customId: 'offer:accept:123e4567-e89b-12d3-a456-426614174000',
+        userId: 'player-1',
+        channelId: 'dm-chan-1',
+        messageId: 'dm-msg-1',
+        replied: false,
+        deferred: true,
+        deferReply: vi.fn().mockResolvedValue(undefined),
+        reply: vi.fn(),
+        editReply: editReplyFn,
+        followUp: vi.fn(),
+      });
+
+      const baseResult: OfferAcceptanceResult = {
+        offer: {
+          id: '123e4567-e89b-12d3-a456-426614174000',
+        } as unknown as OfferAcceptanceResult['offer'],
+        player: {
+          id: 'player-1',
+          discordUserId: 'player-1',
+        } as unknown as OfferAcceptanceResult['player'],
+        destinationClub: {
+          discordRoleId: 'role-1',
+          emoji: '⚽',
+        } as unknown as OfferAcceptanceResult['destinationClub'],
+        sourceClub: null,
+        newMembership: {} as unknown as OfferAcceptanceResult['newMembership'],
+        transaction: {} as unknown as OfferAcceptanceResult['transaction'],
+        transactionType: 'SIGNING',
+        roleMutation: { discordGuildId: 'g1', discordUserId: 'u1', addRoles: [], removeRoles: [] },
+        announcement: null,
+      };
+
+      const mockDelivery: Pick<OfferDeliveryService, 'recordMessageUpdateFailure'> = {
+        recordMessageUpdateFailure: vi.fn(),
+      };
+      const mockMessages: OfferMessageAdapter = {
+        sendOffer: vi.fn(),
+        setTerminalState: vi.fn().mockResolvedValue(undefined),
+        cleanupOrphan: vi.fn(),
+      };
+      const mockLogger: Logger = { error: vi.fn(), debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
+
+      // 1. Both true -> no warning
+      const mockResponses1 = {
+        acceptOffer: vi.fn().mockResolvedValue({
+          ...baseResult,
+          announcementDelivered: true,
+          auditAnnouncementDelivered: true,
+        }),
+        declineOffer: vi.fn(),
+      };
+      const handler1 = new OfferButtonHandler(
+        mockResponses1,
+        mockDelivery,
+        mockMessages,
+        mockLogger,
+      );
+      await handler1.handle(createInteraction());
+      expect(editReplyFn).toHaveBeenLastCalledWith({ content: 'Offer accepted successfully.' });
+
+      // 2. Audit false + Transfer true -> Audit warning
+      const mockResponses2 = {
+        acceptOffer: vi.fn().mockResolvedValue({
+          ...baseResult,
+          announcementDelivered: true,
+          auditAnnouncementDelivered: false,
+        }),
+        declineOffer: vi.fn(),
+      };
+      const handler2 = new OfferButtonHandler(
+        mockResponses2,
+        mockDelivery,
+        mockMessages,
+        mockLogger,
+      );
+      await handler2.handle(createInteraction());
+      expect(editReplyFn).toHaveBeenLastCalledWith({
+        content:
+          'Offer accepted successfully.\n\n⚠️ The roster was updated, but the Audit announcement could not be delivered.',
+      });
+
+      // 3. Audit true + Transfer false -> Transfer Market warning
+      const mockResponses3 = {
+        acceptOffer: vi.fn().mockResolvedValue({
+          ...baseResult,
+          announcementDelivered: false,
+          auditAnnouncementDelivered: true,
+        }),
+        declineOffer: vi.fn(),
+      };
+      const handler3 = new OfferButtonHandler(
+        mockResponses3,
+        mockDelivery,
+        mockMessages,
+        mockLogger,
+      );
+      await handler3.handle(createInteraction());
+      expect(editReplyFn).toHaveBeenLastCalledWith({
+        content:
+          'Offer accepted successfully.\n\n⚠️ The roster was updated, but the Transfer Market announcement could not be delivered.',
+      });
+
+      // 4. Both false -> Combined warning
+      const mockResponses4 = {
+        acceptOffer: vi.fn().mockResolvedValue({
+          ...baseResult,
+          announcementDelivered: false,
+          auditAnnouncementDelivered: false,
+        }),
+        declineOffer: vi.fn(),
+      };
+      const handler4 = new OfferButtonHandler(
+        mockResponses4,
+        mockDelivery,
+        mockMessages,
+        mockLogger,
+      );
+      await handler4.handle(createInteraction());
+      expect(editReplyFn).toHaveBeenLastCalledWith({
+        content:
+          'Offer accepted successfully.\n\n⚠️ The roster was updated, but the Audit and Transfer Market announcements could not be delivered.',
+      });
+
+      // 5. Unconfigured (null) -> no warning
+      const mockResponses5 = {
+        acceptOffer: vi.fn().mockResolvedValue({
+          ...baseResult,
+          announcementDelivered: null,
+          auditAnnouncementDelivered: null,
+        }),
+        declineOffer: vi.fn(),
+      };
+      const handler5 = new OfferButtonHandler(
+        mockResponses5,
+        mockDelivery,
+        mockMessages,
+        mockLogger,
+      );
+      await handler5.handle(createInteraction());
+      expect(editReplyFn).toHaveBeenLastCalledWith({ content: 'Offer accepted successfully.' });
     });
   });
 });
