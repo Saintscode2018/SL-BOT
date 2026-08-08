@@ -1635,9 +1635,17 @@ const offerCommand: CommandDefinition = {
       execution.authorization.discordUserId,
       actorDisplayName,
     );
+    const warning = formatRosterAdminWarning(
+      undefined,
+      result.auditAnnouncementDelivered,
+      'The offer was created',
+    );
+    const baseDescription = `A private contract offer has been sent to ${targetFormatted} by ${actorFormatted} on behalf of ${formatTeamIdentity(presentation.team, 'message')}.`;
+    const description = warning ? `${baseDescription}\n\n${warning}` : baseDescription;
+
     const embed = createSuccessEmbed({
       title: `${BOT_EMOJIS.success} Contract Offer Sent`,
-      description: `A private contract offer has been sent to ${targetFormatted} by ${actorFormatted} on behalf of ${formatTeamIdentity(presentation.team, 'message')}.`,
+      description,
       color: getTeamEmbedColor(presentation, BOT_COLORS.success),
       thumbnail,
     });

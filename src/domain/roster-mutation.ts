@@ -91,7 +91,12 @@ export type UserAuditAnnouncementOperation =
   | 'ROSTER_PROMOTED'
   | 'ROSTER_DEMOTED';
 
-export type AuditAnnouncementOperation = UserAuditAnnouncementOperation | 'TEAM_DISBANDED';
+export type OfferAuditAnnouncementOperation = 'OFFER_CREATED' | 'OFFER_DECLINED' | 'OFFER_EXPIRED';
+
+export type AuditAnnouncementOperation =
+  | UserAuditAnnouncementOperation
+  | 'TEAM_DISBANDED'
+  | OfferAuditAnnouncementOperation;
 
 export interface TeamDisbandDetails {
   endedMembershipCount: number;
@@ -125,7 +130,45 @@ export interface TeamDisbandAuditAnnouncementPlan {
   presentation?: TransferAnnouncementPresentation;
 }
 
-export type AuditAnnouncementPlan = UserAuditAnnouncementPlan | TeamDisbandAuditAnnouncementPlan;
+export interface OfferCreatedAuditAnnouncementPlan {
+  discordGuildId: string;
+  channelId: string;
+  operation: 'OFFER_CREATED';
+  actorDiscordUserId: string;
+  playerDiscordUserId: string;
+  teamIdentity: TeamIdentitySource;
+  occurredAt: Date;
+  expiresAt: Date;
+}
+
+export interface OfferDeclinedAuditAnnouncementPlan {
+  discordGuildId: string;
+  channelId: string;
+  operation: 'OFFER_DECLINED';
+  actorDiscordUserId: string;
+  playerDiscordUserId: string;
+  teamIdentity: TeamIdentitySource;
+  occurredAt: Date;
+}
+
+export interface OfferExpiredAuditAnnouncementPlan {
+  discordGuildId: string;
+  channelId: string;
+  operation: 'OFFER_EXPIRED';
+  playerDiscordUserId: string;
+  teamIdentity: TeamIdentitySource;
+  occurredAt: Date;
+}
+
+export type OfferAuditAnnouncementPlan =
+  | OfferCreatedAuditAnnouncementPlan
+  | OfferDeclinedAuditAnnouncementPlan
+  | OfferExpiredAuditAnnouncementPlan;
+
+export type AuditAnnouncementPlan =
+  | UserAuditAnnouncementPlan
+  | TeamDisbandAuditAnnouncementPlan
+  | OfferAuditAnnouncementPlan;
 
 export interface MutationPlans {
   roleMutation: MemberRoleMutationPlan;

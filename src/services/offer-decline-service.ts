@@ -17,6 +17,12 @@ import { MembershipRepository } from '../repositories/membership-repository.js';
 import { OfferRepository } from '../repositories/offer-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
 
+import type {
+  OfferDeclinedAuditAnnouncementPlan,
+  OfferExpiredAuditAnnouncementPlan,
+} from '../domain/roster-mutation.js';
+import type { AuditAnnouncementPublisher } from './audit-announcement-service.js';
+
 export const offerDeclinedAuditEventType = 'offer.declined';
 export const offerExpiredAuditEventType = 'offer.expired';
 
@@ -28,10 +34,15 @@ export interface OfferDeclineResult {
   activePlayerCount: number;
   effectiveSquadLimit: number;
   guildName: string;
+  auditAnnouncement?: OfferDeclinedAuditAnnouncementPlan | null;
+  auditAnnouncementDelivered?: boolean | null;
 }
 
 export class OfferDeclineService {
-  public constructor(private readonly database: PrismaClient) {}
+  public constructor(
+    private readonly database: PrismaClient,
+    private readonly auditAnnouncements?: AuditAnnouncementPublisher,
+  ) {}
 
   public async declineOffer(input: {
     offerId: string;
@@ -40,7 +51,9 @@ export class OfferDeclineService {
   }): Promise<OfferDeclineResult> {
     const respondedAt = input.declinedAt ?? new Date();
     const discordUserId = discordSnowflakeSchema.parse(input.decliningDiscordUserId);
-    let outcome: { kind: 'declined'; result: OfferDeclineResult } | { kind: 'expired' };
+    let outcome:
+      | { kind: 'declined'; result: OfferDeclineResult }
+      | { kind: 'expired'; auditAnnouncement: OfferExpiredAuditAnnouncementPlan | null };
     try {
       outcome = await this.database.$transaction(async (transaction) => {
         const offers = new OfferRepository(transaction);
@@ -66,7 +79,27 @@ export class OfferDeclineService {
             beforeState: { status: 'PENDING' },
             afterState: { status: expired.status },
           });
-          return { kind: 'expired' } as const;
+
+          const destinationClub = await new ClubRepository(transaction).getById(offer.clubId);
+          const guildSettings = await new GuildRepository(transaction).getSettings(offer.guildId);
+          const guild = await new GuildRepository(transaction).requireById(offer.guildId);
+
+          const auditAnnouncement: OfferExpiredAuditAnnouncementPlan | null =
+            guildSettings?.auditChannelId === null || guildSettings?.auditChannelId === undefined
+              ? null
+              : {
+                  discordGuildId: guild.discordGuildId,
+                  channelId: guildSettings.auditChannelId,
+                  operation: 'OFFER_EXPIRED',
+                  playerDiscordUserId: player.discordUserId,
+                  teamIdentity: destinationClub ?? {
+                    discordRoleId: '',
+                    emoji: '',
+                  },
+                  occurredAt: respondedAt,
+                };
+
+          return { kind: 'expired', auditAnnouncement } as const;
         }
         const declined = await offers.transition(offer.id, 'DECLINED', respondedAt);
         await new AuditEventRepository(transaction).create({
@@ -94,6 +127,19 @@ export class OfferDeclineService {
         );
         const tmUser = tmMembership === null ? null : await userRepo.getById(tmMembership.userId);
 
+        const auditAnnouncement: OfferDeclinedAuditAnnouncementPlan | null =
+          guildSettings?.auditChannelId === null || guildSettings?.auditChannelId === undefined
+            ? null
+            : {
+                discordGuildId: guild.discordGuildId,
+                channelId: guildSettings.auditChannelId,
+                operation: 'OFFER_DECLINED',
+                actorDiscordUserId: player.discordUserId,
+                playerDiscordUserId: player.discordUserId,
+                teamIdentity: destinationClub,
+                occurredAt: respondedAt,
+              };
+
         return {
           kind: 'declined',
           result: {
@@ -104,6 +150,7 @@ export class OfferDeclineService {
             activePlayerCount,
             effectiveSquadLimit,
             guildName: guild.name,
+            auditAnnouncement,
           },
         } as const;
       });
@@ -119,7 +166,18 @@ export class OfferDeclineService {
       }
       throw error;
     }
-    if (outcome.kind === 'expired') throw new OfferExpiredError('offer has expired');
-    return outcome.result;
+    if (outcome.kind === 'expired') {
+      if (outcome.auditAnnouncement && this.auditAnnouncements) {
+        await this.auditAnnouncements.publish(outcome.auditAnnouncement).catch(() => false);
+      }
+      throw new OfferExpiredError('offer has expired');
+    }
+    let auditAnnouncementDelivered: boolean | null = null;
+    if (outcome.result.auditAnnouncement && this.auditAnnouncements) {
+      auditAnnouncementDelivered = await this.auditAnnouncements.publish(
+        outcome.result.auditAnnouncement,
+      );
+    }
+    return { ...outcome.result, auditAnnouncementDelivered };
   }
 }

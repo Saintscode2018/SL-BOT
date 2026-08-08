@@ -30,7 +30,7 @@ export class AuditAnnouncementService implements AuditAnnouncementPublisher {
       this.logger.error('audit announcement delivery failed', error, {
         discordGuildId: plan.discordGuildId,
         operation: plan.operation,
-        actorDiscordUserId: plan.actorDiscordUserId,
+        actorDiscordUserId: 'actorDiscordUserId' in plan ? plan.actorDiscordUserId : undefined,
         playerDiscordUserId:
           plan.operation === 'TEAM_DISBANDED' ? undefined : plan.playerDiscordUserId,
         teamRoleId: plan.teamIdentity.discordRoleId,

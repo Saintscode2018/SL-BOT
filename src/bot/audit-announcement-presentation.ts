@@ -35,6 +35,13 @@ export class DiscordAuditAnnouncementPresentationProvider implements AuditAnnoun
   public constructor(private readonly client: Client) {}
 
   public resolve(plan: AuditAnnouncementPlan): Promise<AuditAnnouncementPlan> {
+    if (
+      plan.operation === 'OFFER_CREATED' ||
+      plan.operation === 'OFFER_DECLINED' ||
+      plan.operation === 'OFFER_EXPIRED'
+    ) {
+      return Promise.resolve(plan);
+    }
     const guild = this.client.guilds.cache.get(plan.discordGuildId);
     if (guild === undefined) return Promise.resolve(plan);
     const teamRole = guild.roles.cache.get(plan.teamIdentity.discordRoleId);

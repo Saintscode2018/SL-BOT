@@ -127,7 +127,7 @@ export function createApplication(
     undefined,
     synchronizedMutations,
   );
-  const offerDeclineService = new OfferDeclineService(prisma);
+  const offerDeclineService = new OfferDeclineService(prisma, auditAnnouncements);
   const offerMessages = new DiscordOfferMessageAdapter(discord);
   const setupAuditService = new SetupAuditService(
     new DiscordSetupAuditMessageAdapter(discord),
@@ -138,9 +138,15 @@ export function createApplication(
     offerMessages,
     logger,
     new OfferCreationService(prisma),
+    auditAnnouncements,
   );
   const offerButtonHandler = new OfferButtonHandler(
-    new OfferResponseService(prisma, offerAcceptanceService, offerDeclineService),
+    new OfferResponseService(
+      prisma,
+      offerAcceptanceService,
+      offerDeclineService,
+      auditAnnouncements,
+    ),
     offerDeliveryService,
     offerMessages,
     logger,

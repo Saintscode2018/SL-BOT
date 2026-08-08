@@ -20,6 +20,8 @@ import { AuthorizationService } from './authorization-service.js';
 import { formatTeamIdentity } from '../domain/team-label.js';
 import { getFriendlyPositionName, type StaffType } from './staff-management-service.js';
 
+import type { OfferCreatedAuditAnnouncementPlan } from '../domain/roster-mutation.js';
+
 export const offerCreatedAuditEventType = 'offer.created';
 
 export interface CreateOfferWorkflowInput {
@@ -39,6 +41,8 @@ export interface OfferCreationResult {
   leagueName: string;
   activePlayerCount: number;
   effectiveSquadLimit: number;
+  auditAnnouncement?: OfferCreatedAuditAnnouncementPlan | null;
+  auditAnnouncementDelivered?: boolean | null;
 }
 
 export class OfferCreationService {
@@ -120,6 +124,20 @@ export class OfferCreationService {
         },
         metadata: { sourceClubId: null },
       });
+      const auditAnnouncement: OfferCreatedAuditAnnouncementPlan | null =
+        authorization.settings.auditChannelId === null ||
+        authorization.settings.auditChannelId === undefined
+          ? null
+          : {
+              discordGuildId: authorization.guild.discordGuildId,
+              channelId: authorization.settings.auditChannelId,
+              operation: 'OFFER_CREATED',
+              actorDiscordUserId: offeredBy.discordUserId,
+              playerDiscordUserId: player.discordUserId,
+              teamIdentity: destinationClub,
+              occurredAt: offer.createdAt,
+              expiresAt: offer.expiresAt,
+            };
       return {
         offer,
         destinationClub,
@@ -129,6 +147,7 @@ export class OfferCreationService {
         leagueName: authorization.guild.name,
         activePlayerCount: playerCount,
         effectiveSquadLimit,
+        auditAnnouncement,
       };
     });
   }

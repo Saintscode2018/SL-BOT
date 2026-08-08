@@ -8,6 +8,8 @@ import { OfferAcceptanceService } from './offer-acceptance-service.js';
 import type { OfferDeclineResult } from './offer-decline-service.js';
 import { OfferDeclineService } from './offer-decline-service.js';
 
+import type { AuditAnnouncementPublisher } from './audit-announcement-service.js';
+
 export interface OfferResponseInput {
   offerId: string;
   respondingDiscordUserId: string;
@@ -16,11 +18,20 @@ export interface OfferResponseInput {
 }
 
 export class OfferResponseService {
+  private readonly database: PrismaClient;
+  private readonly acceptance: OfferAcceptanceService;
+  private readonly decline: OfferDeclineService;
+
   public constructor(
-    private readonly database: PrismaClient,
-    private readonly acceptance = new OfferAcceptanceService(database),
-    private readonly decline = new OfferDeclineService(database),
-  ) {}
+    database: PrismaClient,
+    acceptance?: OfferAcceptanceService,
+    decline?: OfferDeclineService,
+    auditAnnouncements?: AuditAnnouncementPublisher,
+  ) {
+    this.database = database;
+    this.acceptance = acceptance ?? new OfferAcceptanceService(database);
+    this.decline = decline ?? new OfferDeclineService(database, auditAnnouncements);
+  }
 
   public async acceptOffer(input: OfferResponseInput): Promise<OfferAcceptanceResult> {
     await this.validateMessage(input);

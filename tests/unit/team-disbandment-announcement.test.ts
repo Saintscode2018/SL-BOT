@@ -189,7 +189,7 @@ describe('Team disbandment announcement presentation and routing', () => {
 
     const auditProvider = new DiscordAuditAnnouncementPresentationProvider(client);
     const resolvedAudit = await auditProvider.resolve(disbandAuditPlan());
-    expect(resolvedAudit.presentation).toMatchObject({
+    expect('presentation' in resolvedAudit ? resolvedAudit.presentation : undefined).toMatchObject({
       serverName: 'Super League Guild',
       teamRoleName: 'Preserved Team Role',
       teamRoleColor: 0xff0000,

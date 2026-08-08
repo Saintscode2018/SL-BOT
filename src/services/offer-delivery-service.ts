@@ -5,6 +5,7 @@ import type { Logger } from '../logging/logger.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { OfferRepository } from '../repositories/offer-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
+import type { AuditAnnouncementPublisher } from './audit-announcement-service.js';
 import type { CreateOfferWorkflowInput, OfferCreationResult } from './offer-creation-service.js';
 import { OfferCreationService } from './offer-creation-service.js';
 
@@ -58,6 +59,7 @@ export class OfferDeliveryService {
     private readonly messages: OfferMessageAdapter,
     private readonly logger: Logger,
     private readonly creation = new OfferCreationService(database),
+    private readonly auditAnnouncements?: AuditAnnouncementPublisher,
   ) {}
 
   public async createAndDeliver(
@@ -84,7 +86,13 @@ export class OfferDeliveryService {
         reference.channelId,
         reference.messageId,
       );
-      return { ...result, offer };
+      let auditAnnouncementDelivered: boolean | null = null;
+      if (result.auditAnnouncement && this.auditAnnouncements) {
+        auditAnnouncementDelivered = await this.auditAnnouncements.publish(
+          result.auditAnnouncement,
+        );
+      }
+      return { ...result, offer, auditAnnouncementDelivered };
     } catch (error: unknown) {
       let cleanupError: unknown;
       try {

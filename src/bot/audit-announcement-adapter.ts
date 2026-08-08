@@ -1,4 +1,4 @@
-import type { Client } from 'discord.js';
+import type { APIEmbedField, Client } from 'discord.js';
 
 import { AuditAnnouncementDeliveryError } from '../domain/errors.js';
 import type { AuditAnnouncementPlan, StaffRoleCode } from '../domain/roster-mutation.js';
@@ -43,11 +43,12 @@ export class DiscordAuditAnnouncementAdapter implements AuditAnnouncementAdapter
       throw new AuditAnnouncementDeliveryError();
     }
 
-    const roleColor = plan.presentation?.teamRoleColor;
-    const serverName = plan.presentation?.serverName.trim() || 'Discord Server';
-    const serverIconUrl = plan.presentation?.serverIconUrl ?? null;
-    const subjectName = plan.presentation?.subject?.username || 'Unknown User';
-    const actorName = plan.presentation?.actor?.username || 'Unknown User';
+    const presentation = 'presentation' in plan ? plan.presentation : undefined;
+    const roleColor = presentation?.teamRoleColor;
+    const serverName = presentation?.serverName.trim() || 'Discord Server';
+    const serverIconUrl = presentation?.serverIconUrl ?? null;
+    const subjectName = presentation?.subject?.username || 'Unknown User';
+    const actorName = presentation?.actor?.username || 'Unknown User';
 
     const playerFormatted =
       plan.operation === 'TEAM_DISBANDED'
@@ -59,39 +60,33 @@ export class DiscordAuditAnnouncementAdapter implements AuditAnnouncementAdapter
 
     let title: string;
     let description: string;
-    let verb:
-      | 'Added'
-      | 'Removed'
-      | 'Appointed'
-      | 'Demanded'
-      | 'Released'
-      | 'Promoted'
-      | 'Demoted'
-      | 'Disbanded';
+    const fields: APIEmbedField[] = [];
 
     const positionName =
-      plan.operation === 'TEAM_DISBANDED' ? '' : getRolePositionName(plan.staffRole);
+      'staffRole' in plan && plan.staffRole !== undefined
+        ? getRolePositionName(plan.staffRole)
+        : '';
 
     switch (plan.operation) {
       case 'ROSTER_PLAYER_ADDED':
         title = `${BOT_EMOJIS.success} Player Added to Roster`;
         description = `${playerFormatted} was added to ${teamFormatted}.`;
-        verb = 'Added';
+        fields.push(createActorField('Added', plan.actorDiscordUserId, actorName));
         break;
       case 'ROSTER_PLAYER_REMOVED':
         title = `${BOT_EMOJIS.success} Player Removed from Roster`;
         description = `${playerFormatted} was removed from ${teamFormatted}.`;
-        verb = 'Removed';
+        fields.push(createActorField('Removed', plan.actorDiscordUserId, actorName));
         break;
       case 'STAFF_APPOINTED':
         title = `${BOT_EMOJIS.success} Staff Member Appointed`;
         description = `${playerFormatted} was appointed as ${positionName} of ${teamFormatted}.`;
-        verb = 'Appointed';
+        fields.push(createActorField('Appointed', plan.actorDiscordUserId, actorName));
         break;
       case 'STAFF_REMOVED':
         title = `${BOT_EMOJIS.success} Staff Member Removed`;
         description = `${playerFormatted} was removed as ${positionName} of ${teamFormatted}.`;
-        verb = 'Removed';
+        fields.push(createActorField('Removed', plan.actorDiscordUserId, actorName));
         break;
       case 'ROSTER_DEMANDED':
         title =
@@ -102,22 +97,22 @@ export class DiscordAuditAnnouncementAdapter implements AuditAnnouncementAdapter
           plan.departureMode === 'STAFF_ONLY'
             ? `${playerFormatted} stepped down from staff for ${teamFormatted}.`
             : `${playerFormatted} demanded release from ${teamFormatted}.`;
-        verb = 'Demanded';
+        fields.push(createActorField('Demanded', plan.actorDiscordUserId, actorName));
         break;
       case 'ROSTER_RELEASED':
         title = `${BOT_EMOJIS.success} Player Released`;
         description = `${playerFormatted} was released from ${teamFormatted}.`;
-        verb = 'Released';
+        fields.push(createActorField('Released', plan.actorDiscordUserId, actorName));
         break;
       case 'ROSTER_PROMOTED':
         title = `${BOT_EMOJIS.success} Player Promoted`;
         description = `${playerFormatted} was promoted to ${positionName} for ${teamFormatted}.`;
-        verb = 'Promoted';
+        fields.push(createActorField('Promoted', plan.actorDiscordUserId, actorName));
         break;
       case 'ROSTER_DEMOTED':
         title = `${BOT_EMOJIS.success} Staff Member Demoted`;
         description = `${playerFormatted} was demoted to player for ${teamFormatted}.`;
-        verb = 'Demoted';
+        fields.push(createActorField('Demoted', plan.actorDiscordUserId, actorName));
         break;
       case 'TEAM_DISBANDED':
         title = `${BOT_EMOJIS.success} Team Disbanded`;
@@ -128,11 +123,36 @@ export class DiscordAuditAnnouncementAdapter implements AuditAnnouncementAdapter
           `> Members moved to free agency: **${plan.disbandDetails?.affectedUserCount ?? 0}**`,
           `> Outstanding offers expired: **${plan.disbandDetails?.expiredOfferCount ?? 0}**`,
         ].join('\n');
-        verb = 'Disbanded';
+        fields.push(createActorField('Disbanded', plan.actorDiscordUserId, actorName));
+        break;
+      case 'OFFER_CREATED':
+        title = `${BOT_EMOJIS.success} Contract Offer Created`;
+        description = `A contract offer for ${teamFormatted} was created for ${playerFormatted}.`;
+        fields.push(createActorField('Created', plan.actorDiscordUserId, actorName));
+        if (plan.expiresAt) {
+          const epoch = Math.floor(plan.expiresAt.getTime() / 1000);
+          fields.push({
+            name: 'Expires',
+            value: `<t:${epoch}:R> (<t:${epoch}:f>)`,
+            inline: false,
+          });
+        }
+        break;
+      case 'OFFER_DECLINED':
+        title = `${BOT_EMOJIS.success} Offer Declined`;
+        description = `${playerFormatted} declined the contract offer from ${teamFormatted}.`;
+        fields.push(createActorField('Declined', plan.actorDiscordUserId, actorName));
+        break;
+      case 'OFFER_EXPIRED':
+        title = `${BOT_EMOJIS.success} Offer Expired`;
+        description = `The contract offer to ${playerFormatted} from ${teamFormatted} has expired.`;
+        fields.push({
+          name: 'Expired by',
+          value: 'System (Automatic Expiration)',
+          inline: false,
+        });
         break;
     }
-
-    const actorField = createActorField(verb, plan.actorDiscordUserId, actorName);
 
     const embed = createSuccessEmbed({
       title,
@@ -140,7 +160,7 @@ export class DiscordAuditAnnouncementAdapter implements AuditAnnouncementAdapter
       author,
       color: resolveTeamRoleColor(roleColor, BOT_COLORS.success),
       thumbnail,
-      fields: [actorField],
+      fields,
       timestamp: plan.occurredAt,
     });
 

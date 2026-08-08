@@ -1,20 +1,29 @@
 import type { Offer, PrismaClient } from '@prisma/client';
 
 import { InvalidStateTransitionError } from '../domain/errors.js';
+import type { OfferExpiredAuditAnnouncementPlan } from '../domain/roster-mutation.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
+import { ClubRepository } from '../repositories/club-repository.js';
+import { GuildRepository } from '../repositories/guild-repository.js';
 import { OfferRepository } from '../repositories/offer-repository.js';
+import { UserRepository } from '../repositories/user-repository.js';
+import type { AuditAnnouncementPublisher } from './audit-announcement-service.js';
 import { offerExpiredAuditEventType } from './offer-decline-service.js';
 
 export class OfferExpirationService {
-  public constructor(private readonly database: PrismaClient) {}
+  public constructor(
+    private readonly database: PrismaClient,
+    private readonly auditAnnouncements?: AuditAnnouncementPublisher,
+  ) {}
 
   public async expire(now = new Date()): Promise<Offer[]> {
     const candidates = await new OfferRepository(this.database).listExpiredPending(now);
     const expired: Offer[] = [];
     for (const candidate of candidates) {
       let result: Offer | null;
+      let auditPlan: OfferExpiredAuditAnnouncementPlan | null;
       try {
-        result = await this.database.$transaction(async (transaction) => {
+        const outcome = await this.database.$transaction(async (transaction) => {
           const offer = await new OfferRepository(transaction).transition(
             candidate.id,
             'EXPIRED',
@@ -32,13 +41,40 @@ export class OfferExpirationService {
               discordMessageId: offer.discordMessageId,
             },
           });
-          return offer;
+
+          const destinationClub = await new ClubRepository(transaction).getById(offer.clubId);
+          const player = await new UserRepository(transaction).getById(offer.playerUserId);
+          const guild = await new GuildRepository(transaction).requireById(offer.guildId);
+          const settings = await new GuildRepository(transaction).getSettings(offer.guildId);
+
+          const plan: OfferExpiredAuditAnnouncementPlan | null =
+            settings?.auditChannelId === null || settings?.auditChannelId === undefined
+              ? null
+              : {
+                  discordGuildId: guild.discordGuildId,
+                  channelId: settings.auditChannelId,
+                  operation: 'OFFER_EXPIRED',
+                  playerDiscordUserId: player?.discordUserId ?? '',
+                  teamIdentity: destinationClub ?? {
+                    discordRoleId: '',
+                    emoji: '',
+                  },
+                  occurredAt: now,
+                };
+          return { offer, plan };
         });
+        result = outcome.offer;
+        auditPlan = outcome.plan;
       } catch (error: unknown) {
         if (error instanceof InvalidStateTransitionError) continue;
         throw error;
       }
-      if (result !== null) expired.push(result);
+      if (result !== null) {
+        expired.push(result);
+        if (auditPlan !== null && this.auditAnnouncements !== undefined) {
+          await this.auditAnnouncements.publish(auditPlan).catch(() => false);
+        }
+      }
     }
     return expired;
   }

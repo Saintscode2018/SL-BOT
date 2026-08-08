@@ -97,6 +97,18 @@ export class OfferButtonHandler {
           'DECLINED',
           presentationPayload,
         );
+        const warning = formatRosterAdminWarning(
+          undefined,
+          declineResult.auditAnnouncementDelivered,
+          'The offer was declined',
+        );
+        if (warning) {
+          await interaction
+            .followUp({ content: warning, flags: MessageFlags.Ephemeral })
+            .catch((err: unknown) => {
+              this.logger.error('failed to send decline audit warning followUp', err);
+            });
+        }
         return true;
       } catch (error: unknown) {
         if (error instanceof OfferExpiredError) {

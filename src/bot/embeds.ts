@@ -51,7 +51,9 @@ export function createActorField(
     | 'Released'
     | 'Promoted'
     | 'Demoted'
-    | 'Disbanded',
+    | 'Disbanded'
+    | 'Created'
+    | 'Declined',
   userId: string,
   displayName?: string | null,
 ): APIEmbedField {
