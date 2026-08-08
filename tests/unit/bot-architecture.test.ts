@@ -115,11 +115,12 @@ function context(logger: MemoryLogger): CommandContext {
 }
 
 describe('discord client factory', () => {
-  it('uses only the guilds intent without connecting', async () => {
+  it('uses only the guild and guild-member intents without connecting', async () => {
     const client = createDiscordClient();
     expect(client.options.intents.has(GatewayIntentBits.Guilds)).toBe(true);
-    expect(client.options.intents.has(GatewayIntentBits.GuildMembers)).toBe(false);
+    expect(client.options.intents.has(GatewayIntentBits.GuildMembers)).toBe(true);
     expect(client.options.intents.has(GatewayIntentBits.MessageContent)).toBe(false);
+    expect(client.options.intents.has(GatewayIntentBits.GuildPresences)).toBe(false);
     await client.destroy();
   });
 });

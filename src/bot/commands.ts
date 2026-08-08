@@ -8,6 +8,7 @@ import {
 } from '../domain/errors.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { formatTeamIdentity } from '../domain/team-label.js';
+import type { DataImportIssue } from '../services/data-import-service.js';
 import { getFriendlyPositionName, type StaffType } from '../services/staff-management-service.js';
 import {
   createActorField,
@@ -262,6 +263,126 @@ async function autocompleteTeam(
 
   await interaction.respond(choices);
 }
+
+function chunkDataImportIssues(issues: readonly DataImportIssue[]): string[] {
+  if (issues.length === 0) return [];
+  const chunks: string[] = [];
+  let current = '';
+  for (const currentIssue of issues) {
+    const line = `${formatUserWithVisibleName(currentIssue.discordUserId, currentIssue.displayName)} - ${currentIssue.reason}`;
+    const candidate = current.length === 0 ? line : `${current}\n${line}`;
+    if (candidate.length > 1_000 && current.length > 0) {
+      chunks.push(current);
+      current = line;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
+
+const dataCommand: CommandDefinition = {
+  data: new SlashCommandBuilder()
+    .setName('data')
+    .setDescription('Manage league data migration')
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('import')
+        .setDescription('Import missing memberships from existing Discord roles'),
+    ),
+  async execute(interaction, context) {
+    const execution = await enforceChannelPolicy(interaction, context);
+    if (execution.options.getSubcommand() !== 'import') {
+      throw new ValidationError('unsupported data command');
+    }
+    const service = context.dataImportService;
+    if (service === undefined || interaction.fetchGuildMembers === undefined) {
+      throw new ConfigurationError('data import support is unavailable');
+    }
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const result = await service.importGuild({
+      authorization: execution.authorization,
+      fetchMembers: () => interaction.fetchGuildMembers!(),
+    });
+
+    const actorDisplayName = getUserDisplayName(interaction, execution.authorization.discordUserId);
+    const author = createGuildAuthor({
+      guildName: result.guild.name || execution.guildName,
+      guildIconUrl: interaction.guildIconUrl ?? null,
+    });
+    const footer = createActorFooter({
+      verb: 'Imported',
+      username: actorDisplayName,
+      timestamp: result.occurredAt,
+    });
+    const importedLines = [
+      `Players: **${result.imported.players}**`,
+      `Team Managers: **${result.imported.teamManagers}**`,
+      `Assistant Managers: **${result.imported.assistantManagers}**`,
+      `Player Managers: **${result.imported.playerManagers}**`,
+    ].join('\n');
+    const auditPublished =
+      result.settings.auditChannelId !== null
+        ? await context.setupAuditService.publish({
+            channelId: result.settings.auditChannelId,
+            title: `${BOT_EMOJIS.success} Data Import Complete`,
+            description: 'Discord team and management roles were imported into league data.',
+            fields: [
+              { name: 'Imported', value: importedLines, inline: false },
+              { name: 'Unchanged', value: `**${result.unchanged}**`, inline: true },
+              { name: 'Skipped / Issues', value: `**${result.issues.length}**`, inline: true },
+            ],
+            actorDiscordUserId: execution.authorization.discordUserId,
+            actorVerb: 'Imported',
+            timestamp: result.occurredAt,
+            author,
+          })
+        : false;
+    const issueChunks = chunkDataImportIssues(result.issues);
+    const description = auditPublished
+      ? `Scanned **${result.scannedMembers}** Discord members and ignored **${result.ignoredBots}** bots.`
+      : `Scanned **${result.scannedMembers}** Discord members and ignored **${result.ignoredBots}** bots.\n\n${BOT_EMOJIS.warning} Import completed, but the aggregate Audit message could not be delivered.`;
+    const embeds = [
+      createSuccessEmbed({
+        title: `${BOT_EMOJIS.success} Data Import Complete`,
+        description,
+        author,
+        fields: [
+          { name: 'Imported', value: importedLines, inline: false },
+          { name: 'Unchanged', value: `**${result.unchanged}**`, inline: true },
+          {
+            name: `Skipped / Issues (${result.issues.length})`,
+            value: issueChunks[0] ?? BOT_LABELS.none,
+            inline: false,
+          },
+        ],
+        footer: footer.text,
+        ...(footer.iconURL ? { footerIconURL: footer.iconURL } : {}),
+        timestamp: result.occurredAt,
+      }),
+      ...issueChunks.slice(1).map((issueChunk) =>
+        createInfoEmbed({
+          title: 'Data Import Issues Continued',
+          author,
+          fields: [{ name: 'Skipped / Issues', value: issueChunk, inline: false }],
+          footer: footer.text,
+          ...(footer.iconURL ? { footerIconURL: footer.iconURL } : {}),
+          timestamp: result.occurredAt,
+        }),
+      ),
+    ];
+
+    await interaction.editReply({ embeds: embeds.slice(0, 10) });
+    for (let index = 10; index < embeds.length; index += 10) {
+      await interaction.followUp({
+        embeds: embeds.slice(index, index + 10),
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+  },
+};
 
 const healthCommand: CommandDefinition = {
   data: new SlashCommandBuilder()
@@ -1885,6 +2006,7 @@ export const debugResetCommand: CommandDefinition = {
 export const commands: readonly CommandDefinition[] = [
   healthCommand,
   setupCommand,
+  dataCommand,
   teamCommand,
   limitCommand,
   staffCommand,
@@ -1901,6 +2023,7 @@ export const commands: readonly CommandDefinition[] = [
 export const commandDefinitions = [
   healthCommand,
   setupCommand,
+  dataCommand,
   teamCommand,
   limitCommand,
   staffCommand,

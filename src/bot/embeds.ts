@@ -53,6 +53,7 @@ export function createActorField(
     | 'Demoted'
     | 'Disbanded'
     | 'Swapped'
+    | 'Imported'
     | 'Created'
     | 'Declined',
   userId: string,

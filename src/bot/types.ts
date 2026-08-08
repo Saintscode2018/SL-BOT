@@ -22,6 +22,7 @@ import type { StaffManagementService } from '../services/staff-management-servic
 import type { SetupAuditService } from '../services/setup-audit-service.js';
 import type { TeamHealthService } from '../services/team-health-service.js';
 import type { FranchiseOwnerListService } from '../services/franchise-owner-list-service.js';
+import type { DataImportService, GuildMemberSnapshot } from '../services/data-import-service.js';
 import type { OfferButtonHandler } from './offer-button-handler.js';
 import type { RosterDepartureCommandHandler } from './departure-command-handler.js';
 import type { RosterPromotionDemotionCommandHandler } from './promotion-demotion-command-handler.js';
@@ -94,6 +95,7 @@ export interface CommandInteraction {
   getGuildMemberDisplayName?(userId: string): string | null;
   resolveGuildRoleMetadata?(roleId: string): Promise<GuildRoleMetadata | null>;
   resolveGuildMemberDisplayName?(userId: string): Promise<string | null>;
+  fetchGuildMembers?(): Promise<readonly GuildMemberSnapshot[]>;
   executeDebugReset?(
     database: PrismaClient,
     setupAuditService?: Pick<SetupAuditService, 'publish'>,
@@ -173,6 +175,7 @@ export interface CommandContext {
   setupAuditService: Pick<SetupAuditService, 'publish'>;
   teamHealthService?: Pick<TeamHealthService, 'getOverview' | 'getDetail'>;
   franchiseOwnerListService?: Pick<FranchiseOwnerListService, 'getList'>;
+  dataImportService?: Pick<DataImportService, 'importGuild'>;
 }
 
 export interface CommandDefinition {

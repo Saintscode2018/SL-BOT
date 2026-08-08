@@ -34,6 +34,7 @@ export class DiscordSetupAuditMessageAdapter implements SetupAuditMessageAdapter
     const embed = createSuccessEmbed({
       title: message.title,
       description: message.description,
+      author: message.author ?? null,
       fields: [
         ...message.fields.map((field) => ({ ...field, inline: field.inline ?? false })),
         createActorField(actorVerb, message.actorDiscordUserId, actorDisplayName),

@@ -34,6 +34,7 @@ import { BotPermissionService } from '../services/bot-permission-service.js';
 import { CommandChannelPolicyService } from '../services/command-channel-policy-service.js';
 import { ConfirmationRegistry } from '../services/confirmation-registry.js';
 import { DatabaseHealthService } from '../services/database-health-service.js';
+import { DataImportService } from '../services/data-import-service.js';
 import { GuildConfigurationService } from '../services/guild-configuration-service.js';
 import { GuildSetupService } from '../services/guild-setup-service.js';
 import { demandRateLimitMs, GuildUserRateLimiter } from '../services/guild-user-rate-limiter.js';
@@ -183,6 +184,7 @@ export function createApplication(
     setupAuditService,
     teamHealthService: new TeamHealthService(prisma),
     franchiseOwnerListService: new FranchiseOwnerListService(prisma),
+    dataImportService: new DataImportService(prisma),
   };
   const events = new EventRegistry(createEventDefinitions(commands, context, logger));
   const database: DatabaseLifecycle = {

@@ -23,6 +23,7 @@ There is no team display name, abbreviation, or configurable banner. `Club.id` r
 ## Command tree
 
 - `/setup league|channels|roles|view`: Configure or inspect league settings. `/setup botperm add|remove|view` and `/setup botpermadmin add|view` manage guild-scoped database authorization; there is intentionally no admin-removal command. All responses are ephemeral. Permission mutations write DB audit events and publish best-effort Discord Audit messages; permission views are read-only and unaudited.
+- `/data import`: Staff Commands-only initial migration that scans guild members once and additively imports missing active team/player or TM/ATM/PM memberships from registered Discord roles. It requires database `BOTPERM`/`BOTPERM_ADMIN`, complete channel and management-role setup, and at least one active registered team. Ambiguous roles, conflicts, and squad overflow are skipped and reported; reruns are idempotent. The operation creates one aggregate database audit event and at most one Discord Audit message, with no Transfer Market activity.
 - `/team add role:<role> emoji:<emoji>`: Add a team. Both options are required.
 - `/team edit team:<club> [role:<role>] [emoji:<emoji>]`: Edit a role and/or emoji. Supplying neither change is rejected.
 - `/team disband team:<club>`: Admin-only, Staff Commands-only permanent league disbandment with an initiator-owned two-minute confirmation. It ends all active memberships, makes every member a free agent, removes the team role plus applicable TM/ATM/PM roles, expires related pending offers, and marks the team inactive while preserving its Discord role, emoji, database row, and all history. No reason is required. The former `/team remove` slash subcommand is no longer registered.
@@ -46,6 +47,12 @@ There is no team display name, abbreviation, or configurable banner. `Club.id` r
 ## Authorization, channels, and visibility
 
 Global administration requires a guild-scoped database `BOTPERM` or `BOTPERM_ADMIN` record. Server ownership, Discord Administrator permission, and the legacy configured `bot_permissions` role do not grant global access. While a guild has zero permission records, a Discord Administrator may run the initial `/setup league`, `/setup channels`, and first `/setup botperm add`; that bootstrap ends immediately after the first record. TM/ATM/PM appointments retain only their intentional club-scoped operations.
+
+`/data import` has no bootstrap exception: owners, Discord Administrators, the legacy Bot Permissions role, and TM/ATM/PM roles are denied unless the caller has a database Bot Permission.
+
+## Discord gateway intents
+
+The client requests `GatewayIntentBits.Guilds` and `GatewayIntentBits.GuildMembers`. Production deployment must enable **Discord Developer Portal → Bot → Privileged Gateway Intents → Server Members Intent**. Message Content and Presence intents are not requested.
 
 - Non-administrative and informational `/health`, `/team list`, `/staff list`, `/roster view`, `/limit view`, `/offer`, `/demand`, and `/release` may be invoked only in the configured Bot Commands or Staff Commands channel. `/roster add` and `/roster remove` are administrative and require Staff Commands. Command-specific authorization still applies. Non-global callers (including ordinary players and TM/ATM/PM callers without global administrative authorization) see channel guidance mentioning only Bot Commands (`Use this command in <#botCommandsChannelId>.`); Staff Commands is never disclosed to non-global callers.
 - `/offer` is allowed in Bot Commands or Staff and checks channel policy before resolving the caller's database appointment.

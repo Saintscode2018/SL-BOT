@@ -36,7 +36,7 @@ Integration tests use isolated file-backed SQLite databases and apply committed 
 
 ## Gateway intents
 
-Only `GatewayIntentBits.Guilds` is required. Message Content, Presence, and Guild Members privileged intents remain disabled.
+The client requests exactly `GatewayIntentBits.Guilds` and `GatewayIntentBits.GuildMembers`. In production, enable **Discord Developer Portal → Bot → Privileged Gateway Intents → Server Members Intent**. Message Content and Presence remain disabled and are not requested.
 
 ## Live smoke test
 
@@ -50,6 +50,7 @@ Only `GatewayIntentBits.Guilds` is required. Message Content, Presence, and Guil
 8. Verify `/roster view team:<team>` is visible only to the invoking user, has no title, begins `<emoji> <@&roleId> Roster`, contains no `Team` field, and retains the effective count, exact TM/ATM/PM headings, players, emoji thumbnail, author, and `Roster for <team>, <server>` footer. Confirm standalone `/roster team:<team>` is absent and every continuation is ephemeral.
 9. In Staff Commands, verify owner, Administrator, and Bot Permissions callers can use `/roster add player:<user> team:<team>` and `/roster remove player:<user>`, while TM/ATM/PM, players, and unrelated members cannot. Confirm both commands fail in Bot Commands and arbitrary/output channels.
 10. Add a free agent and verify one active `PLAYER` row, only the destination team role added, effective squad-limit enforcement, unrelated roles retained, and no Audit/Transfer message. Remove that player without a team argument and verify the current team is derived, only its role is removed, history is retained, and the player becomes a free agent. Exercise bot, active-staff, duplicate, other-team, inactive/foreign team, free-agent, ambiguous-membership, missing member/role, cold-cache, role failure, database failure, and compensation-failure paths.
+11. After league, channel, database Bot Permission, role, and team setup is complete, run `/data import` in Staff Commands. Confirm a database `BOTPERM` and `BOTPERM_ADMIN` can run it while owner/Administrator/legacy-role/TM/ATM/PM-only callers cannot. Confirm one member scan, additive player/staff classification, conflict and squad-limit reporting, an idempotent rerun, one aggregate audit row/message, and no Transfer Market output.
 
 ### Regression smoke tests
 
@@ -84,6 +85,6 @@ Presentation checks cover structured staff Appointment/Demotion/Promotion cards 
 
 The command-path staff-removal test must force the Discord operation to remain pending and prove that TM/ATM/PM removal uses the configured global role ID, never the team role, while success, database history changes, and Transfer Market publication wait for role removal to resolve.
 
-Release reasons, target DMs/approval, demand gameplay counts, general pending-offer cancellation, role-derived offer source, imports, and general mutation audit publication are not part of this deployment.
+Release reasons, target DMs/approval, demand gameplay counts, general pending-offer cancellation, role-derived offer source, and general mutation audit publication are not part of this deployment.
 
 Related notes: [[Commands]], [[Product Decisions]], [[Session Log]]

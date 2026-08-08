@@ -13,6 +13,7 @@ export interface SetupAuditMessage {
   fields: readonly SetupAuditField[];
   actorDiscordUserId: string;
   timestamp: Date;
+  author?: { name: string; iconURL?: string } | null;
   actorVerb?:
     | 'Configured'
     | 'Updated'
@@ -26,6 +27,7 @@ export interface SetupAuditMessage {
     | 'Promoted'
     | 'Demoted'
     | 'Disbanded'
+    | 'Imported'
     | undefined;
 }
 

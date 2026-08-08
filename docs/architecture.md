@@ -16,7 +16,7 @@ Discord commands, autocomplete, and buttons
       Discord API         Prisma + SQLite
 ```
 
-The gateway requests only `GatewayIntentBits.Guilds`. Startup connects Prisma, registers handlers, and logs in; partial startup cleans up both clients. Command deployment is an explicit REST operation and never runs during startup.
+The gateway requests exactly `GatewayIntentBits.Guilds` and `GatewayIntentBits.GuildMembers`. Guild Members is required by the one-shot `/data import` member scan and must be enabled as the Server Members privileged intent in the Discord Developer Portal. Message Content and Presence are not requested. Startup connects Prisma, registers handlers, and logs in; partial startup cleans up both clients. Command deployment is an explicit REST operation and never runs during startup.
 
 ## Permanent team identity
 
@@ -84,6 +84,8 @@ The Discord interaction adapter is the single role-metadata boundary and exposes
 `RosterAdministrationService` owns immediate global-administration `/roster add player:<user> team:<team>` and `/roster remove player:<user>` workflows. Add requires a non-bot free agent with neither an active player membership nor staff appointment, an active guild-local destination, and available effective capacity. Remove resolves exactly one active `PLAYER` membership in the invoking guild and rejects free agents, staff targets, and ambiguous multiple memberships. It never ends TM/ATM/PM rows.
 
 Administrative roster membership is represented by the active `PLAYER` row and the selected team's Discord role; there is no generic Player role. The role plan contains only that team role, so unrelated and staff roles are preserved. The shared role-synchronized coordinator applies Discord first, repeats validation and commits membership/transaction/audit history second, and compensates Discord if the database phase fails. Role failures leave database state unchanged, and compensation failures are logged and surfaced. These operations return structured results with `announcement: null`; Audit + Transfer Market delivery is intentionally deferred to the centralized routing hotfix.
+
+`DataImportService` is a migration-only additive path. After database-backed global authorization and complete setup validation, it fetches the Discord member list once, classifies non-bot members against active registered team roles and configured TM/ATM/PM roles in memory, and preloads active guild memberships once. Team-only members infer `PLAYER`; a single management role takes precedence and infers only its canonical staff membership type. Ambiguous team/rank data, management without a team, database conflicts, occupied staff slots, and squad overflow are skipped. Missing memberships are written in short per-candidate transactions with a fresh conflict/slot/capacity check. The importer never changes Discord roles, ends or overwrites memberships, creates league transactions, or publishes Transfer Market messages. Each completed run records one aggregate audit event and publishes at most one aggregate Discord Audit message.
 
 Staff is represented by an active `PLAYER` membership plus one active TM/ATM/PM appointment for the same guild and club. Staff-only departure/demotion ends only the appointment. Full departure/release ends both rows. The central mutation service revalidates state inside each transaction, writes end metadata, retains history, and returns discord.js-free role/announcement plans.
 

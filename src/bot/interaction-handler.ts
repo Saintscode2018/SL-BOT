@@ -8,6 +8,7 @@ import {
 } from 'discord.js';
 
 import type { Logger } from '../logging/logger.js';
+import type { GuildMemberSnapshot } from '../services/data-import-service.js';
 import type { CommandRegistry } from './command-registry.js';
 import { createErrorEmbed } from './embeds.js';
 import { mapDiscordError } from './error-mapper.js';
@@ -310,6 +311,24 @@ export class DiscordCommandInteraction implements CommandInteraction {
     color: number;
   } | null> {
     return resolveGuildRoleMetadata(this.interaction, this.logger, roleId);
+  }
+
+  public async fetchGuildMembers(): Promise<readonly GuildMemberSnapshot[]> {
+    const guild = this.interaction.guild;
+    if (guild === null) {
+      throw new Error('guild members cannot be fetched outside a Discord server');
+    }
+    const members = await guild.members.fetch();
+    return [...members.values()].map((member) => ({
+      discordUserId: member.id,
+      displayName:
+        member.displayName.trim() ||
+        member.user.globalName ||
+        member.user.username ||
+        'Unknown User',
+      roleIds: [...member.roles.cache.keys()],
+      bot: member.user.bot,
+    }));
   }
 
   public async executeDebugReset(

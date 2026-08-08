@@ -331,6 +331,7 @@ describe('stage three command registry and deployment', () => {
     const expectedNames = [
       'health',
       'setup',
+      'data',
       'team',
       'limit',
       'staff',

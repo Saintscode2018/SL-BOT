@@ -55,6 +55,26 @@ export class MembershipRepository {
     });
   }
 
+  public async listActiveMembershipsForUserInGuild(
+    guildId: string,
+    userId: string,
+  ): Promise<ClubMembership[]> {
+    return this.db.clubMembership.findMany({
+      where: { guildId, userId, status: 'ACTIVE' },
+      orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }],
+    });
+  }
+
+  public async listActiveMembershipsForGuildWithUsers(
+    guildId: string,
+  ): Promise<Array<ClubMembership & { user: LeagueUser }>> {
+    return this.db.clubMembership.findMany({
+      where: { guildId, status: 'ACTIVE' },
+      include: { user: true },
+      orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }],
+    });
+  }
+
   public async getActiveStaffAppointments(clubId: string): Promise<ClubMembership[]> {
     return this.db.clubMembership.findMany({
       where: {
