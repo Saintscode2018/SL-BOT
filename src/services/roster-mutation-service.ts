@@ -69,7 +69,7 @@ export interface RosterMutationResult extends MutationPlans {
   guild: Guild;
   club: Club;
   user: LeagueUser;
-  playerMembership: ClubMembership;
+  playerMembership: ClubMembership | null;
   staffMembership: ClubMembership | null;
   previousStaffType: StaffMembershipType | null;
   transaction: LeagueTransaction;
@@ -195,20 +195,20 @@ export class RosterMutationService {
     kind: MutationKind,
     input: MemberMutationInput | StaffMutationInput,
   ): Promise<MemberRoleMutationPlan> {
-    const player = await context.memberships.getActivePlayerMembership(
+    const activeMemberships = await context.memberships.listActiveMembershipsForUserInGuild(
       context.guild.id,
       context.user.id,
     );
-    const staff = await context.memberships.getActiveStaffMembershipForUserInGuild(
-      context.guild.id,
-      context.user.id,
-    );
-    const actorStaff = await context.memberships.getActiveStaffMembershipForUserInGuild(
-      context.guild.id,
-      context.actor.id,
-    );
-    const actorPlayer = await context.memberships.getActivePlayerMembership(
-      context.guild.id,
+    const teamMemberships = activeMemberships.filter(({ clubId }) => clubId === context.club.id);
+    const player =
+      teamMemberships.find(({ membershipType }) => membershipType === 'PLAYER') ?? null;
+    const staff =
+      teamMemberships.find(({ membershipType }) => membershipType === 'TEAM_MANAGER') ??
+      teamMemberships.find(({ membershipType }) => membershipType === 'ASSISTANT_MANAGER') ??
+      teamMemberships.find(({ membershipType }) => membershipType === 'PLAYER_MANAGER') ??
+      null;
+    const actorStaff = await context.memberships.getActiveStaffMembershipForUser(
+      context.club.id,
       context.actor.id,
     );
     const addRoles: PlannedDiscordRole[] = [];
@@ -216,31 +216,33 @@ export class RosterMutationService {
 
     if (kind === 'APPOINT') {
       const desired = (input as StaffMutationInput).staffType;
-      if (staff !== null) {
+      const existingStaff = await context.memberships.getActiveStaffMembershipForUserInGuild(
+        context.guild.id,
+        context.user.id,
+      );
+      if (existingStaff !== null) {
         throw new StaffAlreadyAppointedError(
           context.user.discordUserId,
-          toStaffRoleCode(staff.membershipType as StaffMembershipType),
-          formatTeamIdentity(staff.club, 'message'),
+          toStaffRoleCode(existingStaff.membershipType as StaffMembershipType),
+          formatTeamIdentity(existingStaff.club, 'message'),
         );
       }
-      if (player !== null && player.clubId !== context.club.id)
+      if (activeMemberships.some(({ clubId }) => clubId !== context.club.id)) {
         throw new MemberAlreadySignedError();
+      }
       await this.assertSlotOpen(transaction, context.club.id, desired);
-      if (player === null) await this.assertCapacity(context);
+      if (teamMemberships.length === 0) await this.assertCapacity(context);
       addRoles.push(this.teamRole(context), this.staffRole(context.settings, desired));
     } else if (kind === 'SIGN') {
-      if (player !== null || staff !== null) throw new MemberAlreadySignedError();
+      if (activeMemberships.length > 0) throw new MemberAlreadySignedError();
       await this.assertCapacity(context);
       addRoles.push(this.teamRole(context));
     } else {
       const confirmationBound =
         input.expectedStaffType !== undefined || input.expectedActorStaffType !== undefined;
-      if (player === null) {
+      if (teamMemberships.length === 0) {
         if (confirmationBound) throw new StaleConfirmationError();
-        throw new MemberIsFreeAgentError();
-      }
-      if (player.clubId !== context.club.id) {
-        if (confirmationBound) throw new StaleConfirmationError();
+        if (activeMemberships.length === 0) throw new MemberIsFreeAgentError();
         throw new MemberNotOnTeamError();
       }
       if (
@@ -263,10 +265,6 @@ export class RosterMutationService {
       }
       if (kind === 'RELEASE') {
         if (context.actor.id === context.user.id) throw new SelfActionForbiddenError();
-        if (actorPlayer?.clubId !== context.club.id) {
-          if (confirmationBound) throw new StaleConfirmationError();
-          throw new InsufficientStaffRankError();
-        }
         this.assertMayRelease(actorStaff, staff, context.club.id);
       }
       if (kind === 'PROMOTE') {
@@ -306,6 +304,9 @@ export class RosterMutationService {
         if (staff.membershipType !== expected) throw new TargetNotStaffError();
         removeRoles.push(this.staffRole(context.settings, staff.membershipType));
       }
+      if ((kind === 'REMOVE_STAFF' || kind === 'LEAVE_STAFF') && player === null) {
+        removeRoles.push(this.teamRole(context));
+      }
       if (kind === 'LEAVE_STAFF' && staff !== null) {
         removeRoles.push(
           this.staffRole(context.settings, staff.membershipType as StaffMembershipType),
@@ -313,9 +314,11 @@ export class RosterMutationService {
       }
       if (kind === 'LEAVE_TEAM' || kind === 'RELEASE') {
         removeRoles.push(this.teamRole(context));
-        if (staff !== null) {
+        for (const staffMembership of teamMemberships.filter(
+          ({ membershipType }) => membershipType !== 'PLAYER',
+        )) {
           removeRoles.push(
-            this.staffRole(context.settings, staff.membershipType as StaffMembershipType),
+            this.staffRole(context.settings, staffMembership.membershipType as StaffMembershipType),
           );
         }
       }
@@ -341,11 +344,11 @@ export class RosterMutationService {
       context.guild.id,
       context.user.id,
     );
-    let staff: ClubMembership | null =
-      await context.memberships.getActiveStaffMembershipForUserInGuild(
-        context.guild.id,
-        context.user.id,
-      );
+    if (player?.clubId !== context.club.id) player = null;
+    let staff = await context.memberships.getActiveStaffMembershipForUser(
+      context.club.id,
+      context.user.id,
+    );
     const previousStaffType = staff === null ? null : (staff.membershipType as StaffMembershipType);
     let transactionType: LeagueTransactionType;
     let staffAudit: {
@@ -385,7 +388,6 @@ export class RosterMutationService {
       });
       transactionType = 'SIGNING';
     } else {
-      if (player === null) throw new MemberIsFreeAgentError();
       if (kind === 'PROMOTE') {
         const desired = (input as StaffMutationInput).staffType;
         if (staff !== null) {
@@ -405,6 +407,16 @@ export class RosterMutationService {
         transactionType = 'STAFF_PROMOTION';
       } else if (kind === 'DEMOTE' || kind === 'REMOVE_STAFF' || kind === 'LEAVE_STAFF') {
         if (staff === null) throw new TargetNotStaffError();
+        if (kind === 'DEMOTE' && player === null) {
+          player = await context.memberships.createActive({
+            guildId: context.guild.id,
+            clubId: context.club.id,
+            userId: context.user.id,
+            membershipType: 'PLAYER',
+            joinedAt: occurredAt,
+            createdByUserId: context.actor.id,
+          });
+        }
         const ended = await context.memberships.end(staff.id, {
           leftAt: occurredAt,
           endedByUserId: context.actor.id,
@@ -419,21 +431,22 @@ export class RosterMutationService {
         staff = ended;
         transactionType = 'STAFF_DEMOTION';
       } else {
-        if (staff !== null) {
-          staff = await context.memberships.end(staff.id, {
+        const activeTeamMemberships = await context.memberships.listActiveMembershipsForUserOnClub(
+          context.club.id,
+          context.user.id,
+        );
+        for (const membership of activeTeamMemberships) {
+          const ended = await context.memberships.end(membership.id, {
             leftAt: occurredAt,
             endedByUserId: context.actor.id,
           });
+          if (membership.membershipType === 'PLAYER') player = ended;
+          else if (staff?.id === membership.id) staff = ended;
         }
-        player = await context.memberships.end(player.id, {
-          leftAt: occurredAt,
-          endedByUserId: context.actor.id,
-        });
         transactionType = kind === 'LEAVE_TEAM' ? 'DEMAND_RELEASE' : 'RELEASE';
       }
     }
 
-    if (player === null) throw new MemberIsFreeAgentError();
     const leagueTransaction = await new LeagueTransactionRepository(transactionClient).create({
       guildId: context.guild.id,
       userId: context.user.id,
@@ -457,7 +470,7 @@ export class RosterMutationService {
         leagueTransaction.id,
       );
     }
-    const currentRosterSize = await context.memberships.countActivePlayers(context.club.id);
+    const currentRosterSize = await context.memberships.countActiveUniqueMembers(context.club.id);
     const teamManagerMembership = await context.memberships.getActiveStaffAppointment(
       context.club.id,
       'TEAM_MANAGER',
@@ -470,6 +483,7 @@ export class RosterMutationService {
       context,
       kind,
       input,
+      player,
       staff,
       previousStaffType,
       occurredAt,
@@ -502,6 +516,7 @@ export class RosterMutationService {
     context: MutationContext,
     kind: MutationKind,
     input: MemberMutationInput | StaffMutationInput,
+    resultingPlayer: ClubMembership | null,
     resultingStaff: ClubMembership | null,
     previousStaffType: StaffMembershipType | null,
     occurredAt: Date,
@@ -549,10 +564,15 @@ export class RosterMutationService {
       ...(staffCode === undefined ? {} : { staffRole: staffCode }),
       ...(appointedStaffRole === null ? {} : { staffRoleId: appointedStaffRole.id }),
       ...(kind === 'LEAVE_STAFF'
-        ? { departureMode: 'STAFF_ONLY' as const }
+        ? {
+            departureMode: 'STAFF_ONLY' as const,
+            retainsPlayerMembership: resultingPlayer?.status === 'ACTIVE',
+          }
         : kind === 'LEAVE_TEAM'
           ? { departureMode: 'FULL' as const }
-          : {}),
+          : kind === 'REMOVE_STAFF' || kind === 'DEMOTE'
+            ? { retainsPlayerMembership: resultingPlayer?.status === 'ACTIVE' }
+            : {}),
       roster: {
         currentSize: currentRosterSize,
         maximumSize: getEffectiveSquadLimit(context.club, context.settings),
@@ -616,8 +636,8 @@ export class RosterMutationService {
   }
 
   private assertMayRelease(
-    actorStaff: (ClubMembership & { club: Club }) | null,
-    targetStaff: (ClubMembership & { club: Club }) | null,
+    actorStaff: ClubMembership | null,
+    targetStaff: ClubMembership | null,
     clubId: string,
   ): void {
     if (actorStaff?.clubId !== clubId) throw new InsufficientStaffRankError();
@@ -630,8 +650,8 @@ export class RosterMutationService {
   }
 
   private assertPromotion(
-    actorStaff: (ClubMembership & { club: Club }) | null,
-    targetStaff: (ClubMembership & { club: Club }) | null,
+    actorStaff: ClubMembership | null,
+    targetStaff: ClubMembership | null,
     desired: StaffMembershipType,
     clubId: string,
   ): void {
@@ -660,7 +680,7 @@ export class RosterMutationService {
   }
 
   private async assertCapacity(context: MutationContext): Promise<void> {
-    const count = await context.memberships.countActivePlayers(context.club.id);
+    const count = await context.memberships.countActiveUniqueMembers(context.club.id);
     if (count >= getEffectiveSquadLimit(context.club, context.settings)) {
       throw new SquadFullError('team has reached its squad limit');
     }

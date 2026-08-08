@@ -171,7 +171,7 @@ export class RosterAdministrationService {
     });
     const guild = await this.requireGuild(transaction, guildId);
     const settings = await new GuildRepository(transaction).getSettings(guildId);
-    const activePlayerCount = await memberships.countActivePlayers(club.id);
+    const activePlayerCount = await memberships.countActiveUniqueMembers(club.id);
     const tmMembership = await memberships.getActiveStaffAppointment(club.id, 'TEAM_MANAGER');
     const teamManager = tmMembership === null ? null : await users.getById(tmMembership.userId);
 
@@ -288,7 +288,7 @@ export class RosterAdministrationService {
     });
     const guild = await this.requireGuild(transaction, guildId);
     const settings = await new GuildRepository(transaction).getSettings(guildId);
-    const activePlayerCount = await memberships.countActivePlayers(resolved.club.id);
+    const activePlayerCount = await memberships.countActiveUniqueMembers(resolved.club.id);
     const tmMembership = await memberships.getActiveStaffAppointment(
       resolved.club.id,
       'TEAM_MANAGER',
@@ -360,7 +360,7 @@ export class RosterAdministrationService {
       if (activePlayers.length > 0) throw new MemberAlreadySignedError();
     }
     const settings = await new GuildRepository(transaction).getSettings(guildId);
-    const activePlayerCount = await memberships.countActivePlayers(club.id);
+    const activePlayerCount = await memberships.countActiveUniqueMembers(club.id);
     if (activePlayerCount >= getEffectiveSquadLimit(club, settings)) {
       throw new SquadFullError('destination team roster is full');
     }

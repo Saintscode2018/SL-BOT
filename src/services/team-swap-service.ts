@@ -42,8 +42,8 @@ export interface TeamSwapEligibility {
   team2Memberships: ActiveMembershipWithUser[];
   team1EffectiveLimit: number;
   team2EffectiveLimit: number;
-  team1ActivePlayerCount: number;
-  team2ActivePlayerCount: number;
+  team1ActiveMemberCount: number;
+  team2ActiveMemberCount: number;
 }
 
 export interface TeamSwapResult {
@@ -101,29 +101,25 @@ export class TeamSwapService {
     const team1EffectiveLimit = getEffectiveSquadLimit(team1, authorization.settings);
     const team2EffectiveLimit = getEffectiveSquadLimit(team2, authorization.settings);
 
-    const team1ActivePlayerCount = team1Memberships.filter(
-      (m) => m.membershipType === 'PLAYER',
-    ).length;
-    const team2ActivePlayerCount = team2Memberships.filter(
-      (m) => m.membershipType === 'PLAYER',
-    ).length;
+    const team1ActiveMemberCount = new Set(team1Memberships.map(({ userId }) => userId)).size;
+    const team2ActiveMemberCount = new Set(team2Memberships.map(({ userId }) => userId)).size;
 
-    const team1Exceeds = team1ActivePlayerCount > team2EffectiveLimit;
-    const team2Exceeds = team2ActivePlayerCount > team1EffectiveLimit;
+    const team1Exceeds = team1ActiveMemberCount > team2EffectiveLimit;
+    const team2Exceeds = team2ActiveMemberCount > team1EffectiveLimit;
 
     if (team1Exceeds && team2Exceeds) {
       throw new SquadFullError(
-        `Swap blocked: both destination teams would exceed effective squad limits (Team 1 incoming roster ${team1ActivePlayerCount} > Team 2 limit ${team2EffectiveLimit}, Team 2 incoming roster ${team2ActivePlayerCount} > Team 1 limit ${team1EffectiveLimit})`,
+        `Swap blocked: both destination teams would exceed effective squad limits (Team 1 incoming roster ${team1ActiveMemberCount} > Team 2 limit ${team2EffectiveLimit}, Team 2 incoming roster ${team2ActiveMemberCount} > Team 1 limit ${team1EffectiveLimit})`,
       );
     }
     if (team1Exceeds) {
       throw new SquadFullError(
-        `Swap blocked: Team 1 incoming roster count (${team1ActivePlayerCount}) exceeds Team 2 effective squad limit (${team2EffectiveLimit})`,
+        `Swap blocked: Team 1 incoming roster count (${team1ActiveMemberCount}) exceeds Team 2 effective squad limit (${team2EffectiveLimit})`,
       );
     }
     if (team2Exceeds) {
       throw new SquadFullError(
-        `Swap blocked: Team 2 incoming roster count (${team2ActivePlayerCount}) exceeds Team 1 effective squad limit (${team1EffectiveLimit})`,
+        `Swap blocked: Team 2 incoming roster count (${team2ActiveMemberCount}) exceeds Team 1 effective squad limit (${team1EffectiveLimit})`,
       );
     }
 
@@ -136,8 +132,8 @@ export class TeamSwapService {
       team2Memberships,
       team1EffectiveLimit,
       team2EffectiveLimit,
-      team1ActivePlayerCount,
-      team2ActivePlayerCount,
+      team1ActiveMemberCount,
+      team2ActiveMemberCount,
     };
   }
 
@@ -163,15 +159,19 @@ export class TeamSwapService {
     const team1StaffCount = eligibility.team1Memberships.filter(
       (m) => m.membershipType !== 'PLAYER',
     ).length;
-    const team1PlayerCount = eligibility.team1ActivePlayerCount;
+    const team1PlayerCount = eligibility.team1Memberships.filter(
+      (membership) => membership.membershipType === 'PLAYER',
+    ).length;
     const team2StaffCount = eligibility.team2Memberships.filter(
       (m) => m.membershipType !== 'PLAYER',
     ).length;
-    const team2PlayerCount = eligibility.team2ActivePlayerCount;
+    const team2PlayerCount = eligibility.team2Memberships.filter(
+      (membership) => membership.membershipType === 'PLAYER',
+    ).length;
 
     const swapDetails: TeamSwapDetails = {
-      team1MovedCount: expectedTeam1Ids.length,
-      team2MovedCount: expectedTeam2Ids.length,
+      team1MovedCount: eligibility.team1ActiveMemberCount,
+      team2MovedCount: eligibility.team2ActiveMemberCount,
       team1StaffCount,
       team1PlayerCount,
       team2StaffCount,
@@ -273,8 +273,8 @@ export class TeamSwapService {
             discordGuildId: authorization.guild.discordGuildId,
             team1Id: eligibility.team1.id,
             team2Id: eligibility.team2.id,
-            team1MovedCount: expectedTeam1Ids.length,
-            team2MovedCount: expectedTeam2Ids.length,
+            team1MovedCount: eligibility.team1ActiveMemberCount,
+            team2MovedCount: eligibility.team2ActiveMemberCount,
             actorDiscordUserId: input.authorization.discordUserId,
             timestamp: occurredAt.toISOString(),
           },
@@ -297,8 +297,8 @@ export class TeamSwapService {
           guild: authorization.guild,
           team1: eligibility.team1,
           team2: eligibility.team2,
-          team1MovedCount: expectedTeam1Ids.length,
-          team2MovedCount: expectedTeam2Ids.length,
+          team1MovedCount: eligibility.team1ActiveMemberCount,
+          team2MovedCount: eligibility.team2ActiveMemberCount,
           announcement,
           auditAnnouncement,
         };

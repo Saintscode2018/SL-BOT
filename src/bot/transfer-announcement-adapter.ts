@@ -175,8 +175,12 @@ export class DiscordTransferAnnouncementAdapter implements TransferAnnouncementA
             const actionText = isPromotion
               ? `${memberFormatted} has been promoted to ${staffRoleMention} for ${team} by ${actorFormatted}!`
               : isStaffOnlyDemand
-                ? `${memberFormatted} has stepped down to player for ${team}!`
-                : `${memberFormatted} has been demoted to player for ${team} by ${actorFormatted}!`;
+                ? plan.retainsPlayerMembership === false
+                  ? `${memberFormatted} has stepped down from staff and left ${team}!`
+                  : `${memberFormatted} has stepped down to player for ${team}!`
+                : plan.retainsPlayerMembership === false
+                  ? `${memberFormatted} has been removed from staff and left ${team} by ${actorFormatted}!`
+                  : `${memberFormatted} has been demoted to player for ${team} by ${actorFormatted}!`;
 
             const descriptionLines = [actionText, rosterLine, tmLine];
 

@@ -444,6 +444,27 @@ describe('/demand confirmation flow', () => {
     fixture.confirmations.clear();
   });
 
+  it('describes staff-only departure without claiming a PLAYER membership remains', async () => {
+    const fixture = setup('PM');
+    fixture.departures.getDemandEligibility.mockResolvedValue({
+      ...demandEligibility('PM'),
+      playerMembership: null,
+    });
+    const command = new FakeCommandInteraction('demand');
+    await fixture.handler.beginDemand(command);
+    expect(command.edits[0]?.embeds?.[0]?.data.description).toContain(
+      'ends your only active team membership',
+    );
+    const staffOnlyId = buttonJson(command).find(
+      ({ label }) => label === 'Leave Staff Position',
+    )?.custom_id;
+    if (!staffOnlyId) throw new Error('missing staff-only id');
+    const button = new FakeButton(staffOnlyId);
+    await fixture.handler.handleButton(button);
+    expect(button.edits[0]?.embeds?.[0]?.data.description).toContain('now a free agent');
+    fixture.confirmations.clear();
+  });
+
   it('consumes a confirmation but makes no mutation when the bound staff state changed', async () => {
     const fixture = setup('ATM');
     const command = new FakeCommandInteraction('demand');

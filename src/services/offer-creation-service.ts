@@ -91,7 +91,7 @@ export class OfferCreationService {
         player.id,
       );
       if (activeMembership !== null) throw new MemberAlreadySignedError();
-      const playerCount = await memberships.countActivePlayers(destinationClub.id);
+      const playerCount = await memberships.countActiveUniqueMembers(destinationClub.id);
       const effectiveSquadLimit = getEffectiveSquadLimit(destinationClub, authorization.settings);
       if (playerCount >= effectiveSquadLimit) {
         throw new SquadFullError('destination team roster is full');

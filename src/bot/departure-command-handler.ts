@@ -131,12 +131,17 @@ export class RosterDepartureCommandHandler {
     const team = formatTeamIdentity(presentation.team, 'message');
     const color = getTeamEmbedColor(presentation, BOT_COLORS.warning);
     const isStaff = eligibility.staffRole !== null;
+    const hasPlayerMembership = eligibility.playerMembership !== null;
     const description = isStaff
       ? [
           `You currently hold the **${getFriendlyPositionName(eligibility.staffType!)}** position for ${team}.`,
           '',
-          '**Leave Staff Position** keeps you signed as an ordinary player and keeps your team role, but removes your staff role.',
-          '**Leave Team Completely** ends both your staff appointment and roster membership, removes both affected roles, and makes you a free agent immediately.',
+          hasPlayerMembership
+            ? '**Leave Staff Position** keeps you signed as an ordinary player and keeps your team role, but removes your staff role.'
+            : '**Leave Staff Position** ends your only active team membership, removes your staff and team roles, and makes you a free agent.',
+          hasPlayerMembership
+            ? '**Leave Team Completely** ends both your staff appointment and roster membership, removes both affected roles, and makes you a free agent immediately.'
+            : '**Leave Team Completely** ends your staff-only team association and makes you a free agent immediately.',
         ].join('\n')
       : [
           `You are about to leave ${team} and become a free agent.`,
@@ -323,7 +328,9 @@ export class RosterDepartureCommandHandler {
     const description =
       decision === 'staff-only'
         ? addAnnouncementWarning(
-            `You have left your ${getFriendlyPositionName(fromStaffRoleCode(eligibility.staffRole!))} position and remain a player for ${team}.`,
+            eligibility.playerMembership === null
+              ? `You have left your ${getFriendlyPositionName(fromStaffRoleCode(eligibility.staffRole!))} position for ${team} and are now a free agent.`
+              : `You have left your ${getFriendlyPositionName(fromStaffRoleCode(eligibility.staffRole!))} position and remain a player for ${team}.`,
             result.announcementDelivered,
             result.auditAnnouncementDelivered,
           )

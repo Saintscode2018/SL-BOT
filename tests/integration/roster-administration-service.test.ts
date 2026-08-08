@@ -260,7 +260,7 @@ describe('administrative roster service', () => {
       guildId: guild.id,
       clubId: team.id,
       userId: existing.id,
-      membershipType: 'PLAYER',
+      membershipType: 'TEAM_MANAGER',
     });
     await expect(
       service.add({

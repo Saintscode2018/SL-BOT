@@ -61,9 +61,9 @@ export interface OfferAcceptanceRepositories {
   guilds: Pick<GuildRepository, 'getSettings'>;
   memberships: Pick<
     MembershipRepository,
-    | 'getActivePlayerMembership'
+    | 'listActiveMembershipsForUserInGuild'
     | 'getActiveStaffAppointment'
-    | 'countActivePlayers'
+    | 'countActiveUniqueMembers'
     | 'end'
     | 'createActive'
   >;
@@ -160,14 +160,18 @@ export class OfferAcceptanceService {
       if (club === null) throw new EntityNotFoundError('team was not found');
       if (!club.active) throw new InvalidStateTransitionError('team is inactive');
       if (
-        (await repositories.memberships.getActivePlayerMembership(offer.guildId, player.id)) !==
-        null
+        (
+          await repositories.memberships.listActiveMembershipsForUserInGuild(
+            offer.guildId,
+            player.id,
+          )
+        ).length > 0
       ) {
         throw new MemberAlreadySignedError();
       }
       const settings = await repositories.guilds.getSettings(offer.guildId);
       if (
-        (await repositories.memberships.countActivePlayers(club.id)) >=
+        (await repositories.memberships.countActiveUniqueMembers(club.id)) >=
         getEffectiveSquadLimit(club, settings)
       ) {
         throw new SquadFullError('team has reached its squad limit');
@@ -222,12 +226,14 @@ export class OfferAcceptanceService {
       throw new InvalidStateTransitionError(`club ${destinationClub.id} is inactive`);
     }
 
-    const previousMembership = await repositories.memberships.getActivePlayerMembership(
+    const previousMemberships = await repositories.memberships.listActiveMembershipsForUserInGuild(
       pendingOffer.guildId,
       player.id,
     );
-    if (previousMembership !== null) throw new MemberAlreadySignedError();
-    const activePlayerCount = await repositories.memberships.countActivePlayers(destinationClub.id);
+    if (previousMemberships.length > 0) throw new MemberAlreadySignedError();
+    const activePlayerCount = await repositories.memberships.countActiveUniqueMembers(
+      destinationClub.id,
+    );
     const settings = await repositories.guilds.getSettings(pendingOffer.guildId);
     const effectiveLimit = getEffectiveSquadLimit(destinationClub, settings);
     if (activePlayerCount >= effectiveLimit) {

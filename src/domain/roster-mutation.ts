@@ -59,6 +59,7 @@ export interface UserTransferAnnouncementPlan {
   staffRole?: StaffRoleCode;
   staffRoleId?: string;
   departureMode?: 'STAFF_ONLY' | 'FULL';
+  retainsPlayerMembership?: boolean;
   roster?: TransferRosterPresentation;
   presentation?: TransferAnnouncementPresentation;
 }

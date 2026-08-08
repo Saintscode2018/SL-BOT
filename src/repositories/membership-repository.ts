@@ -65,6 +65,16 @@ export class MembershipRepository {
     });
   }
 
+  public async listActiveMembershipsForUserOnClub(
+    clubId: string,
+    userId: string,
+  ): Promise<ClubMembership[]> {
+    return this.db.clubMembership.findMany({
+      where: { clubId, userId, status: 'ACTIVE' },
+      orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }],
+    });
+  }
+
   public async listActiveMembershipsForGuildWithUsers(
     guildId: string,
   ): Promise<Array<ClubMembership & { user: LeagueUser }>> {
@@ -155,6 +165,16 @@ export class MembershipRepository {
     });
   }
 
+  public async listActiveMembersWithUsers(
+    clubId: string,
+  ): Promise<Array<ClubMembership & { user: LeagueUser }>> {
+    return this.db.clubMembership.findMany({
+      where: { clubId, status: 'ACTIVE' },
+      include: { user: true },
+      orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }],
+    });
+  }
+
   public async end(
     id: string,
     input: { leftAt?: Date; endedByUserId?: string | null } = {},
@@ -193,5 +213,13 @@ export class MembershipRepository {
     return this.db.clubMembership.count({
       where: { clubId, membershipType: 'PLAYER', status: 'ACTIVE' },
     });
+  }
+
+  public async countActiveUniqueMembers(clubId: string): Promise<number> {
+    const activeUsers = await this.db.clubMembership.groupBy({
+      by: ['userId'],
+      where: { clubId, status: 'ACTIVE' },
+    });
+    return activeUsers.length;
   }
 }

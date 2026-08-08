@@ -487,12 +487,16 @@ export class DataImportService {
       if (assessment === 'UNCHANGED') return 'UNCHANGED';
       if (assessment === 'CONFLICT') return 'CONFLICT';
 
-      if (candidate.membershipType === 'PLAYER') {
-        const activePlayerCount = await memberships.countActivePlayers(candidate.club.id);
-        if (activePlayerCount >= getEffectiveSquadLimit(candidate.club, settings)) {
-          return 'SQUAD_LIMIT_REACHED';
-        }
-      } else {
+      const alreadyOnClub = active.some((membership) => membership.clubId === candidate.club.id);
+      if (
+        !alreadyOnClub &&
+        (await memberships.countActiveUniqueMembers(candidate.club.id)) >=
+          getEffectiveSquadLimit(candidate.club, settings)
+      ) {
+        return 'SQUAD_LIMIT_REACHED';
+      }
+
+      if (candidate.membershipType !== 'PLAYER') {
         const occupied = await memberships.getActiveStaffAppointment(
           candidate.club.id,
           candidate.membershipType,

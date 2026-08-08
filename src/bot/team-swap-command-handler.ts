@@ -114,8 +114,8 @@ export class TeamSwapCommandHandler {
     const description = [
       `You are about to swap the complete active populations of ${formatted1} and ${formatted2}.`,
       '',
-      `**Moving to ${formatted1}:** ${eligibility.team2Memberships.length} member(s) (${eligibility.team2ActivePlayerCount} players, ${eligibility.team2Memberships.length - eligibility.team2ActivePlayerCount} staff)`,
-      `**Moving to ${formatted2}:** ${eligibility.team1Memberships.length} member(s) (${eligibility.team1ActivePlayerCount} players, ${eligibility.team1Memberships.length - eligibility.team1ActivePlayerCount} staff)`,
+      `**Moving to ${formatted1}:** ${eligibility.team2ActiveMemberCount} unique member(s)`,
+      `**Moving to ${formatted2}:** ${eligibility.team1ActiveMemberCount} unique member(s)`,
       '',
       '> Active memberships will exchange teams',
       '> Team identities, roles, colors, and squad limits remain unchanged',

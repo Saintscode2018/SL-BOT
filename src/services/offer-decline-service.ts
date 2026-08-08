@@ -116,7 +116,7 @@ export class OfferDeclineService {
         if (destinationClub === null) throw new EntityNotFoundError('club was not found');
 
         const memberships = new MembershipRepository(transaction);
-        const activePlayerCount = await memberships.countActivePlayers(destinationClub.id);
+        const activePlayerCount = await memberships.countActiveUniqueMembers(destinationClub.id);
         const guildSettings = await new GuildRepository(transaction).getSettings(offer.guildId);
         const effectiveSquadLimit = getEffectiveSquadLimit(destinationClub, guildSettings);
         const guild = await new GuildRepository(transaction).requireById(offer.guildId);

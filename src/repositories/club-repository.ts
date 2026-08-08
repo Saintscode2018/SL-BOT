@@ -3,6 +3,7 @@ import type { Club, Prisma } from '@prisma/client';
 import { EntityNotFoundError } from '../domain/errors.js';
 import type { DatabaseClient } from '../domain/types.js';
 import { discordSnowflakeSchema } from '../domain/validation.js';
+import { MembershipRepository } from './membership-repository.js';
 import { translateDatabaseError } from './repository-errors.js';
 
 export interface CreateClubInput {
@@ -82,14 +83,15 @@ export class ClubRepository {
     });
   }
 
-  public async listActiveWithPlayerCounts(
+  public async listActiveWithUniqueMemberCounts(
     guildId: string,
   ): Promise<Array<Club & { activePlayerCount: number }>> {
     const clubs = await this.listActive(guildId);
+    const memberships = new MembershipRepository(this.db);
     return Promise.all(
       clubs.map(async (club) => ({
         ...club,
-        activePlayerCount: await this.countActivePlayers(club.id),
+        activePlayerCount: await memberships.countActiveUniqueMembers(club.id),
       })),
     );
   }

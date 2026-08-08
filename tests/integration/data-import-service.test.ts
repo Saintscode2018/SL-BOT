@@ -408,7 +408,7 @@ describe('DataImportService', () => {
     await expect(database.client.leagueTransaction.count()).resolves.toBe(0);
   });
 
-  it('skips only player overflow while staff imports do not consume PLAYER capacity', async () => {
+  it('counts staff-only imports toward unique-member capacity', async () => {
     await database.client.guildSettings.update({
       where: { guildId: guild.id },
       data: { defaultSquadLimit: 1 },
@@ -423,15 +423,16 @@ describe('DataImportService', () => {
       member(overflowPlayerId, [teamRoleOne]),
     ]);
 
-    expect(result.imported).toMatchObject({ players: 1, teamManagers: 1 });
+    expect(result.imported).toMatchObject({ players: 0, teamManagers: 1 });
     expect(result.issues).toMatchObject([
+      { discordUserId: firstPlayerId, code: 'SQUAD_LIMIT_REACHED' },
       { discordUserId: overflowPlayerId, code: 'SQUAD_LIMIT_REACHED' },
     ]);
     await expect(
       database.client.clubMembership.count({
         where: { clubId: clubOne.id, membershipType: 'PLAYER', status: 'ACTIVE' },
       }),
-    ).resolves.toBe(1);
+    ).resolves.toBe(0);
     await expect(
       database.client.clubMembership.count({
         where: { clubId: clubOne.id, membershipType: 'TEAM_MANAGER', status: 'ACTIVE' },

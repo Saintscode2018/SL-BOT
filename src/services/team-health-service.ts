@@ -33,7 +33,9 @@ export class TeamHealthService {
 
   public async getOverview(discordGuildId: string): Promise<TeamHealthOverview> {
     const guild = await this.requireGuild(discordGuildId);
-    const teams = await new ClubRepository(this.database).listActiveWithPlayerCounts(guild.id);
+    const teams = await new ClubRepository(this.database).listActiveWithUniqueMemberCounts(
+      guild.id,
+    );
     return {
       guild,
       teams: teams.map(({ activePlayerCount, ...club }) => ({ club, activePlayerCount })),
@@ -50,7 +52,7 @@ export class TeamHealthService {
     const memberships = new MembershipRepository(this.database);
     const [settings, activePlayerCount, staff] = await Promise.all([
       new GuildRepository(this.database).getSettings(guild.id),
-      memberships.countActivePlayers(club.id),
+      memberships.countActiveUniqueMembers(club.id),
       memberships.listActiveStaffWithUsers(club.id),
     ]);
 

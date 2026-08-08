@@ -168,13 +168,19 @@ describe('TeamSwapService Integration Tests', () => {
         data: { squadLimitOverride: 2 },
       });
 
-      // Add 3 players to Team 1
+      // Add three unique members with mixed player/staff-only memberships to Team 1.
+      const membershipTypes = ['PLAYER', 'TEAM_MANAGER', 'ASSISTANT_MANAGER'] as const;
       for (let i = 1; i <= 3; i++) {
         const user = await client.leagueUser.create({
           data: { discordUserId: `user-t1-${i}` },
         });
         await client.clubMembership.create({
-          data: { guildId, clubId: team1Id, userId: user.id, membershipType: 'PLAYER' },
+          data: {
+            guildId,
+            clubId: team1Id,
+            userId: user.id,
+            membershipType: membershipTypes[i - 1]!,
+          },
         });
       }
 
@@ -212,7 +218,8 @@ describe('TeamSwapService Integration Tests', () => {
         data: { squadLimitOverride: 2 },
       });
 
-      // Add 2 players to Team 1 (exact limit for Team 2)
+      // Add 2 unique people to Team 1 (exact limit for Team 2).
+      let firstUserId: string | null = null;
       for (let i = 1; i <= 2; i++) {
         const user = await client.leagueUser.create({
           data: { discordUserId: `user-t1-${i}` },
@@ -220,7 +227,16 @@ describe('TeamSwapService Integration Tests', () => {
         await client.clubMembership.create({
           data: { guildId, clubId: team1Id, userId: user.id, membershipType: 'PLAYER' },
         });
+        firstUserId ??= user.id;
       }
+      await client.clubMembership.create({
+        data: {
+          guildId,
+          clubId: team1Id,
+          userId: firstUserId!,
+          membershipType: 'TEAM_MANAGER',
+        },
+      });
 
       await expect(
         service.swap({ authorization: authInput(), team1Id, team2Id }),

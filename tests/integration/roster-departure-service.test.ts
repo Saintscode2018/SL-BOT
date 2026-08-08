@@ -104,6 +104,27 @@ describe('Stage 4B.2 roster departure service', () => {
     });
   }
 
+  async function seedMembership(
+    discordUserId: string,
+    membershipType: 'PLAYER' | 'TEAM_MANAGER' | 'ASSISTANT_MANAGER' | 'PLAYER_MANAGER',
+    club = team,
+  ) {
+    const user = await database.client.leagueUser.upsert({
+      where: { discordUserId },
+      create: { discordUserId },
+      update: {},
+    });
+    return database.client.clubMembership.create({
+      data: {
+        guildId: guild.id,
+        clubId: club.id,
+        userId: user.id,
+        membershipType,
+        status: 'ACTIVE',
+      },
+    });
+  }
+
   describe('/demand eligibility', () => {
     it('allows an ordinary player, ATM, and PM while preserving the bound rank', async () => {
       await sign(playerId);
@@ -131,6 +152,58 @@ describe('Stage 4B.2 roster departure service', () => {
       await expect(
         service.getDemandEligibility(discordGuildId, freeAgentId),
       ).rejects.toBeInstanceOf(NotCurrentlySignedError);
+    });
+
+    it.each([
+      ['ASSISTANT_MANAGER', 'ATM'],
+      ['PLAYER_MANAGER', 'PM'],
+    ] as const)('supports both demand paths for a staff-only %s', async (staffType, staffRole) => {
+      await seedMembership(atmId, staffType);
+
+      await expect(service.getDemandEligibility(discordGuildId, atmId)).resolves.toMatchObject({
+        club: { id: team.id },
+        playerMembership: null,
+        staffRole,
+      });
+
+      const staffOnly = await service.leaveStaffPosition({
+        discordGuildId,
+        discordUserId: atmId,
+        clubId: team.id,
+        expectedStaffRole: staffRole,
+      });
+      expect(staffOnly.playerMembership).toBeNull();
+      expect(staffOnly.announcement).toMatchObject({ retainsPlayerMembership: false });
+      expect(staffOnly.roleMutation.removeRoles.map(({ purpose }) => purpose)).toEqual([
+        'TEAM',
+        staffRole,
+      ]);
+      await expect(
+        database.client.clubMembership.count({
+          where: { clubId: team.id, userId: staffOnly.user.id, status: 'ACTIVE' },
+        }),
+      ).resolves.toBe(0);
+
+      await seedMembership(atmId, staffType);
+      const full = await service.demandFullDeparture({
+        discordGuildId,
+        discordUserId: atmId,
+        clubId: team.id,
+        expectedStaffRole: staffRole,
+      });
+      expect(full.playerMembership).toBeNull();
+      await expect(
+        database.client.clubMembership.count({
+          where: { clubId: team.id, userId: full.user.id, status: 'ACTIVE' },
+        }),
+      ).resolves.toBe(0);
+    });
+
+    it('keeps the TM demand restriction for a staff-only manager', async () => {
+      await seedMembership(tmId, 'TEAM_MANAGER');
+      await expect(service.getDemandEligibility(discordGuildId, tmId)).rejects.toBeInstanceOf(
+        TeamManagerCannotDemandError,
+      );
     });
   });
 
@@ -191,7 +264,7 @@ describe('Stage 4B.2 roster departure service', () => {
         expectedStaffRole: null,
       });
       expect(result.playerMembership).toMatchObject({
-        id: signed.playerMembership.id,
+        id: signed.playerMembership!.id,
         status: 'ENDED',
         endedByUserId: signed.user.id,
       });
@@ -229,7 +302,7 @@ describe('Stage 4B.2 roster departure service', () => {
           expectedStaffRole: staffRole,
         });
         expect(result.playerMembership).toMatchObject({
-          id: appointed.playerMembership.id,
+          id: appointed.playerMembership!.id,
           status: 'ACTIVE',
         });
         expect(result.staffMembership).toMatchObject({ status: 'ENDED' });
@@ -254,7 +327,7 @@ describe('Stage 4B.2 roster departure service', () => {
         clubId: team.id,
         expectedStaffRole: 'PM',
       });
-      expect(result.playerMembership.status).toBe('ENDED');
+      expect(result.playerMembership!.status).toBe('ENDED');
       expect(result.staffMembership).toMatchObject({
         id: appointed.staffMembership?.id,
         status: 'ENDED',
@@ -314,7 +387,7 @@ describe('Stage 4B.2 roster departure service', () => {
         expectedTargetStaffRole: eligibility.targetStaffRole,
       });
       expect(result.playerMembership).toMatchObject({
-        id: signed.playerMembership.id,
+        id: signed.playerMembership!.id,
         status: 'ENDED',
         endedByUserId: manager.user.id,
       });
@@ -348,7 +421,7 @@ describe('Stage 4B.2 roster departure service', () => {
         expectedActorStaffRole: 'TM',
         expectedTargetStaffRole: 'PM',
       });
-      expect(result.playerMembership.status).toBe('ENDED');
+      expect(result.playerMembership!.status).toBe('ENDED');
       expect(result.staffMembership).toMatchObject({
         id: appointed.staffMembership!.id,
         status: 'ENDED',
@@ -364,6 +437,65 @@ describe('Stage 4B.2 roster departure service', () => {
           },
         }),
       ).resolves.toBe(0);
+      await expect(
+        database.client.clubMembership.count({
+          where: { clubId: team.id, userId: appointed.user.id, status: 'ACTIVE' },
+        }),
+      ).resolves.toBe(0);
+    });
+
+    it.each([
+      ['TEAM_MANAGER', 'TM', 'PLAYER', null],
+      ['TEAM_MANAGER', 'TM', 'ASSISTANT_MANAGER', 'ATM'],
+      ['TEAM_MANAGER', 'TM', 'PLAYER_MANAGER', 'PM'],
+      ['ASSISTANT_MANAGER', 'ATM', 'PLAYER', null],
+      ['ASSISTANT_MANAGER', 'ATM', 'PLAYER_MANAGER', 'PM'],
+      ['PLAYER_MANAGER', 'PM', 'PLAYER', null],
+    ] as const)(
+      'lets a staff-only %s (%s) release an eligible %s (%s) target',
+      async (callerType, callerRole, targetType, targetRole) => {
+        await seedMembership(tmId, callerType);
+        await seedMembership(playerId, targetType);
+
+        const eligibility = await service.getReleaseEligibility(discordGuildId, tmId, playerId);
+        expect(eligibility.callerStaffRole).toBe(callerRole);
+        expect(eligibility.targetStaffRole).toBe(targetRole);
+        expect(eligibility.targetPlayerMembership === null).toBe(targetType !== 'PLAYER');
+
+        const result = await service.release({
+          discordGuildId,
+          actorDiscordUserId: tmId,
+          targetDiscordUserId: playerId,
+          clubId: team.id,
+          expectedActorStaffRole: callerRole,
+          expectedTargetStaffRole: targetRole,
+        });
+        await expect(
+          database.client.clubMembership.count({
+            where: { clubId: team.id, userId: result.user.id, status: 'ACTIVE' },
+          }),
+        ).resolves.toBe(0);
+      },
+    );
+
+    it('allows release from an existing over-limit team', async () => {
+      await database.client.guildSettings.update({
+        where: { guildId: guild.id },
+        data: { defaultSquadLimit: 1 },
+      });
+      await seedMembership(tmId, 'TEAM_MANAGER');
+      await seedMembership(playerId, 'PLAYER');
+
+      const result = await service.release({
+        discordGuildId,
+        actorDiscordUserId: tmId,
+        targetDiscordUserId: playerId,
+        clubId: team.id,
+        expectedActorStaffRole: 'TM',
+        expectedTargetStaffRole: null,
+      });
+
+      expect(result.announcement).toMatchObject({ roster: { currentSize: 1, maximumSize: 1 } });
     });
 
     it('synchronizes roles before database mutation and keeps success on announcement failure', async () => {
@@ -399,7 +531,7 @@ describe('Stage 4B.2 roster departure service', () => {
         expectedTargetStaffRole: null,
       });
       expect(order).toEqual(['roles', 'announcement']);
-      expect(result.playerMembership.status).toBe('ENDED');
+      expect(result.playerMembership!.status).toBe('ENDED');
       expect(result.announcementDelivered).toBe(false);
     });
   });

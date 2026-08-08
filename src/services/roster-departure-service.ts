@@ -23,7 +23,7 @@ import { RosterMutationService } from './roster-mutation-service.js';
 export interface DemandEligibility {
   club: Club;
   user: LeagueUser;
-  playerMembership: ClubMembership;
+  playerMembership: ClubMembership | null;
   staffType: Exclude<StaffMembershipType, 'TEAM_MANAGER'> | null;
   staffRole: Exclude<StaffRoleCode, 'TM'> | null;
 }
@@ -33,7 +33,7 @@ export interface ReleaseEligibility {
   callerStaffType: StaffMembershipType;
   callerStaffRole: StaffRoleCode;
   target: LeagueUser;
-  targetPlayerMembership: ClubMembership;
+  targetPlayerMembership: ClubMembership | null;
   targetStaffType: Exclude<StaffMembershipType, 'TEAM_MANAGER'> | null;
   targetStaffRole: Exclude<StaffRoleCode, 'TM'> | null;
 }
@@ -148,21 +148,29 @@ export class RosterDepartureService {
     const user = await new UserRepository(transaction).getByDiscordUserId(discordUserId);
     if (user === null) throw new NotCurrentlySignedError();
     const memberships = new MembershipRepository(transaction);
-    const playerMembership = await memberships.getActivePlayerMembership(guild.id, user.id);
-    if (playerMembership === null) throw new NotCurrentlySignedError();
+    const activeMemberships = await memberships.listActiveMembershipsForUserInGuild(
+      guild.id,
+      user.id,
+    );
     const staffMembership = await memberships.getActiveStaffMembershipForUserInGuild(
       guild.id,
       user.id,
     );
-    if (staffMembership?.membershipType === 'TEAM_MANAGER') {
+    const playerMembership =
+      activeMemberships.find(({ membershipType }) => membershipType === 'PLAYER') ?? null;
+    if (playerMembership === null && staffMembership === null) throw new NotCurrentlySignedError();
+    if (activeMemberships.some(({ membershipType }) => membershipType === 'TEAM_MANAGER')) {
       throw new TeamManagerCannotDemandError();
     }
-    if (staffMembership !== null && staffMembership.clubId !== playerMembership.clubId) {
+    const clubId = staffMembership?.clubId ?? playerMembership?.clubId;
+    if (
+      clubId === undefined ||
+      activeMemberships.some((membership) => membership.clubId !== clubId)
+    ) {
       throw new StaleConfirmationError();
     }
     const club =
-      staffMembership?.club ??
-      (await transaction.club.findUnique({ where: { id: playerMembership.clubId } }));
+      staffMembership?.club ?? (await transaction.club.findUnique({ where: { id: clubId } }));
     if (club === null || club.guildId !== guild.id || !club.active) {
       throw new EntityNotFoundError('active team was not found');
     }
@@ -191,34 +199,38 @@ export class RosterDepartureService {
     const caller = await users.getByDiscordUserId(callerDiscordUserId);
     if (caller === null) throw new CallerHasNoStaffAppointmentError();
     const memberships = new MembershipRepository(transaction);
-    const [callerPlayer, callerStaff] = await Promise.all([
-      memberships.getActivePlayerMembership(guild.id, caller.id),
-      memberships.getActiveStaffMembershipForUserInGuild(guild.id, caller.id),
-    ]);
-    if (
-      callerStaff === null ||
-      callerPlayer === null ||
-      callerPlayer.clubId !== callerStaff.clubId ||
-      !callerStaff.club.active
-    ) {
+    const callerStaff = await memberships.getActiveStaffMembershipForUserInGuild(
+      guild.id,
+      caller.id,
+    );
+    if (callerStaff === null || !callerStaff.club.active) {
       throw new CallerHasNoStaffAppointmentError();
     }
     if (callerDiscordUserId === targetDiscordUserId) throw new SelfReleaseForbiddenError();
 
     const target = await users.getByDiscordUserId(targetDiscordUserId);
     if (target === null) throw new ReleaseTargetIsFreeAgentError();
-    const [targetPlayer, targetStaff] = await Promise.all([
-      memberships.getActivePlayerMembership(guild.id, target.id),
-      memberships.getActiveStaffMembershipForUserInGuild(guild.id, target.id),
-    ]);
-    if (targetPlayer === null) throw new ReleaseTargetIsFreeAgentError();
-    if (targetPlayer.clubId !== callerStaff.clubId) throw new TargetNotOnCallerTeamError();
-    if (targetStaff !== null && targetStaff.clubId !== callerStaff.clubId) {
-      throw new StaleConfirmationError();
+    const targetMemberships = await memberships.listActiveMembershipsForUserInGuild(
+      guild.id,
+      target.id,
+    );
+    if (targetMemberships.length === 0) throw new ReleaseTargetIsFreeAgentError();
+    const targetTeamMemberships = targetMemberships.filter(
+      ({ clubId }) => clubId === callerStaff.clubId,
+    );
+    if (targetTeamMemberships.length === 0) throw new TargetNotOnCallerTeamError();
+    if (targetMemberships.length !== targetTeamMemberships.length) {
+      throw new TargetNotOnCallerTeamError();
     }
-    if (targetStaff?.membershipType === 'TEAM_MANAGER') {
+    const targetPlayer =
+      targetTeamMemberships.find(({ membershipType }) => membershipType === 'PLAYER') ?? null;
+    if (targetTeamMemberships.some(({ membershipType }) => membershipType === 'TEAM_MANAGER')) {
       throw new TeamManagerCannotBeReleasedError();
     }
+    const targetStaff =
+      targetTeamMemberships.find(({ membershipType }) => membershipType === 'ASSISTANT_MANAGER') ??
+      targetTeamMemberships.find(({ membershipType }) => membershipType === 'PLAYER_MANAGER') ??
+      null;
 
     const callerRank = callerStaff.membershipType as StaffMembershipType;
     const callerStaffRole = toStaffRoleCode(callerRank);

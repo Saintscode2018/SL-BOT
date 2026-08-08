@@ -87,6 +87,17 @@ function createPrismaMock(options: PrismaMockOptions = {}) {
       }),
     },
     clubMembership: {
+      findMany: vi.fn(({ where: { userId } }: { where: { userId: string } }) => {
+        if (userId !== `database-${targetId}`) return Promise.resolve([]);
+        const activeMemberships: ClubMembership[] = [];
+        if (targetPlayerClubId !== null) {
+          activeMemberships.push(membership('PLAYER', targetPlayerClubId));
+        }
+        if (targetStaffType !== null) {
+          activeMemberships.push(membership(targetStaffType, targetPlayerClubId ?? 'club-1'));
+        }
+        return Promise.resolve(activeMemberships);
+      }),
       findFirst: vi.fn(
         ({
           where: { userId, membershipType, clubId },

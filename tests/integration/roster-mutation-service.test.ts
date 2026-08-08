@@ -160,7 +160,7 @@ describe('roster mutation service', () => {
       ...input(),
       actorDiscordUserId: memberId,
     });
-    expect(result.playerMembership.status).toBe('ACTIVE');
+    expect(result.playerMembership!.status).toBe('ACTIVE');
     expect(result.staffMembership).toMatchObject({
       status: 'ENDED',
       endedByUserId: result.user.id,
@@ -205,7 +205,7 @@ describe('roster mutation service', () => {
       });
       expect(apply).toHaveBeenCalledWith(removed.roleMutation);
       expect(removed.playerMembership).toMatchObject({
-        id: appointed.playerMembership.id,
+        id: appointed.playerMembership!.id,
         status: 'ACTIVE',
       });
       expect(removed.staffMembership).toMatchObject({
@@ -256,7 +256,7 @@ describe('roster mutation service', () => {
       }),
     ).rejects.toThrow('Discord role removal failed');
     await expect(
-      database.client.clubMembership.findUnique({ where: { id: appointed.playerMembership.id } }),
+      database.client.clubMembership.findUnique({ where: { id: appointed.playerMembership!.id } }),
     ).resolves.toMatchObject({ status: 'ACTIVE' });
     await expect(
       database.client.clubMembership.findUnique({ where: { id: appointed.staffMembership!.id } }),
@@ -274,7 +274,7 @@ describe('roster mutation service', () => {
       ...input(),
       actorDiscordUserId: memberId,
     });
-    expect(result.playerMembership.status).toBe('ENDED');
+    expect(result.playerMembership!.status).toBe('ENDED');
     expect(result.staffMembership?.status).toBe('ENDED');
     expect(result.roleMutation.removeRoles).toEqual([
       { id: team.discordRoleId, purpose: 'TEAM' },
@@ -296,8 +296,8 @@ describe('roster mutation service', () => {
       ...input(memberId),
       staffType: 'ASSISTANT_MANAGER',
     });
-    expect(promoted.playerMembership.id).toBe(signed.playerMembership.id);
-    expect(promotedAgain.playerMembership.id).toBe(signed.playerMembership.id);
+    expect(promoted.playerMembership!.id).toBe(signed.playerMembership!.id);
+    expect(promotedAgain.playerMembership!.id).toBe(signed.playerMembership!.id);
     expect(promotedAgain.roleMutation).toMatchObject({
       addRoles: [{ purpose: 'ATM' }],
       removeRoles: [{ purpose: 'PM' }],
@@ -316,8 +316,8 @@ describe('roster mutation service', () => {
       staffType: 'ASSISTANT_MANAGER',
     });
     const demoted = await service.demoteStaffToPlayer(input(memberId));
-    expect(demoted.playerMembership.id).toBe(appointed.playerMembership.id);
-    expect(demoted.playerMembership.status).toBe('ACTIVE');
+    expect(demoted.playerMembership!.id).toBe(appointed.playerMembership!.id);
+    expect(demoted.playerMembership!.status).toBe('ACTIVE');
     expect(demoted.staffMembership?.status).toBe('ENDED');
     expect(demoted.roleMutation.removeRoles).toEqual([
       { id: '400000000000000002', purpose: 'ATM' },
@@ -331,7 +331,7 @@ describe('roster mutation service', () => {
       staffType: 'PLAYER_MANAGER',
     });
     const released = await service.releaseMemberCompletely(input(memberId));
-    expect(released.playerMembership.status).toBe('ENDED');
+    expect(released.playerMembership!.status).toBe('ENDED');
     expect(released.staffMembership?.status).toBe('ENDED');
     expect(released.roleMutation.removeRoles.map(({ purpose }) => purpose)).toEqual(['TEAM', 'PM']);
   });

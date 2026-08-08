@@ -26,7 +26,7 @@ export interface PromotionEligibility {
   callerStaffType: StaffMembershipType;
   callerStaffRole: StaffRoleCode;
   target: LeagueUser;
-  targetPlayerMembership: ClubMembership;
+  targetPlayerMembership: ClubMembership | null;
   targetStaffType: StaffMembershipType | null;
   targetStaffRole: StaffRoleCode | null;
   destinationStaffType: Exclude<StaffMembershipType, 'TEAM_MANAGER'>;
@@ -39,7 +39,7 @@ export interface DemotionEligibility {
   callerStaffType: 'TEAM_MANAGER';
   callerStaffRole: 'TM';
   target: LeagueUser;
-  targetPlayerMembership: ClubMembership;
+  targetPlayerMembership: ClubMembership | null;
   targetStaffType: Exclude<StaffMembershipType, 'TEAM_MANAGER'>;
   targetStaffRole: Exclude<StaffRoleCode, 'TM'>;
 }
@@ -166,17 +166,21 @@ export class RosterPromotionDemotionService {
     const target = await users.getByDiscordUserId(targetDiscordUserId);
     if (target === null) throw new MemberIsFreeAgentError();
 
-    const targetPlayer = await memberships.getActivePlayerMembership(guild.id, target.id);
-    if (targetPlayer === null) throw new MemberIsFreeAgentError();
-
-    if (targetPlayer.clubId !== callerStaff.clubId) {
-      throw new TargetNotOnCallerTeamError();
-    }
-
-    const targetStaff = await memberships.getActiveStaffMembershipForUserInGuild(
+    const targetMemberships = await memberships.listActiveMembershipsForUserInGuild(
       guild.id,
       target.id,
     );
+    if (targetMemberships.length === 0) throw new MemberIsFreeAgentError();
+    if (targetMemberships.some(({ clubId }) => clubId !== callerStaff.clubId)) {
+      throw new TargetNotOnCallerTeamError();
+    }
+    const targetPlayer =
+      targetMemberships.find(({ membershipType }) => membershipType === 'PLAYER') ?? null;
+    const targetStaff =
+      targetMemberships.find(({ membershipType }) => membershipType === 'TEAM_MANAGER') ??
+      targetMemberships.find(({ membershipType }) => membershipType === 'ASSISTANT_MANAGER') ??
+      targetMemberships.find(({ membershipType }) => membershipType === 'PLAYER_MANAGER') ??
+      null;
     const targetStaffType =
       targetStaff === null ? null : (targetStaff.membershipType as StaffMembershipType);
 
@@ -187,6 +191,8 @@ export class RosterPromotionDemotionService {
     if (targetStaffType === destinationStaffType) {
       throw new TargetAlreadyDesiredRankError();
     }
+
+    if (targetPlayer === null && targetStaffType === null) throw new MemberIsFreeAgentError();
 
     // Path checks:
     // TM: Player -> PM, Player -> ATM, PM -> ATM
@@ -262,17 +268,21 @@ export class RosterPromotionDemotionService {
     const target = await users.getByDiscordUserId(targetDiscordUserId);
     if (target === null) throw new MemberIsFreeAgentError();
 
-    const targetPlayer = await memberships.getActivePlayerMembership(guild.id, target.id);
-    if (targetPlayer === null) throw new MemberIsFreeAgentError();
-
-    if (targetPlayer.clubId !== callerStaff.clubId) {
-      throw new TargetNotOnCallerTeamError();
-    }
-
-    const targetStaff = await memberships.getActiveStaffMembershipForUserInGuild(
+    const targetMemberships = await memberships.listActiveMembershipsForUserInGuild(
       guild.id,
       target.id,
     );
+    if (targetMemberships.length === 0) throw new MemberIsFreeAgentError();
+    if (targetMemberships.some(({ clubId }) => clubId !== callerStaff.clubId)) {
+      throw new TargetNotOnCallerTeamError();
+    }
+    const targetPlayer =
+      targetMemberships.find(({ membershipType }) => membershipType === 'PLAYER') ?? null;
+    const targetStaff =
+      targetMemberships.find(({ membershipType }) => membershipType === 'TEAM_MANAGER') ??
+      targetMemberships.find(({ membershipType }) => membershipType === 'ASSISTANT_MANAGER') ??
+      targetMemberships.find(({ membershipType }) => membershipType === 'PLAYER_MANAGER') ??
+      null;
     if (
       targetStaff === null ||
       !['ASSISTANT_MANAGER', 'PLAYER_MANAGER'].includes(targetStaff.membershipType)

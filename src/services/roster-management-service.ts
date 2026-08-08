@@ -70,17 +70,24 @@ export class RosterManagementService {
         });
       }
       const memberships = new MembershipRepository(transaction);
-      const existing = await memberships.getActivePlayerMembership(
+      const activeMemberships = await memberships.listActiveMembershipsForUserInGuild(
         authorization.guild.id,
         player.id,
       );
-      if (existing !== null) {
+      if (activeMemberships.some(({ membershipType }) => membershipType === 'PLAYER')) {
         throw new AlreadyMemberOfClubError('player already has an active roster membership');
       }
-      const playerCount = await memberships.countActivePlayers(club.id);
+      if (activeMemberships.some(({ clubId }) => clubId !== club.id)) {
+        throw new AlreadyMemberOfClubError('player already belongs to another team');
+      }
       const settings = await new GuildRepository(transaction).getSettings(authorization.guild.id);
       const effectiveLimit = getEffectiveSquadLimit(club, settings);
-      if (playerCount >= effectiveLimit) throw new SquadFullError('team roster is full');
+      if (
+        activeMemberships.length === 0 &&
+        (await memberships.countActiveUniqueMembers(club.id)) >= effectiveLimit
+      ) {
+        throw new SquadFullError('team roster is full');
+      }
       const addedAt = input.addedAt ?? new Date();
       const membership = await memberships.createActive({
         guildId: authorization.guild.id,
@@ -190,14 +197,16 @@ export class RosterManagementService {
       if (club === null) throw new TeamNotFoundError('team was not found in this server');
       if (!club.active) throw new ClubInactiveError('team is inactive');
       const memberships = new MembershipRepository(transaction);
-      const [allActiveMembers, staff] = await Promise.all([
+      const [activeMemberships, players, staff] = await Promise.all([
+        memberships.listActiveMembersWithUsers(club.id),
         memberships.listActivePlayersWithUsers(club.id),
         memberships.listActiveStaffWithUsers(club.id),
       ]);
       const activeStaffUserIds = new Set(staff.map(({ userId }) => userId));
-      const ordinaryPlayers = allActiveMembers.filter(
-        ({ userId }) => !activeStaffUserIds.has(userId),
-      );
+      const ordinaryPlayers = players.filter(({ userId }) => !activeStaffUserIds.has(userId));
+      const allActiveMembers = [
+        ...new Map(activeMemberships.map((membership) => [membership.userId, membership])).values(),
+      ];
       return { club, allActiveMembers, activeStaffUserIds, ordinaryPlayers, staff };
     });
   }

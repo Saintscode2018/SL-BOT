@@ -100,6 +100,15 @@ describe('Offer Lifecycle Audit Routing', () => {
             clubMembership: {
               findFirst: vi.fn().mockResolvedValue(null),
               count: vi.fn().mockResolvedValue(5),
+              groupBy: vi
+                .fn()
+                .mockResolvedValue([
+                  { userId: 'member-1' },
+                  { userId: 'member-2' },
+                  { userId: 'member-3' },
+                  { userId: 'member-4' },
+                  { userId: 'member-5' },
+                ]),
             },
             offer: {
               findFirst: vi.fn().mockResolvedValue(null),
@@ -290,6 +299,13 @@ describe('Offer Lifecycle Audit Routing', () => {
             clubMembership: {
               count: vi.fn().mockResolvedValue(3),
               findFirst: vi.fn().mockResolvedValue(null),
+              groupBy: vi
+                .fn()
+                .mockResolvedValue([
+                  { userId: 'member-1' },
+                  { userId: 'member-2' },
+                  { userId: 'member-3' },
+                ]),
             },
             guildSettings: {
               findUnique: vi

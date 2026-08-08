@@ -186,8 +186,8 @@ function fixture() {
       team2Memberships: [{ id: 'cm-3', membershipType: 'PLAYER' }],
       team1EffectiveLimit: 17,
       team2EffectiveLimit: 17,
-      team1ActivePlayerCount: 1,
-      team2ActivePlayerCount: 1,
+      team1ActiveMemberCount: 1,
+      team2ActiveMemberCount: 1,
     }),
   );
   const swap = vi.fn(() =>

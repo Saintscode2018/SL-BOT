@@ -180,7 +180,9 @@ export class ClubManagementService {
     const guild = await guilds.getByDiscordGuildId(discordGuildId);
     if (guild === null) return [];
     const settings = await guilds.getSettings(guild.id);
-    const clubs = await new ClubRepository(this.database).listActiveWithPlayerCounts(guild.id);
+    const clubs = await new ClubRepository(this.database).listActiveWithUniqueMemberCounts(
+      guild.id,
+    );
     return clubs.map(({ activePlayerCount, ...club }) => ({
       club,
       activePlayerCount,

@@ -105,6 +105,9 @@ describe('team health service and policy', () => {
     const endedPlayer = await client.leagueUser.create({
       data: { discordUserId: '600000000000000003' },
     });
+    const staffOnly = await client.leagueUser.create({
+      data: { discordUserId: '600000000000000004' },
+    });
     await client.clubMembership.createMany({
       data: [
         {
@@ -138,6 +141,13 @@ describe('team health service and policy', () => {
         },
         {
           guildId: guild.id,
+          clubId: firstActive.id,
+          userId: staffOnly.id,
+          membershipType: 'ASSISTANT_MANAGER',
+          status: 'ACTIVE',
+        },
+        {
+          guildId: guild.id,
           clubId: secondActive.id,
           userId: endedPlayer.id,
           membershipType: 'PLAYER',
@@ -151,24 +161,34 @@ describe('team health service and policy', () => {
     await destroyTestDatabase(database);
   });
 
-  it('returns active teams only in the established creation order with current player counts', async () => {
+  it('returns active teams only in creation order with unique active-member counts', async () => {
     const result = await new TeamHealthService(client).getOverview(discordGuildId);
     expect(result.guild.name).toBe('Super League');
     expect(result.teams.map(({ club }) => club.discordRoleId)).toEqual([
       '500000000000000001',
       '500000000000000002',
     ]);
-    expect(result.teams.map(({ activePlayerCount }) => activePlayerCount)).toEqual([2, 1]);
+    expect(result.teams.map(({ activePlayerCount }) => activePlayerCount)).toEqual([3, 1]);
     expect(result.teams.some(({ club }) => club.id === inactiveClubId)).toBe(false);
   });
 
-  it('returns detailed active staff, the active PLAYER count, and effective override', async () => {
+  it('returns detailed active staff, unique active-member count, and effective override', async () => {
     const result = await new TeamHealthService(client).getDetail(discordGuildId, activeClubId);
-    expect(result.team.activePlayerCount).toBe(2);
+    expect(result.team.activePlayerCount).toBe(3);
     expect(result.team.effectiveSquadLimit).toBe(19);
-    expect(result.team.staff).toHaveLength(1);
-    expect(result.team.staff[0]?.membershipType).toBe('TEAM_MANAGER');
-    expect(result.team.staff[0]?.user.discordUserId).toBe('600000000000000001');
+    expect(result.team.staff).toHaveLength(2);
+    expect(
+      result.team.staff.map(({ membershipType, user }) => ({
+        membershipType,
+        discordUserId: user.discordUserId,
+      })),
+    ).toEqual([
+      {
+        membershipType: 'ASSISTANT_MANAGER',
+        discordUserId: '600000000000000004',
+      },
+      { membershipType: 'TEAM_MANAGER', discordUserId: '600000000000000001' },
+    ]);
   });
 
   it('uses the guild default when a team has no override', async () => {
