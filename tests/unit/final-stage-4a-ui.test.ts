@@ -82,6 +82,7 @@ class TestInteraction implements CommandInteraction {
   public readonly deferrals: Array<DeferredInteractionResponse | undefined> = [];
   public readonly edits: EditedInteractionResponse[] = [];
   public readonly followUps: SafeInteractionResponse[] = [];
+  public readonly timeline: string[] = [];
   public readonly guildId = authorization.discordGuildId;
   public readonly guildName = 'Development League';
   public readonly guildOwnerId = authorization.guildOwnerId;
@@ -149,24 +150,28 @@ class TestInteraction implements CommandInteraction {
   }
 
   public reply(response: SafeInteractionResponse): Promise<void> {
+    this.timeline.push('reply');
     this.replied = true;
     this.replies.push(response);
     return Promise.resolve();
   }
 
   public deferReply(response?: DeferredInteractionResponse): Promise<void> {
+    this.timeline.push('defer');
     this.deferred = true;
     this.deferrals.push(response);
     return Promise.resolve();
   }
 
   public editReply(response: EditedInteractionResponse): Promise<void> {
+    this.timeline.push('edit');
     this.replied = true;
     this.edits.push(response);
     return Promise.resolve();
   }
 
   public followUp(response: SafeInteractionResponse): Promise<void> {
+    this.timeline.push('followUp');
     this.followUps.push(response);
     return Promise.resolve();
   }
@@ -415,10 +420,9 @@ describe('final Stage 4A command UI', () => {
 
     await command('team').execute(interaction, context);
 
-    expect(interaction.replies).toHaveLength(1);
-    expect(interaction.replies[0]?.flags).toBe(MessageFlags.Ephemeral);
-    expect(interaction.deferrals).toEqual([]);
-    expect(interaction.edits).toEqual([]);
+    expect(interaction.replies).toEqual([]);
+    expect(interaction.deferrals).toEqual([{ flags: MessageFlags.Ephemeral }]);
+    expect(interaction.edits).toHaveLength(1);
     expect(interaction.followUps).toEqual([]);
     expect(responseText(interaction)).toContain(
       `🔵 <@&${team.discordRoleId}> — 4/17\\n<:Newcastle:987654321098765432> <@&300000000000000002> — 0/17`,
@@ -460,10 +464,9 @@ describe('final Stage 4A command UI', () => {
     await command('staff').execute(interaction, createContext());
 
     const text = responseText(interaction);
-    expect(interaction.replies).toHaveLength(1);
-    expect(interaction.replies[0]?.flags).toBe(MessageFlags.Ephemeral);
-    expect(interaction.deferrals).toEqual([]);
-    expect(interaction.edits).toEqual([]);
+    expect(interaction.replies).toEqual([]);
+    expect(interaction.deferrals).toEqual([{ flags: MessageFlags.Ephemeral }]);
+    expect(interaction.edits).toHaveLength(1);
     expect(interaction.followUps).toEqual([]);
     expect(text).toContain(`🔵 <@&${team.discordRoleId}>\\n> 👑 Team Manager: Vacant`);
     expect(text).toContain('> 👔 Assistant Team Manager: Vacant');
@@ -520,33 +523,38 @@ describe('final Stage 4A command UI', () => {
 
     await command('staff').execute(interaction, context);
 
-    expect(interaction.replies).toHaveLength(1);
-    expect(interaction.replies[0]?.flags).toBe(MessageFlags.Ephemeral);
+    expect(interaction.replies).toEqual([]);
+    expect(interaction.deferrals).toEqual([{ flags: MessageFlags.Ephemeral }]);
+    expect(interaction.edits).toHaveLength(1);
     expect(interaction.followUps).toHaveLength(1);
     expect(interaction.followUps[0]?.flags).toBe(MessageFlags.Ephemeral);
-    expect(interaction.deferrals).toEqual([]);
-    expect(interaction.edits).toEqual([]);
   });
 
-  it('uses the message-mode roster description and removes title and team field', async () => {
+  it('defers roster view before slow work and edits one private initial response without changing output', async () => {
     const interaction = new TestInteraction(
       'roster',
       { subcommand: 'view', team: team.id },
       'bot-channel',
     );
+    const context = createContext();
+    const list = context.rosterManagementService.list;
+    context.rosterManagementService.list = (...args) => {
+      interaction.timeline.push('roster-work');
+      return list(...args);
+    };
 
-    await command('roster').execute(interaction, createContext());
+    await command('roster').execute(interaction, context);
 
-    const embed = interaction.replies[0]?.embeds?.[0]?.data;
+    const embed = interaction.edits[0]?.embeds?.[0]?.data;
     const text = responseText(interaction);
     expect(embed?.title).toBeUndefined();
     expect(embed?.description).toBe(`🔵 <@&${team.discordRoleId}> Roster`);
     expect(embed?.color).toBe(0xf97316);
     expect(embed?.footer?.text).toBe('Roster for T1, Development League');
-    expect(interaction.replies).toHaveLength(1);
-    expect(interaction.replies[0]?.flags).toBe(MessageFlags.Ephemeral);
-    expect(interaction.deferrals).toEqual([]);
-    expect(interaction.edits).toEqual([]);
+    expect(interaction.timeline).toEqual(['defer', 'roster-work', 'edit']);
+    expect(interaction.replies).toEqual([]);
+    expect(interaction.deferrals).toEqual([{ flags: MessageFlags.Ephemeral }]);
+    expect(interaction.edits).toHaveLength(1);
     expect(interaction.followUps).toEqual([]);
     expect(embed?.fields?.map(({ name }) => name)).toEqual([
       '📊 Roster Count',
@@ -558,6 +566,32 @@ describe('final Stage 4A command UI', () => {
     ]);
     expect(text.match(new RegExp(`<@&${team.discordRoleId}>`, 'g'))).toHaveLength(1);
     expect(text).not.toContain('Assistant Coach');
+  });
+
+  it('maps roster-view failures through editReply after deferral without duplicate acknowledgement', async () => {
+    const interaction = new TestInteraction(
+      'roster',
+      { subcommand: 'view', team: team.id },
+      'bot-channel',
+    );
+    const context = createContext();
+    context.rosterManagementService.list = () => {
+      interaction.timeline.push('roster-work');
+      return Promise.reject(new Error('private roster failure'));
+    };
+    const registry = {
+      resolve: (name: string) => (name === 'roster' ? command('roster') : null),
+    } as unknown as CommandRegistry;
+
+    await handleInteractionCreate(interaction, registry, context, new MemoryLogger());
+
+    expect(interaction.timeline).toEqual(['defer', 'roster-work', 'edit']);
+    expect(interaction.deferrals).toEqual([{ flags: MessageFlags.Ephemeral }]);
+    expect(interaction.replies).toEqual([]);
+    expect(interaction.edits).toHaveLength(1);
+    expect(interaction.followUps).toEqual([]);
+    expect(interaction.edits[0]?.embeds?.[0]?.data.title).toBe('❌ Command Failed');
+    expect(JSON.stringify(interaction.edits)).not.toContain('private roster failure');
   });
 
   it('resolves each roster staff member and player once before formatting', async () => {
@@ -629,7 +663,9 @@ describe('final Stage 4A command UI', () => {
 
     expect(interaction.followUps.length).toBeGreaterThan(0);
     expect(interaction.followUps.every(({ flags }) => flags === MessageFlags.Ephemeral)).toBe(true);
-    const output = [interaction.replies[0], ...interaction.followUps]
+    expect(interaction.timeline[0]).toBe('defer');
+    expect(interaction.timeline[1]).toBe('edit');
+    const output = [interaction.edits[0], ...interaction.followUps]
       .flatMap((response) => response?.embeds ?? [])
       .map((embed) => JSON.stringify(embed.data))
       .join('\n');
@@ -664,7 +700,7 @@ describe('final Stage 4A command UI', () => {
 
     await command('roster').execute(interaction, context);
 
-    const embed = interaction.replies[0]?.embeds?.[0]?.data;
+    const embed = interaction.edits[0]?.embeds?.[0]?.data;
     expect(embed?.title).toBeUndefined();
     expect(embed?.description).toBe(
       '<:Newcastle:987654321098765432> <@&300000000000000002> Roster',
@@ -687,7 +723,7 @@ describe('final Stage 4A command UI', () => {
 
     await command('roster').execute(interaction, createContext());
 
-    const embed = interaction.replies[0]?.embeds?.[0]?.data;
+    const embed = interaction.edits[0]?.embeds?.[0]?.data;
     expect(embed?.color).toBe(EMBED_COLORS.INFO);
     if (roleMetadata === null) {
       expect(embed?.title).toBeUndefined();
@@ -720,11 +756,10 @@ describe('final Stage 4A command UI', () => {
 
     const view = new TestInteraction('limit', { subcommand: 'view', team: team.id }, 'bot-channel');
     await command('limit').execute(view, createContext());
-    expect(view.replies[0]?.embeds?.[0]?.data.color).toBe(0xf97316);
-    expect(view.replies).toHaveLength(1);
-    expect(view.replies[0]?.flags).toBe(MessageFlags.Ephemeral);
-    expect(view.deferrals).toEqual([]);
-    expect(view.edits).toEqual([]);
+    expect(view.edits[0]?.embeds?.[0]?.data.color).toBe(0xf97316);
+    expect(view.replies).toEqual([]);
+    expect(view.deferrals).toEqual([{ flags: MessageFlags.Ephemeral }]);
+    expect(view.edits).toHaveLength(1);
     expect(view.followUps).toEqual([]);
 
     const offer = new TestInteraction('offer', { player: 'player-1' }, 'bot-channel');

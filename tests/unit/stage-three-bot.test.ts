@@ -451,16 +451,15 @@ describe('stage three command registry and deployment', () => {
         }),
     };
     await command?.execute(interaction, context);
-    const embed = interaction.replies[0]?.embeds?.[0]?.data;
+    const embed = interaction.edits[0]?.embeds?.[0]?.data;
     expect(embed?.title).toBeUndefined();
     expect(embed?.description).toBe('🔴 <@&r-1> Roster');
     expect(embed?.color).toBe(0x3498db);
     expect(embed?.fields?.some(({ name }) => name === 'Team')).toBe(false);
     expect(embed?.footer?.text).toBe('Roster for T1, Test Guild');
-    expect(interaction.replies).toHaveLength(1);
-    expect(interaction.replies[0]?.flags).toBe(MessageFlags.Ephemeral);
-    expect(interaction.deferred).toBe(false);
-    expect(interaction.edits).toEqual([]);
+    expect(interaction.replies).toEqual([]);
+    expect(interaction.deferred).toBe(true);
+    expect(interaction.edits).toHaveLength(1);
     expect(interaction.followUps).toEqual([]);
   });
 

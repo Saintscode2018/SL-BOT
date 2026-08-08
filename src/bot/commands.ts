@@ -1028,13 +1028,14 @@ const teamCommand: CommandDefinition = {
     }
 
     // team list is private to the invoking user
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const teams = await context.clubManagementService.listActive(execution.guildId);
     if (teams.length === 0) {
       const embed = createInfoEmbed({
         title: 'Active Teams',
         description: 'No active teams are registered in the league.',
       });
-      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+      await interaction.editReply({ embeds: [embed] });
       return;
     }
 
@@ -1047,7 +1048,7 @@ const teamCommand: CommandDefinition = {
       description: teamLines.join('\n').slice(0, 4000),
     });
 
-    await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+    await interaction.editReply({ embeds: [embed] });
   },
   autocomplete: autocompleteTeam,
 };
@@ -1243,6 +1244,7 @@ const limitCommand: CommandDefinition = {
 
     // limit view is private to the invoking user
     const teamId = execution.options.getString('team') ?? undefined;
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const view = await context.limitManagementService.viewLimit(execution.guildId, teamId);
 
     if (view.selectedClub !== undefined) {
@@ -1263,7 +1265,7 @@ const limitCommand: CommandDefinition = {
         ],
         thumbnail,
       });
-      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+      await interaction.editReply({ embeds: [embed] });
       return;
     }
 
@@ -1282,7 +1284,7 @@ const limitCommand: CommandDefinition = {
       ],
     });
 
-    await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+    await interaction.editReply({ embeds: [embed] });
   },
   autocomplete: autocompleteTeam,
 };
@@ -1424,6 +1426,7 @@ const staffCommand: CommandDefinition = {
     }
 
     // staff list is private to the invoking user
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const selectedTeamId = execution.options.getString('team');
     if (selectedTeamId) {
       const staff = await context.staffManagementService.list(execution.guildId, selectedTeamId);
@@ -1459,7 +1462,7 @@ const staffCommand: CommandDefinition = {
         thumbnail,
       });
 
-      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+      await interaction.editReply({ embeds: [embed] });
       return;
     }
 
@@ -1469,7 +1472,7 @@ const staffCommand: CommandDefinition = {
         title: 'Team Staff Directory',
         description: 'No active teams are registered in the league.',
       });
-      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+      await interaction.editReply({ embeds: [embed] });
       return;
     }
 
@@ -1498,7 +1501,7 @@ const staffCommand: CommandDefinition = {
 
     const firstEmbed = embeds[0];
     if (firstEmbed === undefined) throw new ConfigurationError('staff directory is empty');
-    await interaction.reply({ embeds: [firstEmbed], flags: MessageFlags.Ephemeral });
+    await interaction.editReply({ embeds: [firstEmbed] });
     for (const embed of embeds.slice(1)) {
       await interaction.followUp({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
@@ -1613,6 +1616,7 @@ const rosterCommand: CommandDefinition = {
     const teamId = requireString(execution.options, 'team');
 
     // roster view is private to the invoking user and matches the visual specification
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const result = await context.rosterManagementService.list(execution.guildId, teamId);
     const settings = await context.guildConfigurationService
       .load(execution.guildId)
@@ -1702,7 +1706,7 @@ const rosterCommand: CommandDefinition = {
       footer: `Roster for ${formatTeamPlainRoleName(presentation.team)}, ${leagueName}`,
     });
 
-    await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+    await interaction.editReply({ embeds: [embed] });
     for (const playerChunk of playerChunks.slice(1)) {
       const continuation = createInfoEmbed({
         author,

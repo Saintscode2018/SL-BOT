@@ -208,8 +208,10 @@ describe('roster autocomplete command correlation', () => {
 
       await command.execute(interaction, context);
 
-      expect(interaction.replies).toHaveLength(1);
-      const embed = interaction.replies[0]?.embeds?.[0]?.data;
+      expect(interaction.replies).toEqual([]);
+      expect(interaction.deferred).toBe(true);
+      expect(interaction.edits).toHaveLength(1);
+      const embed = interaction.edits[0]?.embeds?.[0]?.data;
       expect(embed?.title).toBeUndefined();
       expect(embed?.description).toBe(`${emoji} <@&${roleId}> Roster`);
       expect(embed?.fields?.some(({ name }) => name === 'Team')).toBe(false);
