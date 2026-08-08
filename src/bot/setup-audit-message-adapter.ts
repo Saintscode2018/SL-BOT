@@ -29,12 +29,14 @@ export class DiscordSetupAuditMessageAdapter implements SetupAuditMessageAdapter
       user?.username ||
       'Unknown User';
 
+    const actorVerb = message.actorVerb ?? 'Configured';
+
     const embed = createSuccessEmbed({
       title: message.title,
       description: message.description,
       fields: [
         ...message.fields.map((field) => ({ ...field, inline: field.inline ?? false })),
-        createActorField('Configured', message.actorDiscordUserId, actorDisplayName),
+        createActorField(actorVerb, message.actorDiscordUserId, actorDisplayName),
       ],
       timestamp: message.timestamp,
     });

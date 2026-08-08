@@ -783,4 +783,93 @@ describe('final Stage 4A command UI', () => {
     expect(embed.fields?.at(-1)?.name).toBe('Configured by');
     expect(embed.timestamp).toBe('2026-08-01T00:00:00.000Z');
   });
+
+  describe('Team and Limit command Audit publishing', () => {
+    it.each([
+      ['team', { subcommand: 'add', role: team.discordRoleId, emoji: '🔵' }, 'Added', 'Team Added'],
+      [
+        'team',
+        { subcommand: 'edit', team: team.id, role: team.discordRoleId, emoji: '🔴' },
+        'Edited',
+        'Team Updated',
+      ],
+      ['limit', { subcommand: 'default', amount: 25 }, 'Updated', 'Squad Limit Updated'],
+      [
+        'limit',
+        { subcommand: 'team', team: team.id, amount: 22 },
+        'Updated',
+        'Team Squad Limit Updated',
+      ],
+      ['limit', { subcommand: 'reset', team: team.id }, 'Reset', 'Team Squad Limit Reset'],
+    ])(
+      'publishes post-commit audit message for /%s %s with actorVerb=%s',
+      async (commandName, options, expectedVerb, expectedTitle) => {
+        const context = createContext();
+        const publish = vi.fn<CommandContext['setupAuditService']['publish']>(() =>
+          Promise.resolve(true),
+        );
+        context.setupAuditService.publish = publish;
+
+        const interaction = new TestInteraction(commandName, options);
+        await command(commandName).execute(interaction, context);
+
+        expect(publish).toHaveBeenCalledOnce();
+        const lastCall = publish.mock.calls[0]?.[0];
+        expect(lastCall?.channelId).toBe('audit-channel');
+        expect(lastCall?.title).toContain(expectedTitle);
+        expect(lastCall?.actorDiscordUserId).toBe(authorization.discordUserId);
+        expect(lastCall?.actorVerb).toBe(expectedVerb);
+        expect(responseText(interaction)).not.toContain('could not be delivered');
+      },
+    );
+
+    it.each([
+      ['team', { subcommand: 'add', role: team.discordRoleId, emoji: '🔵' }],
+      ['team', { subcommand: 'edit', team: team.id, emoji: '🟢' }],
+      ['limit', { subcommand: 'default', amount: 30 }],
+      ['limit', { subcommand: 'team', team: team.id, amount: 15 }],
+      ['limit', { subcommand: 'reset', team: team.id }],
+    ])(
+      'appends audit delivery warning when audit delivery fails for /%s %s',
+      async (commandName, options) => {
+        const context = createContext();
+        context.setupAuditService.publish = () => Promise.resolve(false);
+
+        const interaction = new TestInteraction(commandName, options);
+        await command(commandName).execute(interaction, context);
+
+        expect(responseText(interaction)).toContain(
+          'Configuration was saved, but the audit message could not be delivered.',
+        );
+      },
+    );
+
+    it.each([
+      ['team', { subcommand: 'add', role: team.discordRoleId, emoji: '🔵' }],
+      ['team', { subcommand: 'edit', team: team.id, emoji: '🟢' }],
+      ['limit', { subcommand: 'default', amount: 30 }],
+      ['limit', { subcommand: 'team', team: team.id, amount: 15 }],
+      ['limit', { subcommand: 'reset', team: team.id }],
+    ])(
+      'skips audit publication and appends no warning when audit channel is unconfigured for /%s %s',
+      async (commandName, options) => {
+        const context = createContext();
+        const publish = vi.fn(() => Promise.resolve(true));
+        context.setupAuditService.publish = publish;
+        const unconfigResult = setupResult(null);
+        context.guildConfigurationService.load = () =>
+          Promise.resolve({
+            guild: unconfigResult.guild,
+            settings: unconfigResult.settings,
+            activeClubs: [],
+          });
+
+        const interaction = new TestInteraction(commandName, options);
+        await command(commandName).execute(interaction, context);
+
+        expect(publish).not.toHaveBeenCalled();
+        expect(responseText(interaction)).not.toContain('could not be delivered');
+      },
+    );
+  });
 });

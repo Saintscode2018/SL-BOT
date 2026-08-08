@@ -13,6 +13,20 @@ export interface SetupAuditMessage {
   fields: readonly SetupAuditField[];
   actorDiscordUserId: string;
   timestamp: Date;
+  actorVerb?:
+    | 'Configured'
+    | 'Updated'
+    | 'Added'
+    | 'Removed'
+    | 'Appointed'
+    | 'Edited'
+    | 'Reset'
+    | 'Demanded'
+    | 'Released'
+    | 'Promoted'
+    | 'Demoted'
+    | 'Disbanded'
+    | undefined;
 }
 
 export interface SetupAuditMessageAdapter {

@@ -72,6 +72,20 @@ async function publishSetupAudit(
     description: string;
     fields: Array<{ name: string; value: string; inline?: boolean }>;
     actorDiscordUserId: string;
+    actorVerb?:
+      | 'Configured'
+      | 'Updated'
+      | 'Added'
+      | 'Removed'
+      | 'Appointed'
+      | 'Edited'
+      | 'Reset'
+      | 'Demanded'
+      | 'Released'
+      | 'Promoted'
+      | 'Demoted'
+      | 'Disbanded'
+      | undefined;
   },
 ): Promise<boolean> {
   if (input.channelId === null) return true;
@@ -82,6 +96,7 @@ async function publishSetupAudit(
     fields: input.fields,
     actorDiscordUserId: input.actorDiscordUserId,
     timestamp: new Date(),
+    actorVerb: input.actorVerb,
   });
 }
 
@@ -577,15 +592,36 @@ const teamCommand: CommandDefinition = {
         emoji: validatedEmoji.display,
       });
 
+      const config = await context.guildConfigurationService
+        .load(execution.guildId)
+        .catch(() => null);
+      const auditChannelId = config?.settings.auditChannelId ?? null;
+
       const presentation = await resolveTeamPresentation(interaction, club);
       const thumbnail = getTeamThumbnail(club.emoji);
+
+      const title = `${BOT_EMOJIS.success} Team Added`;
+      const description = `Successfully added ${formatTeamIdentity(presentation.team, 'message')}.`;
+      const auditFields = [
+        { name: 'Role', value: `<@&${club.discordRoleId}>`, inline: true },
+        { name: 'Emoji', value: club.emoji, inline: true },
+      ];
+
+      const auditPublished = await publishSetupAudit(context, {
+        channelId: auditChannelId,
+        title,
+        description,
+        fields: auditFields,
+        actorDiscordUserId: execution.authorization.discordUserId,
+        actorVerb: 'Added',
+      });
+
       const embed = createSuccessEmbed({
-        title: `${BOT_EMOJIS.success} Team Added`,
-        description: `Successfully added ${formatTeamIdentity(presentation.team, 'message')}.`,
+        title,
+        description: withAuditWarning(description, auditPublished),
         color: getTeamEmbedColor(presentation, BOT_COLORS.success),
         fields: [
-          { name: 'Role', value: `<@&${club.discordRoleId}>`, inline: true },
-          { name: 'Emoji', value: club.emoji, inline: true },
+          ...auditFields,
           createActorField('Added', execution.authorization.discordUserId, actorDisplayName),
         ],
         thumbnail,
@@ -614,13 +650,39 @@ const teamCommand: CommandDefinition = {
         ...(emojiToUpdate === undefined ? {} : { emoji: emojiToUpdate }),
       });
 
+      const config = await context.guildConfigurationService
+        .load(execution.guildId)
+        .catch(() => null);
+      const auditChannelId = config?.settings.auditChannelId ?? null;
+
       const presentation = await resolveTeamPresentation(interaction, club);
       const thumbnail = getTeamThumbnail(club.emoji);
+
+      const title = `${BOT_EMOJIS.success} Team Updated`;
+      const description = `Successfully updated ${formatTeamIdentity(presentation.team, 'message')}.`;
+      const auditFields: Array<{ name: string; value: string; inline?: boolean }> = [];
+      if (role !== null && role !== undefined) {
+        auditFields.push({ name: 'Role', value: `<@&${role.id}>`, inline: true });
+      }
+      if (emojiToUpdate !== undefined) {
+        auditFields.push({ name: 'Emoji', value: emojiToUpdate, inline: true });
+      }
+
+      const auditPublished = await publishSetupAudit(context, {
+        channelId: auditChannelId,
+        title,
+        description,
+        fields: auditFields,
+        actorDiscordUserId: execution.authorization.discordUserId,
+        actorVerb: 'Edited',
+      });
+
       const embed = createSuccessEmbed({
-        title: `${BOT_EMOJIS.success} Team Updated`,
-        description: `Successfully updated ${formatTeamIdentity(presentation.team, 'message')}.`,
+        title,
+        description: withAuditWarning(description, auditPublished),
         color: getTeamEmbedColor(presentation, BOT_COLORS.success),
         fields: [
+          ...auditFields,
           createActorField('Edited', execution.authorization.discordUserId, actorDisplayName),
         ],
         thumbnail,
@@ -717,10 +779,31 @@ const limitCommand: CommandDefinition = {
         amount,
       });
 
+      const config = await context.guildConfigurationService
+        .load(execution.guildId)
+        .catch(() => null);
+      const auditChannelId = config?.settings.auditChannelId ?? null;
+
+      const title = `${BOT_EMOJIS.success} Squad Limit Updated`;
+      const description = `Guild-wide default squad limit set to **${result.defaultSquadLimit}** players.`;
+      const auditFields = [
+        { name: 'Default Limit', value: `**${result.defaultSquadLimit}** players`, inline: true },
+      ];
+
+      const auditPublished = await publishSetupAudit(context, {
+        channelId: auditChannelId,
+        title,
+        description,
+        fields: auditFields,
+        actorDiscordUserId: execution.authorization.discordUserId,
+        actorVerb: 'Updated',
+      });
+
       const embed = createSuccessEmbed({
-        title: `${BOT_EMOJIS.success} Squad Limit Updated`,
-        description: `Guild-wide default squad limit set to **${result.defaultSquadLimit}** players.`,
+        title,
+        description: withAuditWarning(description, auditPublished),
         fields: [
+          ...auditFields,
           createActorField('Updated', execution.authorization.discordUserId, actorDisplayName),
         ],
       });
@@ -739,14 +822,36 @@ const limitCommand: CommandDefinition = {
         amount,
       });
 
+      const config = await context.guildConfigurationService
+        .load(execution.guildId)
+        .catch(() => null);
+      const auditChannelId = config?.settings.auditChannelId ?? null;
+
       const presentation = await resolveTeamPresentation(interaction, result.club);
+      const title = `${BOT_EMOJIS.success} Team Squad Limit Updated`;
+      const description = `Updated squad limit for ${formatTeamIdentity(presentation.team, 'message')} to **${result.override}** players.`;
+      const auditFields = [
+        { name: 'Limit Override', value: `**${result.override}** players`, inline: true },
+      ];
+
+      const auditPublished = await publishSetupAudit(context, {
+        channelId: auditChannelId,
+        title,
+        description,
+        fields: auditFields,
+        actorDiscordUserId: execution.authorization.discordUserId,
+        actorVerb: 'Updated',
+      });
+
       const embed = createSuccessEmbed({
-        title: `${BOT_EMOJIS.success} Team Squad Limit Updated`,
-        description: `Updated squad limit for ${formatTeamIdentity(presentation.team, 'message')} to **${result.override}** players.`,
+        title,
+        description: withAuditWarning(description, auditPublished),
         color: getTeamEmbedColor(presentation, BOT_COLORS.success),
         fields: [
+          ...auditFields,
           createActorField('Updated', execution.authorization.discordUserId, actorDisplayName),
         ],
+        thumbnail: getTeamThumbnail(result.club.emoji),
       });
 
       await interaction.editReply({ embeds: [embed] });
@@ -761,14 +866,40 @@ const limitCommand: CommandDefinition = {
         clubId: teamId,
       });
 
+      const config = await context.guildConfigurationService
+        .load(execution.guildId)
+        .catch(() => null);
+      const auditChannelId = config?.settings.auditChannelId ?? null;
+
       const presentation = await resolveTeamPresentation(interaction, result.club);
+      const title = `${BOT_EMOJIS.success} Team Squad Limit Reset`;
+      const description = `Reset squad limit for ${formatTeamIdentity(presentation.team, 'message')} to the guild default (**${result.effectiveLimit}** players).`;
+      const auditFields = [
+        {
+          name: 'Effective Limit',
+          value: `**${result.effectiveLimit}** players (Default)`,
+          inline: true,
+        },
+      ];
+
+      const auditPublished = await publishSetupAudit(context, {
+        channelId: auditChannelId,
+        title,
+        description,
+        fields: auditFields,
+        actorDiscordUserId: execution.authorization.discordUserId,
+        actorVerb: 'Reset',
+      });
+
       const embed = createSuccessEmbed({
-        title: `${BOT_EMOJIS.success} Team Squad Limit Reset`,
-        description: `Reset squad limit for ${formatTeamIdentity(presentation.team, 'message')} to the guild default (**${result.effectiveLimit}** players).`,
+        title,
+        description: withAuditWarning(description, auditPublished),
         color: getTeamEmbedColor(presentation, BOT_COLORS.success),
         fields: [
+          ...auditFields,
           createActorField('Reset', execution.authorization.discordUserId, actorDisplayName),
         ],
+        thumbnail: getTeamThumbnail(result.club.emoji),
       });
 
       await interaction.editReply({ embeds: [embed] });
