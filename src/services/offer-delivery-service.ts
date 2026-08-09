@@ -67,9 +67,16 @@ export class OfferDeliveryService {
     presentation: OfferPresentationMetadata = {},
   ): Promise<OfferCreationResult> {
     const result = await this.creation.createOffer(input);
+    let expiredAuditAnnouncementDelivered: boolean | null = null;
+    if (result.expiredAuditAnnouncement && this.auditAnnouncements) {
+      expiredAuditAnnouncementDelivered = await this.auditAnnouncements
+        .publish(result.expiredAuditAnnouncement)
+        .catch(() => false);
+    }
+    const resultWithExpiredAudit = { ...result, expiredAuditAnnouncementDelivered };
     let reference: OfferMessageReference;
     try {
-      reference = await this.messages.sendOffer(result, presentation);
+      reference = await this.messages.sendOffer(resultWithExpiredAudit, presentation);
     } catch (error: unknown) {
       try {
         await this.voidOffer(result.offer.id, result.offeredBy.id, 'send_failed');
@@ -92,7 +99,7 @@ export class OfferDeliveryService {
           result.auditAnnouncement,
         );
       }
-      return { ...result, offer, auditAnnouncementDelivered };
+      return { ...resultWithExpiredAudit, offer, auditAnnouncementDelivered };
     } catch (error: unknown) {
       let cleanupError: unknown;
       try {

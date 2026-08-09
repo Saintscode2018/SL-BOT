@@ -1,8 +1,10 @@
-import type { Club, LeagueUser, Offer, PrismaClient } from '@prisma/client';
+import { Prisma, type Club, type LeagueUser, type Offer, type PrismaClient } from '@prisma/client';
 
 import {
   BotUserNotAllowedError,
   ClubInactiveError,
+  ConflictError,
+  DomainError,
   DuplicateOfferError,
   EntityNotFoundError,
   MemberAlreadySignedError,
@@ -20,7 +22,11 @@ import { AuthorizationService } from './authorization-service.js';
 import { formatTeamIdentity } from '../domain/team-label.js';
 import { getFriendlyPositionName, type StaffType } from './staff-management-service.js';
 
-import type { OfferCreatedAuditAnnouncementPlan } from '../domain/roster-mutation.js';
+import type {
+  OfferCreatedAuditAnnouncementPlan,
+  OfferExpiredAuditAnnouncementPlan,
+} from '../domain/roster-mutation.js';
+import { offerExpiredAuditEventType } from './offer-decline-service.js';
 
 export const offerCreatedAuditEventType = 'offer.created';
 
@@ -43,10 +49,15 @@ export interface OfferCreationResult {
   effectiveSquadLimit: number;
   auditAnnouncement?: OfferCreatedAuditAnnouncementPlan | null;
   auditAnnouncementDelivered?: boolean | null;
+  expiredAuditAnnouncement?: OfferExpiredAuditAnnouncementPlan | null;
+  expiredAuditAnnouncementDelivered?: boolean | null;
 }
 
 export class OfferCreationService {
-  public constructor(private readonly database: PrismaClient) {}
+  public constructor(
+    private readonly database: PrismaClient,
+    private readonly now: () => Date = () => new Date(),
+  ) {}
 
   public async createOffer(input: CreateOfferWorkflowInput): Promise<OfferCreationResult> {
     if (input.playerIsBot) throw new BotUserNotAllowedError('bots cannot receive offers');
@@ -54,7 +65,8 @@ export class OfferCreationService {
       input.authorization,
       input.destinationClubId,
     );
-    return this.database.$transaction(async (transaction) => {
+    const now = this.now();
+    const transactionResult = this.database.$transaction(async (transaction) => {
       const clubs = new ClubRepository(transaction);
       const destinationClub = await clubs.getByIdInGuild(
         input.destinationClubId,
@@ -97,11 +109,44 @@ export class OfferCreationService {
         throw new SquadFullError('destination team roster is full');
       }
       const offers = new OfferRepository(transaction);
-      if ((await offers.getPendingForClubAndPlayer(destinationClub.id, player.id)) !== null) {
-        throw new DuplicateOfferError('a pending offer already exists for this player and team');
+      const existingPending = await offers.getPendingForClubAndPlayer(
+        destinationClub.id,
+        player.id,
+      );
+      let expiredAuditAnnouncement: OfferExpiredAuditAnnouncementPlan | null = null;
+      if (existingPending !== null) {
+        if (existingPending.expiresAt.getTime() > now.getTime()) {
+          throw new DuplicateOfferError('a pending offer already exists for this player and team');
+        }
+        const expired = await offers.transition(existingPending.id, 'EXPIRED', now);
+        await new AuditEventRepository(transaction).create({
+          guildId: existingPending.guildId,
+          eventType: offerExpiredAuditEventType,
+          entityType: 'offer',
+          entityId: existingPending.id,
+          beforeState: { status: 'PENDING' },
+          afterState: { status: 'EXPIRED' },
+          metadata: {
+            discordChannelId: expired.discordChannelId,
+            discordMessageId: expired.discordMessageId,
+          },
+        });
+        expiredAuditAnnouncement =
+          authorization.settings.auditChannelId === null ||
+          authorization.settings.auditChannelId === undefined
+            ? null
+            : {
+                discordGuildId: authorization.guild.discordGuildId,
+                channelId: authorization.settings.auditChannelId,
+                operation: 'OFFER_EXPIRED',
+                playerDiscordUserId: player.discordUserId,
+                teamIdentity: destinationClub,
+                occurredAt: now,
+              };
       }
       const expiresAt =
-        input.expiresAt ?? new Date(Date.now() + authorization.settings.offerTimeoutSeconds * 1000);
+        input.expiresAt ??
+        new Date(now.getTime() + authorization.settings.offerTimeoutSeconds * 1000);
       const offer = await offers.createPending({
         guildId: authorization.guild.id,
         clubId: destinationClub.id,
@@ -148,7 +193,20 @@ export class OfferCreationService {
         activePlayerCount: playerCount,
         effectiveSquadLimit,
         auditAnnouncement,
+        expiredAuditAnnouncement,
       };
+    });
+    return transactionResult.catch((error: unknown) => {
+      if (error instanceof DomainError) throw error;
+      if (
+        (error instanceof Prisma.PrismaClientKnownRequestError &&
+          ['P2028', 'P2034'].includes(error.code)) ||
+        (error instanceof Prisma.PrismaClientUnknownRequestError &&
+          /database is locked|transaction/i.test(error.message))
+      ) {
+        throw new ConflictError('offer creation conflicted', { cause: error });
+      }
+      throw error;
     });
   }
 }

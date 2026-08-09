@@ -6,6 +6,7 @@ import {
   AuthorizationError,
   BotUserNotAllowedError,
   ConflictError,
+  DomainError,
   DuplicateOfferError,
   InvalidOfferMessageError,
   MemberAlreadySignedError,
@@ -15,6 +16,7 @@ import {
 } from '../../src/domain/errors.js';
 import { ClubRepository } from '../../src/repositories/club-repository.js';
 import { MembershipRepository } from '../../src/repositories/membership-repository.js';
+import { OfferRepository } from '../../src/repositories/offer-repository.js';
 import { UserRepository } from '../../src/repositories/user-repository.js';
 import type { AuthorizationInput } from '../../src/services/authorization-service.js';
 import { AuthorizationService } from '../../src/services/authorization-service.js';
@@ -516,6 +518,168 @@ describe('administration services', () => {
     ).rejects.toBeInstanceOf(SquadFullError);
   });
 
+  it.each([
+    ['before the workflow time', 1],
+    ['exactly at the workflow time', 0],
+  ] as const)(
+    'self-heals a pending offer expiring %s and preserves both audit lifecycles',
+    async (_label, elapsedMilliseconds) => {
+      const destination = await createClub();
+      const initial = await new OfferCreationService(database.client).createOffer({
+        authorization: authorization(),
+        destinationClubId: destination.id,
+        playerDiscordUserId: playerId,
+        playerIsBot: false,
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      const now = new Date(initial.offer.expiresAt.getTime() + elapsedMilliseconds);
+
+      const replacement = await new OfferCreationService(database.client, () => now).createOffer({
+        authorization: authorization(),
+        destinationClubId: destination.id,
+        playerDiscordUserId: playerId,
+        playerIsBot: false,
+      });
+
+      await expect(
+        database.client.offer.findUniqueOrThrow({ where: { id: initial.offer.id } }),
+      ).resolves.toMatchObject({
+        id: initial.offer.id,
+        status: 'EXPIRED',
+        respondedAt: now,
+      });
+      await expect(
+        database.client.offer.findUniqueOrThrow({ where: { id: replacement.offer.id } }),
+      ).resolves.toMatchObject({
+        status: 'PENDING',
+        respondedAt: null,
+      });
+      await expect(
+        database.client.offer.findMany({
+          where: { clubId: destination.id, playerUserId: initial.player.id },
+          orderBy: { createdAt: 'asc' },
+        }),
+      ).resolves.toMatchObject([
+        { id: initial.offer.id, status: 'EXPIRED' },
+        { id: replacement.offer.id, status: 'PENDING' },
+      ]);
+
+      const expirationAudits = await database.client.auditEvent.findMany({
+        where: { eventType: offerExpiredAuditEventType, entityId: initial.offer.id },
+      });
+      expect(expirationAudits).toHaveLength(1);
+      expect(expirationAudits[0]).toMatchObject({
+        actorUserId: null,
+        beforeState: { status: 'PENDING' },
+        afterState: { status: 'EXPIRED' },
+      });
+      const replacementCreationAudit = await database.client.auditEvent.findFirstOrThrow({
+        where: { eventType: offerCreatedAuditEventType, entityId: replacement.offer.id },
+      });
+      expect(replacementCreationAudit.actorUserId).toBe(replacement.offeredBy.id);
+      expect(replacement.offeredBy.discordUserId).toBe(ownerId);
+      expect(replacement.expiredAuditAnnouncement).toMatchObject({
+        operation: 'OFFER_EXPIRED',
+        occurredAt: now,
+        playerDiscordUserId: playerId,
+      });
+      expect(replacement.expiredAuditAnnouncement).not.toHaveProperty('actorDiscordUserId');
+    },
+  );
+
+  it.each(['ACCEPTED', 'DECLINED', 'EXPIRED', 'CANCELLED', 'VOIDED'] as const)(
+    'does not let a historical %s offer block a new pending offer',
+    async (status) => {
+      const destination = await createClub();
+      const initial = await new OfferCreationService(database.client).createOffer({
+        authorization: authorization(),
+        destinationClubId: destination.id,
+        playerDiscordUserId: playerId,
+        playerIsBot: false,
+      });
+      await new OfferRepository(database.client).transition(initial.offer.id, status);
+
+      await expect(
+        new OfferCreationService(database.client).createOffer({
+          authorization: authorization(),
+          destinationClubId: destination.id,
+          playerDiscordUserId: playerId,
+          playerIsBot: false,
+        }),
+      ).resolves.toMatchObject({ offer: { status: 'PENDING' } });
+    },
+  );
+
+  it('allows a different team to retain its own active offer for the same player', async () => {
+    const firstDestination = await createClub();
+    const secondDestination = await createClub('930000000000000002');
+    await new OfferCreationService(database.client).createOffer({
+      authorization: authorization(),
+      destinationClubId: firstDestination.id,
+      playerDiscordUserId: playerId,
+      playerIsBot: false,
+    });
+
+    await expect(
+      new OfferCreationService(database.client).createOffer({
+        authorization: authorization(),
+        destinationClubId: secondDestination.id,
+        playerDiscordUserId: playerId,
+        playerIsBot: false,
+      }),
+    ).resolves.toMatchObject({
+      offer: { clubId: secondDestination.id, status: 'PENDING' },
+    });
+    await expect(
+      database.client.offer.count({ where: { player: { discordUserId: playerId } } }),
+    ).resolves.toBe(2);
+  });
+
+  it('expires one stale offer once when two replacement attempts race', async () => {
+    const destination = await createClub();
+    const initial = await new OfferCreationService(database.client).createOffer({
+      authorization: authorization(),
+      destinationClubId: destination.id,
+      playerDiscordUserId: playerId,
+      playerIsBot: false,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const now = new Date(initial.offer.expiresAt.getTime() + 1);
+    const createReplacement = () =>
+      new OfferCreationService(database.client, () => now).createOffer({
+        authorization: authorization(),
+        destinationClubId: destination.id,
+        playerDiscordUserId: playerId,
+        playerIsBot: false,
+      });
+
+    const results = await Promise.allSettled([createReplacement(), createReplacement()]);
+
+    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.filter(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.reason).toBeInstanceOf(DomainError);
+    await expect(
+      database.client.offer.findUniqueOrThrow({ where: { id: initial.offer.id } }),
+    ).resolves.toMatchObject({ status: 'EXPIRED' });
+    await expect(
+      database.client.offer.count({
+        where: {
+          clubId: destination.id,
+          playerUserId: initial.player.id,
+          status: 'PENDING',
+        },
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      database.client.auditEvent.count({
+        where: { eventType: offerExpiredAuditEventType, entityId: initial.offer.id },
+      }),
+    ).resolves.toBe(1);
+  });
+
   it('attributes offer creation to the persisted sender rather than the current TM or player', async () => {
     const destination = await createClub('930000000000000001', 5);
     const staff = new StaffManagementService(database.client);
@@ -765,6 +929,59 @@ describe('administration services', () => {
       playerDiscordUserId: playerId,
     });
     expect(plan).not.toHaveProperty('actorDiscordUserId');
+  });
+
+  it('publishes stale expiration and replacement creation audit announcements outside creation', async () => {
+    const destination = await createClub();
+    const initial = await new OfferCreationService(database.client).createOffer({
+      authorization: authorization(),
+      destinationClubId: destination.id,
+      playerDiscordUserId: playerId,
+      playerIsBot: false,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const now = new Date(initial.offer.expiresAt.getTime() + 1);
+    const publish = vi.fn((plan: unknown) => {
+      void plan;
+      return Promise.resolve(true);
+    });
+    const adapter: OfferMessageAdapter = {
+      sendOffer: vi.fn(() =>
+        Promise.resolve({ channelId: '910000000000000001', messageId: '940000000000000001' }),
+      ),
+      setTerminalState: vi.fn(() => Promise.resolve()),
+      cleanupOrphan: vi.fn(() => Promise.resolve()),
+    };
+
+    const result = await new OfferDeliveryService(
+      database.client,
+      adapter,
+      new MemoryLogger(),
+      new OfferCreationService(database.client, () => now),
+      { publish },
+    ).createAndDeliver({
+      authorization: authorization(),
+      destinationClubId: destination.id,
+      playerDiscordUserId: playerId,
+      playerIsBot: false,
+    });
+
+    expect(publish).toHaveBeenCalledTimes(2);
+    expect(publish.mock.calls[0]?.[0]).toMatchObject({
+      operation: 'OFFER_EXPIRED',
+      occurredAt: now,
+      playerDiscordUserId: playerId,
+    });
+    expect(publish.mock.calls[0]?.[0]).not.toHaveProperty('actorDiscordUserId');
+    expect(publish.mock.calls[1]?.[0]).toMatchObject({
+      operation: 'OFFER_CREATED',
+      actorDiscordUserId: ownerId,
+      playerDiscordUserId: playerId,
+    });
+    expect(result).toMatchObject({
+      expiredAuditAnnouncementDelivered: true,
+      auditAnnouncementDelivered: true,
+    });
   });
 
   it('saves offer message references after delivery', async () => {
