@@ -5,6 +5,7 @@ import {
   AlreadyMemberOfClubError,
   AuthorizationError,
   BotUserNotAllowedError,
+  ConfigurationError,
   ConflictError,
   DomainError,
   DuplicateOfferError,
@@ -187,6 +188,82 @@ describe('administration services', () => {
     await expect(
       database.client.auditEvent.count({ where: { eventType: guildConfiguredAuditEventType } }),
     ).resolves.toBe(3);
+  });
+
+  it.each([
+    ['TM and ATM', '930000000000000001', '930000000000000001', '930000000000000002'],
+    ['TM and PM', '930000000000000001', '930000000000000002', '930000000000000001'],
+    ['ATM and PM', '930000000000000001', '930000000000000002', '930000000000000002'],
+    ['all three', '930000000000000001', '930000000000000001', '930000000000000001'],
+  ] as const)('rejects a management role collision between %s', async (_, tm, atm, pm) => {
+    await expect(
+      new GuildSetupService(database.client).setupRoles({
+        authorization: authorization(ownerId),
+        guildName: 'Renamed League',
+        botPermissionsRoleId: '920000000000000010',
+        teamManagerRoleId: tm,
+        assistantManagerRoleId: atm,
+        playerManagerRoleId: pm,
+      }),
+    ).rejects.toBeInstanceOf(ConfigurationError);
+  });
+
+  it('does not partially overwrite existing role settings after rejecting a collision', async () => {
+    const beforeSettings = await database.client.guildSettings.findUniqueOrThrow({
+      where: { guildId: settings.guildId },
+    });
+    const beforeGuild = await database.client.guild.findUniqueOrThrow({
+      where: { id: settings.guildId },
+    });
+
+    await expect(
+      new GuildSetupService(database.client).setupRoles({
+        authorization: authorization(ownerId),
+        guildName: 'Renamed League',
+        botPermissionsRoleId: '920000000000000010',
+        teamManagerRoleId: '930000000000000001',
+        assistantManagerRoleId: '930000000000000001',
+        playerManagerRoleId: '930000000000000002',
+      }),
+    ).rejects.toBeInstanceOf(ConfigurationError);
+
+    await expect(
+      database.client.guildSettings.findUniqueOrThrow({ where: { guildId: settings.guildId } }),
+    ).resolves.toEqual(beforeSettings);
+    await expect(
+      database.client.guild.findUniqueOrThrow({ where: { id: settings.guildId } }),
+    ).resolves.toEqual(beforeGuild);
+  });
+
+  it('persists three distinct management role IDs', async () => {
+    const result = await new GuildSetupService(database.client).setupRoles({
+      authorization: authorization(ownerId),
+      guildName: 'Renamed League',
+      botPermissionsRoleId: '920000000000000010',
+      teamManagerRoleId: '930000000000000001',
+      assistantManagerRoleId: '930000000000000002',
+      playerManagerRoleId: '930000000000000003',
+    });
+
+    expect(result.settings).toMatchObject({
+      botPermissionsRoleId: '920000000000000010',
+      teamManagerRoleId: '930000000000000001',
+      assistantManagerRoleId: '930000000000000002',
+      playerManagerRoleId: '930000000000000003',
+    });
+  });
+
+  it('preserves authorization behavior before validating management role IDs', async () => {
+    await expect(
+      new GuildSetupService(database.client).setupRoles({
+        authorization: authorization(outsiderId),
+        guildName: 'No Access',
+        botPermissionsRoleId: '920000000000000010',
+        teamManagerRoleId: '930000000000000001',
+        assistantManagerRoleId: '930000000000000001',
+        playerManagerRoleId: '930000000000000002',
+      }),
+    ).rejects.toBeInstanceOf(AuthorizationError);
   });
 
   it('persists and presents the Case Files channel through the existing channels setup flow', async () => {

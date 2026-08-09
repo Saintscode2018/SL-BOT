@@ -69,6 +69,20 @@ export interface SetupViewResult {
   missingConfigurations: string[];
 }
 
+function assertDistinctManagementRoles(input: SetupRolesInput): void {
+  const roleIds = [
+    input.teamManagerRoleId,
+    input.assistantManagerRoleId,
+    input.playerManagerRoleId,
+  ];
+
+  if (new Set(roleIds).size !== roleIds.length) {
+    throw new ConfigurationError(
+      'Team Manager, Assistant Team Manager, and Player Manager roles must be distinct.',
+    );
+  }
+}
+
 export class GuildSetupService {
   public constructor(private readonly database: PrismaClient) {}
 
@@ -172,8 +186,9 @@ export class GuildSetupService {
   public async setupRoles(input: SetupRolesInput): Promise<GuildSetupResult> {
     return this.database.$transaction(async (transaction) => {
       const guilds = new GuildRepository(transaction);
-      await guilds.acquireWriteLock(input.authorization.discordGuildId);
       await new AuthorizationService(transaction).assertCanSetup(input.authorization);
+      assertDistinctManagementRoles(input);
+      await guilds.acquireWriteLock(input.authorization.discordGuildId);
       const existing = await guilds.getByDiscordGuildId(input.authorization.discordGuildId);
       const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
         input.authorization.discordUserId,
