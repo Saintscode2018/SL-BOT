@@ -317,63 +317,52 @@ describe('DataImportService', () => {
     ).resolves.toBe(1);
   });
 
-  it('treats an exact staff membership plus same-team PLAYER as a conflict', async () => {
-    const discordUserId = '957000000000000002';
-    const user = await database.client.leagueUser.create({ data: { discordUserId } });
-    await database.client.clubMembership.createMany({
-      data: [
-        {
-          guildId: guild.id,
-          clubId: clubOne.id,
-          userId: user.id,
-          membershipType: 'TEAM_MANAGER',
-        },
-        {
-          guildId: guild.id,
-          clubId: clubOne.id,
-          userId: user.id,
-          membershipType: 'PLAYER',
-        },
-      ],
-    });
+  it.each([
+    [
+      'same-team PLAYER',
+      '957000000000000002',
+      'TEAM_MANAGER' as const,
+      'PLAYER' as const,
+      'SAME_CLUB' as const,
+    ],
+    [
+      'any other active membership (different club)',
+      '957000000000000003',
+      'ASSISTANT_MANAGER' as const,
+      'PLAYER' as const,
+      'OTHER_CLUB' as const,
+    ],
+  ] as const)(
+    'treats an exact staff membership plus %s as a conflict',
+    async (_label, discordUserId, staffType, secondType, secondClubKey) => {
+      const secondClub = secondClubKey === 'SAME_CLUB' ? clubOne : clubTwo;
+      const user = await database.client.leagueUser.create({ data: { discordUserId } });
+      await database.client.clubMembership.createMany({
+        data: [
+          {
+            guildId: guild.id,
+            clubId: clubOne.id,
+            userId: user.id,
+            membershipType: staffType,
+          },
+          {
+            guildId: guild.id,
+            clubId: secondClub.id,
+            userId: user.id,
+            membershipType: secondType,
+          },
+        ],
+      });
 
-    const result = await run([member(discordUserId, [teamRoleOne, teamManagerRole])]);
+      const result = await run([member(discordUserId, [teamRoleOne, teamManagerRole])]);
 
-    expect(result.unchanged).toBe(0);
-    expect(result.issues).toMatchObject([{ discordUserId, code: 'CONFLICTING_MEMBERSHIP' }]);
-    await expect(
-      database.client.clubMembership.count({ where: { userId: user.id } }),
-    ).resolves.toBe(2);
-  });
-
-  it('treats an exact staff membership plus any other active membership as a conflict', async () => {
-    const discordUserId = '957000000000000003';
-    const user = await database.client.leagueUser.create({ data: { discordUserId } });
-    await database.client.clubMembership.createMany({
-      data: [
-        {
-          guildId: guild.id,
-          clubId: clubOne.id,
-          userId: user.id,
-          membershipType: 'ASSISTANT_MANAGER',
-        },
-        {
-          guildId: guild.id,
-          clubId: clubTwo.id,
-          userId: user.id,
-          membershipType: 'PLAYER',
-        },
-      ],
-    });
-
-    const result = await run([member(discordUserId, [teamRoleOne, assistantManagerRole])]);
-
-    expect(result.unchanged).toBe(0);
-    expect(result.issues).toMatchObject([{ discordUserId, code: 'CONFLICTING_MEMBERSHIP' }]);
-    await expect(
-      database.client.clubMembership.count({ where: { userId: user.id } }),
-    ).resolves.toBe(2);
-  });
+      expect(result.unchanged).toBe(0);
+      expect(result.issues).toMatchObject([{ discordUserId, code: 'CONFLICTING_MEMBERSHIP' }]);
+      await expect(
+        database.client.clubMembership.count({ where: { userId: user.id } }),
+      ).resolves.toBe(2);
+    },
+  );
 
   it('keeps a staff-only import idempotent on rerun', async () => {
     const discordUserId = '957000000000000004';

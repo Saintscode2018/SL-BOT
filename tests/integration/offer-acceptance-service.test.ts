@@ -388,46 +388,36 @@ describe('offer acceptance service', () => {
     ).resolves.toBe(2);
   });
 
-  it('rolls back all writes when transaction record creation fails', async () => {
+  it.each([
+    [
+      'transaction record creation',
+      (transactionClient: Parameters<OfferAcceptanceRepositoryFactory>[0]) => ({
+        ...createOfferAcceptanceRepositories(transactionClient),
+        transactions: {
+          create: () => Promise.reject(new Error('transaction write failed')),
+        },
+      }),
+      'transaction write failed',
+    ],
+    [
+      'audit creation',
+      (transactionClient: Parameters<OfferAcceptanceRepositoryFactory>[0]) => ({
+        ...createOfferAcceptanceRepositories(transactionClient),
+        auditEvents: {
+          create: () => Promise.reject(new Error('audit write failed')),
+        },
+      }),
+      'audit write failed',
+    ],
+  ] as const)('rolls back all writes when %s fails', async (_kind, factory, expectedMessage) => {
     const data = await seed();
-    const factory: OfferAcceptanceRepositoryFactory = (transactionClient) => ({
-      ...createOfferAcceptanceRepositories(transactionClient),
-      transactions: {
-        create: () => Promise.reject(new Error('transaction write failed')),
-      },
-    });
     const failingService = new OfferAcceptanceService(database.client, factory);
     await expect(
       failingService.acceptOffer({
         offerId: data.offer.id,
         acceptingDiscordUserId: data.player.discordUserId,
       }),
-    ).rejects.toThrow('transaction write failed');
-    await expect(database.client.clubMembership.count()).resolves.toBe(0);
-    await expect(database.client.leagueTransaction.count()).resolves.toBe(0);
-    await expect(database.client.auditEvent.count()).resolves.toBe(0);
-    await expect(
-      database.client.offer.findUniqueOrThrow({ where: { id: data.offer.id } }),
-    ).resolves.toMatchObject({
-      status: 'PENDING',
-    });
-  });
-
-  it('rolls back all writes when audit creation fails', async () => {
-    const data = await seed();
-    const factory: OfferAcceptanceRepositoryFactory = (transactionClient) => ({
-      ...createOfferAcceptanceRepositories(transactionClient),
-      auditEvents: {
-        create: () => Promise.reject(new Error('audit write failed')),
-      },
-    });
-    const failingService = new OfferAcceptanceService(database.client, factory);
-    await expect(
-      failingService.acceptOffer({
-        offerId: data.offer.id,
-        acceptingDiscordUserId: data.player.discordUserId,
-      }),
-    ).rejects.toThrow('audit write failed');
+    ).rejects.toThrow(expectedMessage);
     await expect(database.client.clubMembership.count()).resolves.toBe(0);
     await expect(database.client.leagueTransaction.count()).resolves.toBe(0);
     await expect(database.client.auditEvent.count()).resolves.toBe(0);
@@ -486,130 +476,52 @@ describe('offer acceptance service', () => {
     expect(result.auditAnnouncement).toBeNull();
   });
 
-  it('publishes both Transfer Market and Audit channel announcements via RoleSynchronizedMutationService post-commit without rolling back on delivery failures', async () => {
-    const data = await seed();
-    await guilds.upsertSettings(data.guild.id, {
-      transferChannelId: '840000000000000001',
-      auditChannelId: '840000000000000002',
-    });
+  it.each([
+    ['both announced', true, true],
+    ['transfer only (audit fails)', true, false],
+    ['audit only (transfer fails)', false, true],
+    ['both fail', false, false],
+  ] as const)(
+    'publishes announcements without rolling back on delivery failures — %s',
+    async (_label, transferSucceeds, auditSucceeds) => {
+      await clearDatabase(database.client);
+      const data = await seed();
+      await guilds.upsertSettings(data.guild.id, {
+        transferChannelId: '840000000000000001',
+        auditChannelId: '840000000000000002',
+      });
 
-    const roles = {
-      apply: vi.fn().mockResolvedValue({ addedRoles: [], removedRoles: [] }),
-      compensate: vi.fn().mockResolvedValue(undefined),
-    };
-    const mockLogger: Logger = {
-      error: vi.fn(),
-      debug: vi.fn(),
-      info: vi.fn(),
-      warn: vi.fn(),
-    };
+      const roles = {
+        apply: vi.fn().mockResolvedValue({ addedRoles: [], removedRoles: [] }),
+        compensate: vi.fn().mockResolvedValue(undefined),
+      };
+      const mockLogger: Logger = {
+        error: vi.fn(),
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+      };
+      const syncService = new RoleSynchronizedMutationService(
+        roles,
+        { publish: vi.fn().mockResolvedValue(transferSucceeds) },
+        { publish: vi.fn().mockResolvedValue(auditSucceeds) },
+        mockLogger,
+      );
+      const testService = new OfferAcceptanceService(database.client, undefined, syncService);
 
-    // Case 1: both true
-    const announcementsBothSuccess = { publish: vi.fn().mockResolvedValue(true) };
-    const auditBothSuccess = { publish: vi.fn().mockResolvedValue(true) };
-    const syncBothSuccess = new RoleSynchronizedMutationService(
-      roles,
-      announcementsBothSuccess,
-      auditBothSuccess,
-      mockLogger,
-    );
-    const serviceBothSuccess = new OfferAcceptanceService(
-      database.client,
-      undefined,
-      syncBothSuccess,
-    );
-    const res1 = await serviceBothSuccess.acceptOffer({
-      offerId: data.offer.id,
-      acceptingDiscordUserId: data.player.discordUserId,
-    });
-    expect(res1.announcementDelivered).toBe(true);
-    expect(res1.auditAnnouncementDelivered).toBe(true);
-    expect(announcementsBothSuccess.publish).toHaveBeenCalled();
-    expect(auditBothSuccess.publish).toHaveBeenCalled();
+      const result = await testService.acceptOffer({
+        offerId: data.offer.id,
+        acceptingDiscordUserId: data.player.discordUserId,
+      });
 
-    // Reset DB for case 2: Audit false + Transfer true
-    await clearDatabase(database.client);
-    const data2 = await seed();
-    await guilds.upsertSettings(data2.guild.id, {
-      transferChannelId: '840000000000000001',
-      auditChannelId: '840000000000000002',
-    });
-    const syncAuditFail = new RoleSynchronizedMutationService(
-      roles,
-      { publish: vi.fn().mockResolvedValue(true) },
-      { publish: vi.fn().mockResolvedValue(false) },
-      mockLogger,
-    );
-    const serviceAuditFail = new OfferAcceptanceService(database.client, undefined, syncAuditFail);
-    const res2 = await serviceAuditFail.acceptOffer({
-      offerId: data2.offer.id,
-      acceptingDiscordUserId: data2.player.discordUserId,
-    });
-    expect(res2.announcementDelivered).toBe(true);
-    expect(res2.auditAnnouncementDelivered).toBe(false);
-    await expect(
-      database.client.offer.findUniqueOrThrow({ where: { id: data2.offer.id } }),
-    ).resolves.toMatchObject({ status: 'ACCEPTED' });
-    await expect(database.client.clubMembership.count()).resolves.toBe(1);
-    await expect(database.client.leagueTransaction.count()).resolves.toBe(1);
-    expect(roles.compensate).not.toHaveBeenCalled();
-
-    // Reset DB for case 3: Audit true + Transfer false
-    await clearDatabase(database.client);
-    const data3 = await seed();
-    await guilds.upsertSettings(data3.guild.id, {
-      transferChannelId: '840000000000000001',
-      auditChannelId: '840000000000000002',
-    });
-    const syncTransferFail = new RoleSynchronizedMutationService(
-      roles,
-      { publish: vi.fn().mockResolvedValue(false) },
-      { publish: vi.fn().mockResolvedValue(true) },
-      mockLogger,
-    );
-    const serviceTransferFail = new OfferAcceptanceService(
-      database.client,
-      undefined,
-      syncTransferFail,
-    );
-    const res3 = await serviceTransferFail.acceptOffer({
-      offerId: data3.offer.id,
-      acceptingDiscordUserId: data3.player.discordUserId,
-    });
-    expect(res3.announcementDelivered).toBe(false);
-    expect(res3.auditAnnouncementDelivered).toBe(true);
-    await expect(
-      database.client.offer.findUniqueOrThrow({ where: { id: data3.offer.id } }),
-    ).resolves.toMatchObject({ status: 'ACCEPTED' });
-    await expect(database.client.clubMembership.count()).resolves.toBe(1);
-    await expect(database.client.leagueTransaction.count()).resolves.toBe(1);
-    expect(roles.compensate).not.toHaveBeenCalled();
-
-    // Reset DB for case 4: Both false
-    await clearDatabase(database.client);
-    const data4 = await seed();
-    await guilds.upsertSettings(data4.guild.id, {
-      transferChannelId: '840000000000000001',
-      auditChannelId: '840000000000000002',
-    });
-    const syncBothFail = new RoleSynchronizedMutationService(
-      roles,
-      { publish: vi.fn().mockResolvedValue(false) },
-      { publish: vi.fn().mockResolvedValue(false) },
-      mockLogger,
-    );
-    const serviceBothFail = new OfferAcceptanceService(database.client, undefined, syncBothFail);
-    const res4 = await serviceBothFail.acceptOffer({
-      offerId: data4.offer.id,
-      acceptingDiscordUserId: data4.player.discordUserId,
-    });
-    expect(res4.announcementDelivered).toBe(false);
-    expect(res4.auditAnnouncementDelivered).toBe(false);
-    await expect(
-      database.client.offer.findUniqueOrThrow({ where: { id: data4.offer.id } }),
-    ).resolves.toMatchObject({ status: 'ACCEPTED' });
-    await expect(database.client.clubMembership.count()).resolves.toBe(1);
-    await expect(database.client.leagueTransaction.count()).resolves.toBe(1);
-    expect(roles.compensate).not.toHaveBeenCalled();
-  });
+      expect(result.announcementDelivered).toBe(transferSucceeds);
+      expect(result.auditAnnouncementDelivered).toBe(auditSucceeds);
+      await expect(
+        database.client.offer.findUniqueOrThrow({ where: { id: data.offer.id } }),
+      ).resolves.toMatchObject({ status: 'ACCEPTED' });
+      await expect(database.client.clubMembership.count()).resolves.toBe(1);
+      await expect(database.client.leagueTransaction.count()).resolves.toBe(1);
+      expect(roles.compensate).not.toHaveBeenCalled();
+    },
+  );
 });

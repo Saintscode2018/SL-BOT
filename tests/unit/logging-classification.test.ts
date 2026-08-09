@@ -94,381 +94,200 @@ function createMockCommandInteraction(commandName: string): {
   return { interaction, replies, edits, followUps };
 }
 
+// ---------------------------------------------------------------------------
+// Classification table — tests 1-14
+// Each entry: a unique command name, a factory for the thrown error, and the
+// expected log level / message / context fields to assert.
+// ---------------------------------------------------------------------------
+
+type LogLevel = 'info' | 'warn' | 'error';
+
+interface ClassificationCase {
+  label: string;
+  cmdName: string;
+  makeError: () => unknown;
+  level: LogLevel;
+  message: string;
+  /** Partial context fields that must appear on the log entry. */
+  contextSubset: Record<string, unknown>;
+}
+
+const classificationCases: ClassificationCase[] = [
+  {
+    label: '1. WrongCommandChannelError',
+    cmdName: 'tc-wrong-channel',
+    makeError: () => new WrongCommandChannelError(['channel-789'], 'global'),
+    level: 'info',
+    message: 'command rejected',
+    contextSubset: {
+      commandName: 'tc-wrong-channel',
+      reason: 'WrongCommandChannelError',
+      userId: 'user-456',
+      guildId: 'guild-123',
+      channelId: 'channel-789',
+    },
+  },
+  {
+    label: '2. AdministrativePermissionDeniedError',
+    cmdName: 'tc-unauthorized',
+    makeError: () => new AdministrativePermissionDeniedError(),
+    level: 'info',
+    message: 'command rejected',
+    contextSubset: {
+      commandName: 'tc-unauthorized',
+      reason: 'AdministrativePermissionDeniedError',
+    },
+  },
+  {
+    label: '3. SquadFullError',
+    cmdName: 'tc-squad-full',
+    makeError: () => new SquadFullError('Squad limit reached'),
+    level: 'info',
+    message: 'command rejected',
+    contextSubset: { commandName: 'tc-squad-full', reason: 'SquadFullError' },
+  },
+  {
+    label: '4. MemberAlreadySignedError',
+    cmdName: 'tc-already-signed',
+    makeError: () => new MemberAlreadySignedError(),
+    level: 'info',
+    message: 'command rejected',
+    contextSubset: { commandName: 'tc-already-signed', reason: 'MEMBER_ALREADY_SIGNED' },
+  },
+  {
+    label: '5. TeamNotFoundError',
+    cmdName: 'tc-team-not-found',
+    makeError: () => new TeamNotFoundError('Team not found'),
+    level: 'info',
+    message: 'command rejected',
+    contextSubset: { commandName: 'tc-team-not-found', reason: 'TeamNotFoundError' },
+  },
+  {
+    label: '6. ValidationError',
+    cmdName: 'tc-validation-error',
+    makeError: () => new ValidationError('Invalid options'),
+    level: 'info',
+    message: 'command rejected',
+    contextSubset: { commandName: 'tc-validation-error', reason: 'ValidationError' },
+  },
+  {
+    label: '7. StaleConfirmationError',
+    cmdName: 'tc-stale-confirm',
+    makeError: () => new StaleConfirmationError(),
+    level: 'warn',
+    message: 'command interaction expired before acknowledgement',
+    contextSubset: { commandName: 'tc-stale-confirm', reason: 'STALE_CONFIRMATION' },
+  },
+  {
+    label: '7b. StaleMutationStateError',
+    cmdName: 'tc-stale-mutation',
+    makeError: () => new StaleMutationStateError(),
+    level: 'warn',
+    message: 'command interaction expired before acknowledgement',
+    contextSubset: { commandName: 'tc-stale-mutation', reason: 'STALE_MUTATION_STATE' },
+  },
+  {
+    label: '8. Discord error code 10062',
+    cmdName: 'tc-10062',
+    makeError: () => Object.assign(new Error('Unknown interaction'), { code: 10062 }),
+    level: 'warn',
+    message: 'command interaction expired before acknowledgement',
+    contextSubset: {
+      commandName: 'tc-10062',
+      discordErrorCode: 10062,
+      reason: 'INTERACTION_EXPIRED',
+    },
+  },
+  {
+    label: '9. Prisma P2028 transaction timeout',
+    cmdName: 'tc-p2028',
+    makeError: () =>
+      new Prisma.PrismaClientKnownRequestError('Transaction expired', {
+        code: 'P2028',
+        clientVersion: '5.0.0',
+      }),
+    level: 'error',
+    message: 'command execution failed',
+    contextSubset: { commandName: 'tc-p2028' },
+  },
+  {
+    label: '10. PrismaClientUnknownRequestError',
+    cmdName: 'tc-prisma-generic',
+    makeError: () =>
+      new Prisma.PrismaClientUnknownRequestError('Database connection lost', {
+        clientVersion: '5.0.0',
+      }),
+    level: 'error',
+    message: 'command execution failed',
+    contextSubset: {},
+  },
+  {
+    label: '11. DiscordAPIError (code 50035)',
+    cmdName: 'tc-discord-50035',
+    makeError: () =>
+      Object.assign(new Error('Invalid Form Body'), { name: 'DiscordAPIError', code: 50035 }),
+    level: 'error',
+    message: 'command execution failed',
+    contextSubset: {},
+  },
+  {
+    label: '12. EAI_AGAIN network error',
+    cmdName: 'tc-network-dns',
+    makeError: () =>
+      Object.assign(new Error('getaddrinfo EAI_AGAIN discord.com'), { code: 'EAI_AGAIN' }),
+    level: 'error',
+    message: 'command execution failed',
+    contextSubset: {},
+  },
+  {
+    label: '13. DiscordRoleCompensationFailedError',
+    cmdName: 'tc-compensation-failed',
+    makeError: () => new DiscordRoleCompensationFailedError(['TEAM']),
+    level: 'error',
+    message: 'command execution failed',
+    contextSubset: {},
+  },
+  {
+    label: '14. unexpected TypeError',
+    cmdName: 'tc-type-error',
+    makeError: () => new TypeError('Cannot read properties of undefined'),
+    level: 'error',
+    message: 'command execution failed',
+    contextSubset: {},
+  },
+];
+
 describe('Logging Classification & Global Error Handling', () => {
+  // Shared registry for tests that don't need an isolated one (15-20)
   const registry = new CommandRegistry();
 
-  it('1. wrong-channel command rejection logs info, not error', async () => {
-    const logger = new MemoryLogger();
-    const error = new WrongCommandChannelError(['channel-789'], 'global');
+  // Tests 1-14: each gets its own isolated registry so no command name bleeds across.
+  it.each(classificationCases)(
+    '$label logs at expected level',
+    async ({ cmdName, makeError, level, message, contextSubset }) => {
+      const logger = new MemoryLogger();
+      const error = makeError();
+      const isolatedRegistry = new CommandRegistry();
 
-    registry.register({
-      data: new SlashCommandBuilder().setName('test-wrong-channel').setDescription('test'),
-      execute: () => {
-        throw error;
-      },
-    });
+      isolatedRegistry.register({
+        data: new SlashCommandBuilder().setName(cmdName).setDescription('test'),
+        execute: () => {
+          throw error;
+        },
+      });
 
-    const { interaction } = createMockCommandInteraction('test-wrong-channel');
-    await handleInteractionCreate(interaction, registry, {} as CommandContext, logger);
+      const { interaction } = createMockCommandInteraction(cmdName);
+      await handleInteractionCreate(interaction, isolatedRegistry, {} as CommandContext, logger);
 
-    expect(logger.entries).toHaveLength(1);
-    expect(logger.entries[0]).toMatchObject({
-      level: 'info',
-      message: 'command rejected',
-      context: {
-        commandName: 'test-wrong-channel',
-        reason: 'WrongCommandChannelError',
-        userId: 'user-456',
-        guildId: 'guild-123',
-        channelId: 'channel-789',
-      },
-    });
-  });
-
-  it('2. unauthorized command logs info', async () => {
-    const logger = new MemoryLogger();
-    const error = new AdministrativePermissionDeniedError();
-
-    registry.register({
-      data: new SlashCommandBuilder().setName('test-unauthorized').setDescription('test'),
-      execute: () => {
-        throw error;
-      },
-    });
-
-    const { interaction } = createMockCommandInteraction('test-unauthorized');
-    await handleInteractionCreate(interaction, registry, {} as CommandContext, logger);
-
-    expect(logger.entries).toHaveLength(1);
-    expect(logger.entries[0]).toMatchObject({
-      level: 'info',
-      message: 'command rejected',
-      context: {
-        commandName: 'test-unauthorized',
-        reason: 'AdministrativePermissionDeniedError',
-      },
-    });
-  });
-
-  it('3. SquadFullError logs info', async () => {
-    const logger = new MemoryLogger();
-    const error = new SquadFullError('Squad limit reached');
-
-    registry.register({
-      data: new SlashCommandBuilder().setName('test-squad-full').setDescription('test'),
-      execute: () => {
-        throw error;
-      },
-    });
-
-    const { interaction } = createMockCommandInteraction('test-squad-full');
-    await handleInteractionCreate(interaction, registry, {} as CommandContext, logger);
-
-    expect(logger.entries).toHaveLength(1);
-    expect(logger.entries[0]).toMatchObject({
-      level: 'info',
-      message: 'command rejected',
-      context: {
-        commandName: 'test-squad-full',
-        reason: 'SquadFullError',
-      },
-    });
-  });
-
-  it('4. MemberAlreadySignedError logs info', async () => {
-    const logger = new MemoryLogger();
-    const error = new MemberAlreadySignedError();
-
-    registry.register({
-      data: new SlashCommandBuilder().setName('test-already-signed').setDescription('test'),
-      execute: () => {
-        throw error;
-      },
-    });
-
-    const { interaction } = createMockCommandInteraction('test-already-signed');
-    await handleInteractionCreate(interaction, registry, {} as CommandContext, logger);
-
-    expect(logger.entries).toHaveLength(1);
-    expect(logger.entries[0]).toMatchObject({
-      level: 'info',
-      message: 'command rejected',
-      context: {
-        commandName: 'test-already-signed',
-        reason: 'MEMBER_ALREADY_SIGNED',
-      },
-    });
-  });
-
-  it('5. TeamNotFoundError expected user rejection logs info', async () => {
-    const logger = new MemoryLogger();
-    const error = new TeamNotFoundError('Team not found');
-
-    registry.register({
-      data: new SlashCommandBuilder().setName('test-team-not-found').setDescription('test'),
-      execute: () => {
-        throw error;
-      },
-    });
-
-    const { interaction } = createMockCommandInteraction('test-team-not-found');
-    await handleInteractionCreate(interaction, registry, {} as CommandContext, logger);
-
-    expect(logger.entries).toHaveLength(1);
-    expect(logger.entries[0]).toMatchObject({
-      level: 'info',
-      message: 'command rejected',
-      context: {
-        commandName: 'test-team-not-found',
-        reason: 'TeamNotFoundError',
-      },
-    });
-  });
-
-  it('6. validation failure logs info', async () => {
-    const logger = new MemoryLogger();
-    const error = new ValidationError('Invalid options');
-
-    registry.register({
-      data: new SlashCommandBuilder().setName('test-validation-error').setDescription('test'),
-      execute: () => {
-        throw error;
-      },
-    });
-
-    const { interaction } = createMockCommandInteraction('test-validation-error');
-    await handleInteractionCreate(interaction, registry, {} as CommandContext, logger);
-
-    expect(logger.entries).toHaveLength(1);
-    expect(logger.entries[0]).toMatchObject({
-      level: 'info',
-      message: 'command rejected',
-      context: {
-        commandName: 'test-validation-error',
-        reason: 'ValidationError',
-      },
-    });
-  });
-
-  it('7. stale confirmation logs warn', async () => {
-    const logger = new MemoryLogger();
-    const error = new StaleConfirmationError();
-
-    registry.register({
-      data: new SlashCommandBuilder().setName('test-stale-confirm').setDescription('test'),
-      execute: () => {
-        throw error;
-      },
-    });
-
-    const { interaction } = createMockCommandInteraction('test-stale-confirm');
-    await handleInteractionCreate(interaction, registry, {} as CommandContext, logger);
-
-    expect(logger.entries).toHaveLength(1);
-    expect(logger.entries[0]).toMatchObject({
-      level: 'warn',
-      message: 'command interaction expired before acknowledgement',
-      context: {
-        commandName: 'test-stale-confirm',
-        reason: 'STALE_CONFIRMATION',
-      },
-    });
-  });
-
-  it('7b. StaleMutationStateError logs warn', async () => {
-    const logger = new MemoryLogger();
-    const error = new StaleMutationStateError();
-
-    registry.register({
-      data: new SlashCommandBuilder().setName('test-stale-mutation').setDescription('test'),
-      execute: () => {
-        throw error;
-      },
-    });
-
-    const { interaction } = createMockCommandInteraction('test-stale-mutation');
-    await handleInteractionCreate(interaction, registry, {} as CommandContext, logger);
-
-    expect(logger.entries).toHaveLength(1);
-    expect(logger.entries[0]).toMatchObject({
-      level: 'warn',
-      message: 'command interaction expired before acknowledgement',
-      context: {
-        commandName: 'test-stale-mutation',
-        reason: 'STALE_MUTATION_STATE',
-      },
-    });
-  });
-
-  it('8. Discord 10062 logs warn', async () => {
-    const logger = new MemoryLogger();
-    const error = new Error('Unknown interaction');
-    Object.assign(error, { code: 10062 });
-
-    registry.register({
-      data: new SlashCommandBuilder().setName('test-10062').setDescription('test'),
-      execute: () => {
-        throw error;
-      },
-    });
-
-    const { interaction } = createMockCommandInteraction('test-10062');
-    await handleInteractionCreate(interaction, registry, {} as CommandContext, logger);
-
-    expect(logger.entries).toHaveLength(1);
-    expect(logger.entries[0]).toMatchObject({
-      level: 'warn',
-      message: 'command interaction expired before acknowledgement',
-      context: {
-        commandName: 'test-10062',
-        discordErrorCode: 10062,
-        reason: 'INTERACTION_EXPIRED',
-      },
-    });
-  });
-
-  it('9. Prisma P2028 logs error', async () => {
-    const logger = new MemoryLogger();
-    const error = new Prisma.PrismaClientKnownRequestError('Transaction expired', {
-      code: 'P2028',
-      clientVersion: '5.0.0',
-    });
-
-    registry.register({
-      data: new SlashCommandBuilder().setName('test-p2028').setDescription('test'),
-      execute: () => {
-        throw error;
-      },
-    });
-
-    const { interaction } = createMockCommandInteraction('test-p2028');
-    await handleInteractionCreate(interaction, registry, {} as CommandContext, logger);
-
-    expect(logger.entries).toHaveLength(1);
-    expect(logger.entries[0]).toMatchObject({
-      level: 'error',
-      message: 'command execution failed',
-      error,
-      context: {
-        commandName: 'test-p2028',
-      },
-    });
-  });
-
-  it('10. generic Prisma error logs error', async () => {
-    const logger = new MemoryLogger();
-    const error = new Prisma.PrismaClientUnknownRequestError('Database connection lost', {
-      clientVersion: '5.0.0',
-    });
-
-    registry.register({
-      data: new SlashCommandBuilder().setName('test-prisma-generic').setDescription('test'),
-      execute: () => {
-        throw error;
-      },
-    });
-
-    const { interaction } = createMockCommandInteraction('test-prisma-generic');
-    await handleInteractionCreate(interaction, registry, {} as CommandContext, logger);
-
-    expect(logger.entries).toHaveLength(1);
-    expect(logger.entries[0]).toMatchObject({
-      level: 'error',
-      message: 'command execution failed',
-      error,
-    });
-  });
-
-  it('11. Discord API error other than 10062 logs error', async () => {
-    const logger = new MemoryLogger();
-    const error = new Error('Invalid Form Body');
-    Object.assign(error, { name: 'DiscordAPIError', code: 50035 });
-
-    registry.register({
-      data: new SlashCommandBuilder().setName('test-discord-50035').setDescription('test'),
-      execute: () => {
-        throw error;
-      },
-    });
-
-    const { interaction } = createMockCommandInteraction('test-discord-50035');
-    await handleInteractionCreate(interaction, registry, {} as CommandContext, logger);
-
-    expect(logger.entries).toHaveLength(1);
-    expect(logger.entries[0]).toMatchObject({
-      level: 'error',
-      message: 'command execution failed',
-      error,
-    });
-  });
-
-  it('12. EAI_AGAIN/network error logs error', async () => {
-    const logger = new MemoryLogger();
-    const error = Object.assign(new Error('getaddrinfo EAI_AGAIN discord.com'), {
-      code: 'EAI_AGAIN',
-    });
-
-    registry.register({
-      data: new SlashCommandBuilder().setName('test-network-dns').setDescription('test'),
-      execute: () => {
-        throw error;
-      },
-    });
-
-    const { interaction } = createMockCommandInteraction('test-network-dns');
-    await handleInteractionCreate(interaction, registry, {} as CommandContext, logger);
-
-    expect(logger.entries).toHaveLength(1);
-    expect(logger.entries[0]).toMatchObject({
-      level: 'error',
-      message: 'command execution failed',
-      error,
-    });
-  });
-
-  it('13. DiscordRoleCompensationFailedError logs error', async () => {
-    const logger = new MemoryLogger();
-    const error = new DiscordRoleCompensationFailedError(['TEAM']);
-
-    registry.register({
-      data: new SlashCommandBuilder().setName('test-compensation-failed').setDescription('test'),
-      execute: () => {
-        throw error;
-      },
-    });
-
-    const { interaction } = createMockCommandInteraction('test-compensation-failed');
-    await handleInteractionCreate(interaction, registry, {} as CommandContext, logger);
-
-    expect(logger.entries).toHaveLength(1);
-    expect(logger.entries[0]).toMatchObject({
-      level: 'error',
-      message: 'command execution failed',
-      error,
-    });
-  });
-
-  it('14. unexpected TypeError logs error', async () => {
-    const logger = new MemoryLogger();
-    const error = new TypeError('Cannot read properties of undefined');
-
-    registry.register({
-      data: new SlashCommandBuilder().setName('test-type-error').setDescription('test'),
-      execute: () => {
-        throw error;
-      },
-    });
-
-    const { interaction } = createMockCommandInteraction('test-type-error');
-    await handleInteractionCreate(interaction, registry, {} as CommandContext, logger);
-
-    expect(logger.entries).toHaveLength(1);
-    expect(logger.entries[0]).toMatchObject({
-      level: 'error',
-      message: 'command execution failed',
-      error,
-    });
-  });
+      expect(logger.entries).toHaveLength(1);
+      expect(logger.entries[0]).toMatchObject({
+        level,
+        message,
+        ...(Object.keys(contextSubset).length > 0 ? { context: contextSubset } : {}),
+        ...(level === 'error' ? { error } : {}),
+      });
+    },
+  );
 
   it('15. autocomplete infrastructure failure logs error', () => {
     const error = new Prisma.PrismaClientKnownRequestError('DB error', {
