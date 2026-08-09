@@ -75,6 +75,8 @@ describe('database migrations', () => {
           'AuditEvent',
           'BotPermission',
           'ModerationRole',
+          'ModerationCaseCounter',
+          'ModerationCase',
           '_prisma_migrations',
         ]),
       );
@@ -97,6 +99,7 @@ describe('database migrations', () => {
         'ClubMembership_one_active_player_per_guild',
         'ClubMembership_one_active_staff_per_guild_user',
         'ClubMembership_one_active_team_manager_per_club',
+        'ModerationCase_one_active_type_per_target',
         'Offer_one_pending_per_club_player',
       ]);
     } finally {
@@ -149,6 +152,23 @@ describe('database migrations', () => {
     }
   });
 
+  it('contains moderation case lifecycle and value constraints', () => {
+    const sqlite = new DatabaseSync(database.databasePath, { readOnly: true });
+    try {
+      const row = sqlite
+        .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'ModerationCase'")
+        .get() as unknown as SqlRow;
+      expect(row.sql).toContain('ModerationCase_type_check');
+      expect(row.sql).toContain('ModerationCase_status_check');
+      expect(row.sql).toContain('ModerationCase_resolution_type_check');
+      expect(row.sql).toContain('ModerationCase_bail_check');
+      expect(row.sql).toContain('ModerationCase_duration_check');
+      expect(row.sql).toContain('ModerationCase_resolution_check');
+    } finally {
+      sqlite.close();
+    }
+  });
+
   it('can recreate the schema from zero', async () => {
     const second = createTestDatabase();
     try {
@@ -187,7 +207,7 @@ describe('database migrations', () => {
     }
   });
 
-  it('migrates populated Stage 4A data without losing relations or unrelated settings', () => {
+  it('migrates a populated pre-Stage-2 database without losing existing data', () => {
     const databasePath = join(process.cwd(), 'prisma', `.stage4a-${randomUUID()}.db`);
     writeFileSync(databasePath, '', { flag: 'wx' });
     const sqlite = new DatabaseSync(databasePath);
@@ -341,6 +361,23 @@ describe('database migrations', () => {
           { encoding: 'utf8' },
         ),
       );
+      sqlite
+        .prepare(
+          'INSERT INTO "ModerationRole" ("id", "guildId", "discordRoleId", "createdByUserId") VALUES (?, ?, ?, ?)',
+        )
+        .run('moderation-role-1', 'guild-1', '700000000000000001', 'user-2');
+      sqlite.exec(
+        readFileSync(
+          join(
+            process.cwd(),
+            'prisma',
+            'migrations',
+            '20260809210000_moderation_cases',
+            'migration.sql',
+          ),
+          { encoding: 'utf8' },
+        ),
+      );
 
       const settings = sqlite
         .prepare(
@@ -363,8 +400,16 @@ describe('database migrations', () => {
         count: 0,
       });
       expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ModerationRole"').get()).toEqual({
+        count: 1,
+      });
+      expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ModerationCase"').get()).toEqual({
         count: 0,
       });
+      expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ModerationCaseCounter"').get()).toEqual(
+        {
+          count: 0,
+        },
+      );
 
       const clubColumns = sqlite
         .prepare('PRAGMA table_info("Club")')

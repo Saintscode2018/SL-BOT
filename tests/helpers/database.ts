@@ -46,6 +46,8 @@ export function createTestDatabase(): TestDatabase {
 }
 
 export async function clearDatabase(client: PrismaClient): Promise<void> {
+  await client.moderationCase.deleteMany();
+  await client.moderationCaseCounter.deleteMany();
   await client.moderationRole.deleteMany();
   await client.botPermission.deleteMany();
   await client.auditEvent.deleteMany();

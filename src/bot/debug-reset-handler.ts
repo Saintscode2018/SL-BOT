@@ -226,6 +226,8 @@ export async function performGuildDebugReset(
     if (!guild) return;
 
     // delete in foreign key order
+    await tx.moderationCase.deleteMany({ where: { guildId: guild.id } });
+    await tx.moderationCaseCounter.deleteMany({ where: { guildId: guild.id } });
     await tx.auditEvent.deleteMany({ where: { guildId: guild.id } });
     await tx.leagueTransaction.deleteMany({ where: { guildId: guild.id } });
     await tx.offer.deleteMany({ where: { guildId: guild.id } });

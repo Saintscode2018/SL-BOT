@@ -105,6 +105,44 @@ export class ModerationAuthorizationError extends AuthorizationError {
   }
 }
 
+export class ModerationCaseError extends DomainError {}
+
+export class ModerationCaseAlreadyActiveError extends ModerationCaseError {
+  public constructor(public readonly type: 'MUTE' | 'BAN' | 'BLACKLIST') {
+    super(`That user already has an active ${type.toLowerCase()} case.`);
+  }
+}
+
+export class ModerationCaseNotActiveError extends ModerationCaseError {
+  public constructor(public readonly type: 'MUTE' | 'BAN' | 'BLACKLIST') {
+    super(`That user does not have an active ${type.toLowerCase()} case.`);
+  }
+}
+
+export class InvalidBailError extends ModerationCaseError {
+  public constructor() {
+    super('Bail must be a non-negative integer no greater than 2147483647.');
+  }
+}
+
+export class InvalidModerationDurationError extends ModerationCaseError {
+  public constructor(message = 'Mute duration must be a positive whole number of seconds.') {
+    super(message);
+  }
+}
+
+export class InvalidModerationReasonError extends ModerationCaseError {
+  public constructor() {
+    super('Moderation reasons must not exceed 1000 characters.');
+  }
+}
+
+export class InvalidModerationTimestampError extends ModerationCaseError {
+  public constructor(message: string) {
+    super(message);
+  }
+}
+
 export class AdministrativeWrongChannelError extends ConfigurationError {
   public constructor(public readonly staffChannelId: string) {
     super(`administrative command used outside staff channel ${staffChannelId}`);

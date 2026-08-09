@@ -115,6 +115,19 @@ async function seedGuild(
       grantedByUserId: permissionUser.id,
     },
   });
+  await database.moderationCaseCounter.create({
+    data: { guildId: guild.id, nextCaseNumber: 2 },
+  });
+  await database.moderationCase.create({
+    data: {
+      guildId: guild.id,
+      caseNumber: 1,
+      targetUserId: player.id,
+      issuedByUserId: actor.id,
+      type: 'BAN',
+      bail: 0,
+    },
+  });
   return {
     guildId: guild.id,
     clubId: club.id,
@@ -241,6 +254,8 @@ describe('debug reset', () => {
     expect(await context.client.guild.count()).toBe(1);
     expect(await context.client.guildSettings.count()).toBe(0);
     expect(await context.client.botPermission.count()).toBe(1);
+    expect(await context.client.moderationCase.count()).toBe(0);
+    expect(await context.client.moderationCaseCounter.count()).toBe(0);
   });
 
   it('cancels without deleting data', async () => {

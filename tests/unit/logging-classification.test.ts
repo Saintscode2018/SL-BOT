@@ -12,6 +12,7 @@ import {
   ConfigurationError,
   DiscordRoleCompensationFailedError,
   MemberAlreadySignedError,
+  ModerationCaseAlreadyActiveError,
   ModerationRoleAlreadyConfiguredError,
   SquadFullError,
   StaleConfirmationError,
@@ -387,6 +388,19 @@ describe('Logging Classification & Global Error Handling', () => {
     });
     expect(mapDiscordError(error)).toMatchObject({
       description: 'The role <@&950000000000000001> is already configured for moderation.',
+    });
+  });
+
+  it('classifies moderation-case business rejections as expected user errors', () => {
+    const error = new ModerationCaseAlreadyActiveError('BAN');
+
+    expect(classifyInteractionError(error)).toMatchObject({
+      level: 'info',
+      isInfrastructure: false,
+      reason: 'ModerationCaseAlreadyActiveError',
+    });
+    expect(mapDiscordError(error)).toMatchObject({
+      description: 'That user already has an active ban case.',
     });
   });
 });
