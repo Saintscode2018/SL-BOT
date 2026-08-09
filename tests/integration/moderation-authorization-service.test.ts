@@ -5,6 +5,7 @@ import {
   AuthorizationError,
   ModerationAuthorizationError,
   ModerationRoleAlreadyConfiguredError,
+  ModerationRoleEveryoneError,
   ModerationRoleNotConfiguredError,
 } from '../../src/domain/errors.js';
 import type { AuthorizationInput } from '../../src/services/authorization-service.js';
@@ -122,6 +123,17 @@ describe('moderation role configuration and authorization', () => {
         discordRoleId: secondModerationRoleId,
       }),
     ).resolves.toMatchObject({ mutation: 'added' });
+  });
+
+  it('rejects the guild @everyone role before creating a moderation role row', async () => {
+    await expect(
+      roles.add({
+        authorization: authorization(botPermId),
+        discordRoleId: guildId,
+      }),
+    ).rejects.toBeInstanceOf(ModerationRoleEveryoneError);
+
+    await expect(database.client.moderationRole.count()).resolves.toBe(0);
   });
 
   it('rejects duplicate additions and missing removals with typed business errors', async () => {

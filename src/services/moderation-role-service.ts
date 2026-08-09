@@ -3,6 +3,7 @@ import type { Guild, ModerationRole, Prisma, PrismaClient } from '@prisma/client
 import {
   GuildNotConfiguredError,
   ModerationRoleAlreadyConfiguredError,
+  ModerationRoleEveryoneError,
   ModerationRoleNotConfiguredError,
 } from '../domain/errors.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
@@ -42,6 +43,9 @@ export class ModerationRoleService {
       await new AuthorizationService(transaction).assertCanSetup(input.authorization);
       const guild = await guilds.getByDiscordGuildId(input.authorization.discordGuildId);
       if (guild === null) throw new GuildNotConfiguredError('this server has not been configured');
+      if (input.discordRoleId === guild.discordGuildId) {
+        throw new ModerationRoleEveryoneError();
+      }
 
       const roles = new ModerationRoleRepository(transaction);
       if ((await roles.getForGuildRole(guild.id, input.discordRoleId)) !== null) {

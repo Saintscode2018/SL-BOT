@@ -99,6 +99,12 @@ export class ModerationRoleGuildMismatchError extends ModerationRoleManagementEr
   }
 }
 
+export class ModerationRoleEveryoneError extends ModerationRoleManagementError {
+  public constructor() {
+    super('The @everyone role cannot be configured for moderation.');
+  }
+}
+
 export class ModerationAuthorizationError extends AuthorizationError {
   public constructor() {
     super('A configured moderation role or database Bot Permission is required.');
