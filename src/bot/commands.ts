@@ -1,3 +1,4 @@
+import { classifyInteractionError } from './interaction-error-classifier.js';
 import { ChannelType, MessageFlags, SlashCommandBuilder } from 'discord.js';
 
 import {
@@ -264,11 +265,20 @@ async function autocompleteTeam(
       roleNamesById,
     );
   } catch (error: unknown) {
+    const classification = classifyInteractionError(error);
+    if (classification.level === 'warn') {
+      context.logger.warn('autocomplete interaction expired before response', {
+        commandName: interaction.commandName,
+        guildId: interaction.guildId,
+        discordErrorCode: 10_062,
+      });
+      return;
+    }
     context.logger.error('team autocomplete lookup failed', error, {
       commandName: interaction.commandName,
       guildId: interaction.guildId,
     });
-    await interaction.respond([]);
+    await interaction.respond([]).catch(() => {});
     return;
   }
   await interaction.respond(choices.slice(0, 25));

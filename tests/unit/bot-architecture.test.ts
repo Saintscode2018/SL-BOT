@@ -304,7 +304,7 @@ describe('interaction handler', () => {
     expect(logger.entries).toContainEqual(
       expect.objectContaining({
         level: 'info',
-        message: 'command execution failed: expected rejection',
+        message: 'command rejected',
       }),
     );
   });
