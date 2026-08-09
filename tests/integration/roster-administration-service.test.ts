@@ -24,6 +24,9 @@ import {
   type AuditAnnouncementAdapter,
 } from '../../src/services/audit-announcement-service.js';
 import { RosterAdministrationService } from '../../src/services/roster-administration-service.js';
+import { RosterManagementService } from '../../src/services/roster-management-service.js';
+import { RosterMutationService } from '../../src/services/roster-mutation-service.js';
+import { RosterPromotionDemotionService } from '../../src/services/roster-promotion-demotion-service.js';
 import { RoleSynchronizedMutationService } from '../../src/services/role-synchronized-mutation-service.js';
 import {
   clearDatabase,
@@ -93,6 +96,9 @@ describe('administrative roster service', () => {
     await guilds.upsertSettings(guild.id, {
       staffChannelId: '810000000000000010',
       botPermissionsRoleId: '810000000000000011',
+      teamManagerRoleId: '810000000000000012',
+      assistantManagerRoleId: '810000000000000013',
+      playerManagerRoleId: '810000000000000014',
       defaultSquadLimit: 2,
     });
     await grantBotPermission(database.client, discordGuildId, ownerId);
@@ -567,6 +573,202 @@ describe('administrative roster service', () => {
       playerDiscordUserId: playerId,
       teamRoleId: team.discordRoleId,
       channelId: '810000000000000040',
+    });
+  });
+
+  describe('roster capacity & unique member counting regressions', () => {
+    async function seedMembership(
+      discordUserId: string,
+      membershipType: 'PLAYER' | 'TEAM_MANAGER' | 'ASSISTANT_MANAGER' | 'PLAYER_MANAGER',
+    ) {
+      const user = await database.client.leagueUser.upsert({
+        where: { discordUserId },
+        create: { discordUserId },
+        update: {},
+      });
+      return database.client.clubMembership.create({
+        data: {
+          guildId: guild.id,
+          clubId: team.id,
+          userId: user.id,
+          membershipType,
+          status: 'ACTIVE',
+        },
+      });
+    }
+
+    async function seedPlayers(count: number, offset = 0): Promise<void> {
+      for (let index = 0; index < count; index += 1) {
+        await seedMembership(`75${String(offset + index).padStart(16, '0')}`, 'PLAYER');
+      }
+    }
+
+    it.each([
+      { players: 2, staff: [] as const, label: '2 PLAYER users' },
+      { players: 1, staff: ['TEAM_MANAGER'] as const, label: '1 PLAYER user plus a TM' },
+    ])('treats $label as full at 2', async ({ players, staff }) => {
+      const memberships = new MembershipRepository(database.client);
+      const mutations = new RosterMutationService(database.client);
+      await seedPlayers(players);
+      for (const [index, staffType] of staff.entries()) {
+        await seedMembership(`76${String(index).padStart(16, '0')}`, staffType);
+      }
+
+      await expect(memberships.countActiveUniqueMembers(team.id)).resolves.toBe(2);
+      await expect(
+        mutations.signFreeAgent({
+          discordGuildId,
+          clubId: team.id,
+          actorDiscordUserId: ownerId,
+          targetDiscordUserId: '770000000000000001',
+        }),
+      ).rejects.toBeInstanceOf(SquadFullError);
+    });
+
+    it('counts legacy PLAYER plus TM rows for one user once', async () => {
+      const memberships = new MembershipRepository(database.client);
+      await seedMembership(playerId, 'PLAYER');
+      await seedMembership(playerId, 'TEAM_MANAGER');
+
+      await expect(memberships.countActivePlayers(team.id)).resolves.toBe(1);
+      await expect(memberships.countActiveUniqueMembers(team.id)).resolves.toBe(1);
+    });
+
+    it('reports a unique 3/2 roster without mutating existing over-limit data', async () => {
+      const memberships = new MembershipRepository(database.client);
+      const mutations = new RosterMutationService(database.client);
+      await seedPlayers(2);
+      await seedMembership(ownerId, 'TEAM_MANAGER');
+
+      const result = await new RosterManagementService(database.client).list(
+        discordGuildId,
+        team.id,
+      );
+
+      expect(result.allActiveMembers).toHaveLength(3);
+      expect(result.ordinaryPlayers).toHaveLength(2);
+      expect(result.staff).toHaveLength(1);
+      await expect(memberships.countActiveUniqueMembers(team.id)).resolves.toBe(3);
+      await expect(
+        mutations.signFreeAgent({
+          discordGuildId,
+          clubId: team.id,
+          actorDiscordUserId: ownerId,
+          targetDiscordUserId: '770000000000000002',
+        }),
+      ).rejects.toBeInstanceOf(SquadFullError);
+    });
+
+    it('does not consume another slot when appointing an existing member at capacity', async () => {
+      const memberships = new MembershipRepository(database.client);
+      const mutations = new RosterMutationService(database.client);
+      await database.client.guildSettings.update({
+        where: { guildId: guild.id },
+        data: { defaultSquadLimit: 1 },
+      });
+      const existingDiscordId = '780000000000000001';
+      await seedMembership(existingDiscordId, 'PLAYER');
+
+      await expect(
+        mutations.appointStaffImmediately({
+          discordGuildId,
+          clubId: team.id,
+          actorDiscordUserId: ownerId,
+          targetDiscordUserId: existingDiscordId,
+          staffType: 'ASSISTANT_MANAGER',
+        }),
+      ).resolves.toMatchObject({ staffMembership: { membershipType: 'ASSISTANT_MANAGER' } });
+      await expect(memberships.countActiveUniqueMembers(team.id)).resolves.toBe(1);
+
+      await expect(
+        mutations.appointStaffImmediately({
+          discordGuildId,
+          clubId: team.id,
+          actorDiscordUserId: ownerId,
+          targetDiscordUserId: '780000000000000002',
+          staffType: 'PLAYER_MANAGER',
+        }),
+      ).rejects.toBeInstanceOf(SquadFullError);
+    });
+
+    it('promotes and demotes a staff-only member without changing unique population', async () => {
+      const memberships = new MembershipRepository(database.client);
+      const mutations = new RosterMutationService(database.client);
+      await database.client.guildSettings.update({
+        where: { guildId: guild.id },
+        data: { defaultSquadLimit: 2 },
+      });
+      await seedMembership(ownerId, 'TEAM_MANAGER');
+      const targetDiscordId = '780000000000000003';
+      await seedMembership(targetDiscordId, 'PLAYER_MANAGER');
+      const promoService = new RosterPromotionDemotionService(database.client, mutations);
+
+      const promoted = await promoService.promote({
+        discordGuildId,
+        actorDiscordUserId: ownerId,
+        targetDiscordUserId: targetDiscordId,
+        clubId: team.id,
+        destinationStaffType: 'ASSISTANT_MANAGER',
+        expectedActorStaffRole: 'TM',
+        expectedTargetStaffRole: 'PM',
+      });
+      expect(promoted.playerMembership).toBeNull();
+      await expect(memberships.countActiveUniqueMembers(team.id)).resolves.toBe(2);
+
+      const demoted = await promoService.demote({
+        discordGuildId,
+        actorDiscordUserId: ownerId,
+        targetDiscordUserId: targetDiscordId,
+        clubId: team.id,
+        expectedActorStaffRole: 'TM',
+        expectedTargetStaffRole: 'ATM',
+      });
+      expect(demoted.playerMembership).toMatchObject({
+        membershipType: 'PLAYER',
+        status: 'ACTIVE',
+      });
+      await expect(memberships.countActiveUniqueMembers(team.id)).resolves.toBe(2);
+    });
+
+    it('allows a same-team staff-only member to gain a PLAYER row at capacity', async () => {
+      const memberships = new MembershipRepository(database.client);
+      await database.client.guildSettings.update({
+        where: { guildId: guild.id },
+        data: { defaultSquadLimit: 2 },
+      });
+      await seedMembership(ownerId, 'TEAM_MANAGER');
+      const targetDiscordId = '780000000000000005';
+      await seedMembership(targetDiscordId, 'PLAYER_MANAGER');
+
+      await expect(
+        new RosterManagementService(database.client).add({
+          authorization: authorization(),
+          clubId: team.id,
+          playerDiscordUserId: targetDiscordId,
+          playerIsBot: false,
+        }),
+      ).resolves.toMatchObject({ membership: { membershipType: 'PLAYER' } });
+      await expect(memberships.countActiveUniqueMembers(team.id)).resolves.toBe(2);
+    });
+
+    it('removes a staff-only appointment without requiring a PLAYER row', async () => {
+      const memberships = new MembershipRepository(database.client);
+      const mutations = new RosterMutationService(database.client);
+      const targetDiscordId = '780000000000000004';
+      await seedMembership(targetDiscordId, 'PLAYER_MANAGER');
+
+      const result = await mutations.removeStaffAppointmentImmediately({
+        discordGuildId,
+        clubId: team.id,
+        actorDiscordUserId: ownerId,
+        targetDiscordUserId: targetDiscordId,
+        staffType: 'PLAYER_MANAGER',
+      });
+
+      expect(result.playerMembership).toBeNull();
+      expect(result.staffMembership).toMatchObject({ status: 'ENDED' });
+      expect(result.roleMutation.removeRoles.map(({ purpose }) => purpose)).toEqual(['PM', 'TEAM']);
+      await expect(memberships.countActiveUniqueMembers(team.id)).resolves.toBe(0);
     });
   });
 });

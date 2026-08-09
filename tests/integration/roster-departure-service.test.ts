@@ -1,6 +1,8 @@
 import type { Club, Guild } from '@prisma/client';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { mapDiscordError } from '../../src/bot/error-mapper.js';
+
 import {
   CallerHasNoStaffAppointmentError,
   NotCurrentlySignedError,
@@ -251,6 +253,57 @@ describe('Stage 4B.2 roster departure service', () => {
           }),
         ).rejects.toBeInstanceOf(WrongCommandChannelError);
       }
+    });
+
+    it('allows /health in Bot Commands and Staff and blocks arbitrary channels', async () => {
+      const policy = new CommandChannelPolicyService(database.client);
+      for (const channelId of ['300000000000000010', '300000000000000011']) {
+        await expect(
+          policy.validateChannelPolicy({ authorization, channelId, commandName: 'health' }),
+        ).resolves.toBeUndefined();
+      }
+      await expect(
+        policy.validateChannelPolicy({
+          authorization,
+          channelId: '300000000000000099',
+          commandName: 'health',
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('guides ordinary users to Bot Commands without disclosing Staff Commands channel ID', async () => {
+      const policy = new CommandChannelPolicyService(database.client);
+      const ordinaryUser = { ...authorization, hasAdministratorPermission: false };
+      try {
+        await policy.validateChannelPolicy({
+          authorization: ordinaryUser,
+          commandName: 'demand',
+          channelId: '300000000000000099',
+        });
+        expect.unreachable('expected policy error');
+      } catch (error) {
+        expect(error).toBeInstanceOf(WrongCommandChannelError);
+        const mapped = mapDiscordError(error);
+        expect(mapped.title).toBe('❌ Wrong Command Channel');
+        expect(mapped.description).toBe('Use this command in <#300000000000000010>.');
+        expect(mapped.description).not.toContain('300000000000000011');
+      }
+    });
+
+    it('allows /setup bootstrap for Discord Administrator in unconfigured channel before setup', async () => {
+      const policy = new CommandChannelPolicyService(database.client);
+      await expect(
+        policy.validateChannelPolicy({
+          authorization: {
+            ...authorization,
+            discordGuildId: '990000000000000099',
+            hasAdministratorPermission: true,
+          },
+          channelId: '990000000000000088',
+          commandName: 'setup',
+          subcommand: 'channels',
+        }),
+      ).resolves.toBeUndefined();
     });
   });
 
