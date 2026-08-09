@@ -105,6 +105,12 @@ export class ModerationRoleEveryoneError extends ModerationRoleManagementError {
   }
 }
 
+export class ModerationRoleManagedError extends ModerationRoleManagementError {
+  public constructor(public readonly discordRoleId: string) {
+    super(`The role <@&${discordRoleId}> is managed by Discord and cannot be configured for moderation.`);
+  }
+}
+
 export class ModerationAuthorizationError extends AuthorizationError {
   public constructor() {
     super('A configured moderation role or database Bot Permission is required.');

@@ -4,6 +4,7 @@ import {
   GuildNotConfiguredError,
   ModerationRoleAlreadyConfiguredError,
   ModerationRoleEveryoneError,
+  ModerationRoleManagedError,
   ModerationRoleNotConfiguredError,
 } from '../domain/errors.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
@@ -33,10 +34,38 @@ export interface ModerationRoleListResult {
   moderationRoles: ModerationRole[];
 }
 
+export interface ModerationRoleInspection {
+  managed: boolean;
+}
+
+export interface ModerationRoleInspector {
+  inspectGuildRole(
+    discordGuildId: string,
+    discordRoleId: string,
+  ): Promise<ModerationRoleInspection | null>;
+}
+
 export class ModerationRoleService {
-  public constructor(private readonly database: PrismaClient) {}
+  public constructor(
+    private readonly database: PrismaClient,
+    private readonly roleInspector: ModerationRoleInspector,
+  ) {}
 
   public async add(input: ModerationRoleMutationInput): Promise<ModerationRoleMutationResult> {
+    await new AuthorizationService(this.database).assertCanSetup(input.authorization);
+    const guild = await new GuildRepository(this.database).getByDiscordGuildId(
+      input.authorization.discordGuildId,
+    );
+    if (guild === null) throw new GuildNotConfiguredError('this server has not been configured');
+    if (input.discordRoleId === guild.discordGuildId) {
+      throw new ModerationRoleEveryoneError();
+    }
+    const inspection = await this.roleInspector.inspectGuildRole(
+      guild.discordGuildId,
+      input.discordRoleId,
+    );
+    if (inspection?.managed) throw new ModerationRoleManagedError(input.discordRoleId);
+
     return this.database.$transaction(async (transaction) => {
       const guilds = new GuildRepository(transaction);
       await guilds.acquireWriteLock(input.authorization.discordGuildId);

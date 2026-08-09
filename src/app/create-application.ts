@@ -13,6 +13,7 @@ import { createEventDefinitions } from '../bot/events.js';
 import { OfferButtonHandler } from '../bot/offer-button-handler.js';
 import { DiscordOfferMessageAdapter } from '../bot/offer-message-adapter.js';
 import { DiscordMemberRoleAdapter } from '../bot/discord-member-role-adapter.js';
+import { DiscordModerationRoleInspector } from '../bot/discord-moderation-role-inspector.js';
 import { DiscordSetupAuditMessageAdapter } from '../bot/setup-audit-message-adapter.js';
 import { DiscordAuditAnnouncementAdapter } from '../bot/audit-announcement-adapter.js';
 import { DiscordAuditAnnouncementPresentationProvider } from '../bot/audit-announcement-presentation.js';
@@ -190,7 +191,7 @@ export function createApplication(
     offerAcceptanceService,
     guildSetupService: new GuildSetupService(prisma),
     botPermissionService: new BotPermissionService(prisma),
-    moderationRoleService: new ModerationRoleService(prisma),
+    moderationRoleService: new ModerationRoleService(prisma, new DiscordModerationRoleInspector(discord)),
     moderationCommandHandler,
     clubManagementService: new ClubManagementService(prisma),
     staffManagementService: new StaffManagementService(prisma, rosterMutations),

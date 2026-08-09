@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   AdministrativePermissionDeniedError,
@@ -6,6 +6,7 @@ import {
   ModerationAuthorizationError,
   ModerationRoleAlreadyConfiguredError,
   ModerationRoleEveryoneError,
+  ModerationRoleManagedError,
   ModerationRoleNotConfiguredError,
 } from '../../src/domain/errors.js';
 import type { AuthorizationInput } from '../../src/services/authorization-service.js';
@@ -18,6 +19,8 @@ import {
   moderationRoleAddedAuditEventType,
   moderationRoleRemovedAuditEventType,
   ModerationRoleService,
+  type ModerationRoleInspection,
+  type ModerationRoleInspector,
 } from '../../src/services/moderation-role-service.js';
 import {
   clearDatabase,
@@ -36,6 +39,14 @@ const outsiderId = '910000000000000007';
 const moderationRoleId = '920000000000000001';
 const secondModerationRoleId = '920000000000000002';
 const sameNameDifferentRoleId = '920000000000000003';
+const managedRoleId = '920000000000000004';
+
+let managedRoleIds = new Set<string>();
+const roleInspector = {
+  inspectGuildRole: vi.fn((_discordGuildId: string, discordRoleId: string): Promise<ModerationRoleInspection | null> =>
+    Promise.resolve(managedRoleIds.has(discordRoleId) ? { managed: true } : { managed: false }),
+  ),
+} satisfies ModerationRoleInspector;
 
 function authorization(
   discordUserId: string,
@@ -62,8 +73,10 @@ describe('moderation role configuration and authorization', () => {
 
   beforeEach(async () => {
     await clearDatabase(database.client);
+    managedRoleIds = new Set();
+    roleInspector.inspectGuildRole.mockClear();
     permissions = new BotPermissionService(database.client);
-    roles = new ModerationRoleService(database.client);
+    roles = new ModerationRoleService(database.client, roleInspector);
     setup = new GuildSetupService(database.client);
     await bootstrapGuild(guildId, botPermId);
   });
@@ -133,6 +146,45 @@ describe('moderation role configuration and authorization', () => {
       }),
     ).rejects.toBeInstanceOf(ModerationRoleEveryoneError);
 
+    await expect(database.client.moderationRole.count()).resolves.toBe(0);
+    expect(roleInspector.inspectGuildRole).not.toHaveBeenCalled();
+  });
+
+  it('rejects a Discord-managed role before creating a moderation role row', async () => {
+    managedRoleIds.add(managedRoleId);
+
+    await expect(
+      roles.add({
+        authorization: authorization(botPermId),
+        discordRoleId: managedRoleId,
+      }),
+    ).rejects.toBeInstanceOf(ModerationRoleManagedError);
+
+    expect(roleInspector.inspectGuildRole).toHaveBeenCalledWith(guildId, managedRoleId);
+    await expect(database.client.moderationRole.count()).resolves.toBe(0);
+  });
+
+  it('preserves missing-role behavior by allowing an inspector null result', async () => {
+    roleInspector.inspectGuildRole.mockResolvedValueOnce(null);
+
+    await expect(
+      roles.add({
+        authorization: authorization(botPermId),
+        discordRoleId: moderationRoleId,
+      }),
+    ).resolves.toMatchObject({ mutation: 'added' });
+    await expect(database.client.moderationRole.count()).resolves.toBe(1);
+  });
+
+  it('preserves setup authorization before inspecting a role', async () => {
+    await expect(
+      roles.add({
+        authorization: authorization(outsiderId),
+        discordRoleId: moderationRoleId,
+      }),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+
+    expect(roleInspector.inspectGuildRole).not.toHaveBeenCalled();
     await expect(database.client.moderationRole.count()).resolves.toBe(0);
   });
 

@@ -27,7 +27,10 @@ import type {
   ModerationTimeoutGateway,
 } from '../../src/services/moderation-mute-service.js';
 import { ModerationMuteService } from '../../src/services/moderation-mute-service.js';
-import { ModerationRoleService } from '../../src/services/moderation-role-service.js';
+import {
+  ModerationRoleService,
+  type ModerationRoleInspector,
+} from '../../src/services/moderation-role-service.js';
 import { GuildSetupService } from '../../src/services/guild-setup-service.js';
 import { CommandChannelPolicyService } from '../../src/services/command-channel-policy-service.js';
 import {
@@ -49,6 +52,9 @@ const staffChannelId = '991000000000000010';
 const auditChannelId = '991000000000000011';
 const caseFilesChannelId = '991000000000000012';
 const issuedAt = new Date('2026-08-09T12:00:00.000Z');
+const unmanagedRoleInspector: ModerationRoleInspector = {
+  inspectGuildRole: () => Promise.resolve({ managed: false }),
+};
 
 function authorization(
   discordUserId = moderatorId,
@@ -145,7 +151,7 @@ describe('moderation mute execution service', () => {
       caseFilesChannelId,
     });
     await grantBotPermission(database.client, discordGuildId, bootstrapId);
-    await new ModerationRoleService(database.client).add({
+    await new ModerationRoleService(database.client, unmanagedRoleInspector).add({
       authorization: authorization(bootstrapId, []),
       discordRoleId: moderationRoleId,
     });

@@ -19,7 +19,10 @@ import {
   ModerationCaseService,
   type CreateModerationCaseInput,
 } from '../../src/services/moderation-case-service.js';
-import { ModerationRoleService } from '../../src/services/moderation-role-service.js';
+import {
+  ModerationRoleService,
+  type ModerationRoleInspector,
+} from '../../src/services/moderation-role-service.js';
 import {
   clearDatabase,
   createTestDatabase,
@@ -39,6 +42,9 @@ const targetId = '970000000000000009';
 const moderationRoleId = '980000000000000001';
 const issuedAt = new Date('2026-08-09T12:00:00.000Z');
 const resolvedAt = new Date('2026-08-09T13:00:00.000Z');
+const unmanagedRoleInspector: ModerationRoleInspector = {
+  inspectGuildRole: () => Promise.resolve({ managed: false }),
+};
 
 function authorization(
   discordUserId: string,
@@ -76,7 +82,7 @@ describe('moderation case service', () => {
     cases = new ModerationCaseService(database.client);
     permissions = new BotPermissionService(database.client);
     setup = new GuildSetupService(database.client);
-    roles = new ModerationRoleService(database.client);
+    roles = new ModerationRoleService(database.client, unmanagedRoleInspector);
     await bootstrapGuild(guildId, botPermId);
     await permissions.addAdmin({
       authorization: authorization(botPermId),
