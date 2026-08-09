@@ -27,9 +27,7 @@ export class DiscordModerationRoleInspector implements ModerationRoleInspector {
   }
 
   private async fetchRole(guild: Guild, discordRoleId: string): Promise<Role | null> {
-    const cached = guild.roles.cache.get(discordRoleId);
-    if (cached !== undefined) return cached;
-    return guild.roles.fetch(discordRoleId).catch((error: unknown) => {
+    return guild.roles.fetch(discordRoleId, { force: true }).catch((error: unknown) => {
       if (discordErrorCode(error) === 10_011) return null;
       throw new DiscordRoleUpdateFailedError({ cause: error });
     });

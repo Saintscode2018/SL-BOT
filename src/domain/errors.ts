@@ -111,6 +111,12 @@ export class ModerationRoleManagedError extends ModerationRoleManagementError {
   }
 }
 
+export class ModerationRoleMissingError extends ModerationRoleManagementError {
+  public constructor(public readonly discordRoleId: string) {
+    super(`The role <@&${discordRoleId}> no longer exists in this server and cannot be configured for moderation.`);
+  }
+}
+
 export class ModerationAuthorizationError extends AuthorizationError {
   public constructor() {
     super('A configured moderation role or database Bot Permission is required.');

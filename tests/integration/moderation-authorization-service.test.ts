@@ -7,6 +7,7 @@ import {
   ModerationRoleAlreadyConfiguredError,
   ModerationRoleEveryoneError,
   ModerationRoleManagedError,
+  ModerationRoleMissingError,
   ModerationRoleNotConfiguredError,
 } from '../../src/domain/errors.js';
 import type { AuthorizationInput } from '../../src/services/authorization-service.js';
@@ -164,7 +165,7 @@ describe('moderation role configuration and authorization', () => {
     await expect(database.client.moderationRole.count()).resolves.toBe(0);
   });
 
-  it('preserves missing-role behavior by allowing an inspector null result', async () => {
+  it('rejects a missing Discord role before creating a moderation role or successful-add audit event', async () => {
     roleInspector.inspectGuildRole.mockResolvedValueOnce(null);
 
     await expect(
@@ -172,8 +173,11 @@ describe('moderation role configuration and authorization', () => {
         authorization: authorization(botPermId),
         discordRoleId: moderationRoleId,
       }),
-    ).resolves.toMatchObject({ mutation: 'added' });
-    await expect(database.client.moderationRole.count()).resolves.toBe(1);
+    ).rejects.toBeInstanceOf(ModerationRoleMissingError);
+    await expect(database.client.moderationRole.count()).resolves.toBe(0);
+    await expect(
+      database.client.auditEvent.count({ where: { eventType: moderationRoleAddedAuditEventType } }),
+    ).resolves.toBe(0);
   });
 
   it('preserves setup authorization before inspecting a role', async () => {

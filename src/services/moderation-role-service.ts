@@ -5,6 +5,7 @@ import {
   ModerationRoleAlreadyConfiguredError,
   ModerationRoleEveryoneError,
   ModerationRoleManagedError,
+  ModerationRoleMissingError,
   ModerationRoleNotConfiguredError,
 } from '../domain/errors.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
@@ -64,6 +65,7 @@ export class ModerationRoleService {
       guild.discordGuildId,
       input.discordRoleId,
     );
+    if (inspection === null) throw new ModerationRoleMissingError(input.discordRoleId);
     if (inspection?.managed) throw new ModerationRoleManagedError(input.discordRoleId);
 
     return this.database.$transaction(async (transaction) => {
