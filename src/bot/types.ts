@@ -15,6 +15,7 @@ import type { GuildConfigurationService } from '../services/guild-configuration-
 import type { GuildSetupService } from '../services/guild-setup-service.js';
 import type { LimitManagementService } from '../services/limit-management-service.js';
 import type { ModerationRoleService } from '../services/moderation-role-service.js';
+import type { ModerationCommandHandler } from './moderation-command-handler.js';
 import type { OfferAcceptanceService } from '../services/offer-acceptance-service.js';
 import type { OfferDeliveryService } from '../services/offer-delivery-service.js';
 import type { RosterManagementService } from '../services/roster-management-service.js';
@@ -143,6 +144,7 @@ export interface CommandContext {
     'addStandard' | 'removeStandard' | 'addAdmin' | 'list'
   >;
   moderationRoleService?: Pick<ModerationRoleService, 'add' | 'remove' | 'list'>;
+  moderationCommandHandler?: Pick<ModerationCommandHandler, 'mute' | 'unmute'>;
   clubManagementService: Pick<
     ClubManagementService,
     'create' | 'edit' | 'deactivate' | 'listActive' | 'autocomplete'

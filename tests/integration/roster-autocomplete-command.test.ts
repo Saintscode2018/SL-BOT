@@ -154,6 +154,7 @@ describe('roster autocomplete command correlation', () => {
       staffChannelId,
       transferChannelId: '700000000000000005',
       auditChannelId: '700000000000000006',
+      caseFilesChannelId: '700000000000000007',
     });
     await grantBotPermission(database.client, discordGuildId, ownerId);
     context = {

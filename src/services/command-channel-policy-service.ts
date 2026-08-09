@@ -12,7 +12,7 @@ import { GuildRepository } from '../repositories/guild-repository.js';
 import type { AuthorizationInput } from './authorization-service.js';
 import { AuthorizationService } from './authorization-service.js';
 
-export type CommandChannelScope = 'BOT_OR_STAFF' | 'STAFF_ONLY';
+export type CommandChannelScope = 'BOT_OR_STAFF' | 'STAFF_ONLY' | 'MODERATION_STAFF';
 
 export interface ValidateChannelPolicyInput {
   authorization: AuthorizationInput;
@@ -30,6 +30,7 @@ export class CommandChannelPolicyService {
     subcommand?: string | null,
     subcommandGroup?: string | null,
   ): CommandChannelScope {
+    if (commandName === 'mute' || commandName === 'unmute') return 'MODERATION_STAFF';
     if (
       commandName === 'health' ||
       commandName === 'demand' ||
@@ -76,6 +77,15 @@ export class CommandChannelPolicyService {
     if (input.commandName === 'debugreset') {
       if (!globallyAuthorized) throw new AdministrativePermissionDeniedError();
       if (!settings?.staffChannelId) return;
+      if (input.channelId !== settings.staffChannelId) {
+        throw new AdministrativeWrongChannelError(settings.staffChannelId);
+      }
+      return;
+    }
+
+    if (scope === 'MODERATION_STAFF') {
+      await authorization.authorizeModeration(input.authorization);
+      if (!settings?.staffChannelId) throw new StaffChannelNotConfiguredError();
       if (input.channelId !== settings.staffChannelId) {
         throw new AdministrativeWrongChannelError(settings.staffChannelId);
       }

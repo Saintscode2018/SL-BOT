@@ -20,6 +20,7 @@ import {
 } from './embeds.js';
 import { demandCommand, releaseCommand } from './departure-command-definitions.js';
 import { demoteCommand, promoteCommand } from './promotion-demotion-command-definitions.js';
+import { muteCommand, unmuteCommand } from './moderation-command-definitions.js';
 import { getTeamThumbnail, validateTeamEmoji } from './emoji-helper.js';
 import { requireGuildExecution, type GuildCommandExecution } from './guild-execution.js';
 import {
@@ -556,6 +557,13 @@ const setupCommand: CommandDefinition = {
             .setDescription('Channel for system audit logs')
             .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
             .setRequired(true),
+        )
+        .addChannelOption((option) =>
+          option
+            .setName('case_files')
+            .setDescription('Channel for moderation case files')
+            .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+            .setRequired(true),
         ),
     )
     .addSubcommand((subcommand) =>
@@ -832,11 +840,13 @@ const setupCommand: CommandDefinition = {
       const staff = requireChannel(execution.options, 'staff');
       const transfer = requireChannel(execution.options, 'transfer');
       const audit = requireChannel(execution.options, 'audit');
+      const caseFiles = requireChannel(execution.options, 'case_files');
 
       validateTextChannel(botCmds, 'bot_commands');
       validateTextChannel(staff, 'staff');
       validateTextChannel(transfer, 'transfer');
       validateTextChannel(audit, 'audit');
+      validateTextChannel(caseFiles, 'case_files');
 
       const result = await context.guildSetupService.setupChannels({
         authorization: execution.authorization,
@@ -845,6 +855,7 @@ const setupCommand: CommandDefinition = {
         staffChannelId: staff.id,
         transferChannelId: transfer.id,
         auditChannelId: audit.id,
+        caseFilesChannelId: caseFiles.id,
       });
 
       const channelBlock = [
@@ -852,6 +863,7 @@ const setupCommand: CommandDefinition = {
         `${BOT_EMOJIS.staffCommandsChannel} Staff Commands: <#${staff.id}>`,
         `${BOT_EMOJIS.transferMarketChannel} Transfers: <#${transfer.id}>`,
         `${BOT_EMOJIS.auditChannel} Audit Logs: <#${audit.id}>`,
+        `${BOT_EMOJIS.auditChannel} Case Files: <#${caseFiles.id}>`,
       ].join('\n');
 
       const title = `${BOT_EMOJIS.success} System Channels Configured`;
@@ -928,6 +940,7 @@ const setupCommand: CommandDefinition = {
         `${BOT_EMOJIS.staffCommandsChannel} Staff Commands: ${view.channels.staffChannelId ? `<#${view.channels.staffChannelId}>` : 'Not configured'}`,
         `${BOT_EMOJIS.transferMarketChannel} Transfers: ${view.channels.transferChannelId ? `<#${view.channels.transferChannelId}>` : 'Not configured'}`,
         `${BOT_EMOJIS.auditChannel} Audit Logs: ${view.channels.auditChannelId ? `<#${view.channels.auditChannelId}>` : 'Not configured'}`,
+        `${BOT_EMOJIS.auditChannel} Case Files: ${view.channels.caseFilesChannelId ? `<#${view.channels.caseFilesChannelId}>` : 'Not configured'}`,
       ].join('\n');
 
       const roleLines = [
@@ -2140,6 +2153,8 @@ export const commands: readonly CommandDefinition[] = [
   releaseCommand,
   promoteCommand,
   demoteCommand,
+  muteCommand,
+  unmuteCommand,
 ];
 
 export const commandDefinitions = [
@@ -2157,5 +2172,7 @@ export const commandDefinitions = [
   releaseCommand,
   promoteCommand,
   demoteCommand,
+  muteCommand,
+  unmuteCommand,
   ...(process.env['SLBOT_ENABLE_DEBUG_COMMANDS'] === 'true' ? [debugResetCommand] : []),
 ] satisfies readonly CommandDefinition[];

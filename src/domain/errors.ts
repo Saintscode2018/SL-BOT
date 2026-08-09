@@ -143,6 +143,101 @@ export class InvalidModerationTimestampError extends ModerationCaseError {
   }
 }
 
+export class ModerationTimeoutTooLongError extends ModerationCaseError {
+  public readonly code = 'MODERATION_TIMEOUT_TOO_LONG';
+
+  public constructor(public readonly maximumSeconds: number) {
+    super('Discord timeouts cannot be longer than 28 days.');
+  }
+}
+
+export class ModerationChannelNotConfiguredError extends ConfigurationError {
+  public readonly code = 'MODERATION_CHANNEL_NOT_CONFIGURED';
+
+  public constructor(public readonly channel: 'CASE_FILES' | 'AUDIT') {
+    super(
+      `${channel === 'CASE_FILES' ? 'Case Files' : 'Audit'} channel is not configured. Run \`/setup channels\` first.`,
+    );
+  }
+}
+
+export class ModerationMemberNotFoundError extends DomainError {
+  public readonly code = 'MODERATION_MEMBER_NOT_FOUND';
+
+  public constructor() {
+    super('The selected user is not currently a member of this server.');
+  }
+}
+
+export class ModerationSelfTargetError extends AuthorizationError {
+  public readonly code = 'MODERATION_SELF_TARGET';
+
+  public constructor() {
+    super('The bot cannot apply a timeout to itself.');
+  }
+}
+
+export class ModerationBotPermissionError extends AuthorizationError {
+  public readonly code = 'MODERATION_MODERATE_MEMBERS_MISSING';
+
+  public constructor() {
+    super('The bot needs the Discord Moderate Members permission to manage timeouts.');
+  }
+}
+
+export class ModerationTargetNotModeratableError extends AuthorizationError {
+  public readonly code = 'MODERATION_TARGET_NOT_MODERATABLE';
+
+  public constructor() {
+    super(
+      'Discord will not allow the bot to moderate that member. Check role hierarchy and administrator status.',
+    );
+  }
+}
+
+export class ModerationMemberFetchError extends DomainError {
+  public readonly code = 'MODERATION_MEMBER_FETCH_FAILED';
+
+  public constructor(options?: ErrorOptions) {
+    super('Discord member state could not be loaded.', options);
+  }
+}
+
+export class ModerationTimeoutApplyError extends DomainError {
+  public readonly code = 'MODERATION_TIMEOUT_APPLY_FAILED';
+
+  public constructor(options?: ErrorOptions) {
+    super('Discord could not apply the timeout; no moderation case was created.', options);
+  }
+}
+
+export class ModerationTimeoutRemoveError extends DomainError {
+  public readonly code = 'MODERATION_TIMEOUT_REMOVE_FAILED';
+
+  public constructor(options?: ErrorOptions) {
+    super('Discord could not remove the timeout; the moderation case remains active.', options);
+  }
+}
+
+export class ModerationCompensationFailedError extends DomainError {
+  public readonly code = 'MODERATION_COMPENSATION_FAILED';
+
+  public constructor(options?: ErrorOptions) {
+    super(
+      'Moderation compensation failed and manual reconciliation is required. A league administrator has been notified in the logs.',
+      options,
+    );
+  }
+}
+
+export class ModerationAnnouncementDeliveryError extends DomainError {
+  public readonly code = 'MODERATION_ANNOUNCEMENT_DELIVERY_FAILED';
+
+  public constructor(options?: ErrorOptions) {
+    super('The moderation announcement could not be delivered.', options);
+  }
+}
+
 export class AdministrativeWrongChannelError extends ConfigurationError {
   public constructor(public readonly staffChannelId: string) {
     super(`administrative command used outside staff channel ${staffChannelId}`);

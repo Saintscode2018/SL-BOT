@@ -14,6 +14,7 @@ export interface SetupGuildInput {
   guildName: string;
   transferChannelId?: string;
   auditChannelId?: string;
+  caseFilesChannelId?: string;
   botCommandsChannelId?: string;
   staffChannelId?: string;
   botPermissionsRoleId?: string;
@@ -30,6 +31,7 @@ export interface SetupChannelsInput {
   staffChannelId: string;
   transferChannelId: string;
   auditChannelId: string;
+  caseFilesChannelId: string;
 }
 
 export interface SetupRolesInput {
@@ -54,6 +56,7 @@ export interface SetupViewResult {
     staffChannelId: string | null;
     transferChannelId: string | null;
     auditChannelId: string | null;
+    caseFilesChannelId: string | null;
   };
   roles: {
     botPermissionsRoleId: string | null;
@@ -136,6 +139,7 @@ export class GuildSetupService {
         staffChannelId: input.staffChannelId,
         transferChannelId: input.transferChannelId,
         auditChannelId: input.auditChannelId,
+        caseFilesChannelId: input.caseFilesChannelId,
       });
       await new AuditEventRepository(transaction).create({
         guildId: guild.id,
@@ -151,12 +155,14 @@ export class GuildSetupService {
                 staffChannelId: previousSettings.staffChannelId,
                 transferChannelId: previousSettings.transferChannelId,
                 auditChannelId: previousSettings.auditChannelId,
+                caseFilesChannelId: previousSettings.caseFilesChannelId,
               },
         afterState: {
           botCommandsChannelId: settings.botCommandsChannelId,
           staffChannelId: settings.staffChannelId,
           transferChannelId: settings.transferChannelId,
           auditChannelId: settings.auditChannelId,
+          caseFilesChannelId: settings.caseFilesChannelId,
         },
       });
       return { guild, settings, created: existing === null };
@@ -232,6 +238,9 @@ export class GuildSetupService {
           ? { transferChannelId: input.transferChannelId }
           : {}),
         ...(input.auditChannelId !== undefined ? { auditChannelId: input.auditChannelId } : {}),
+        ...(input.caseFilesChannelId !== undefined
+          ? { caseFilesChannelId: input.caseFilesChannelId }
+          : {}),
         ...(input.botPermissionsRoleId !== undefined
           ? { botPermissionsRoleId: input.botPermissionsRoleId }
           : {}),
@@ -260,12 +269,14 @@ export class GuildSetupService {
             : {
                 transferChannelId: previousSettings.transferChannelId,
                 auditChannelId: previousSettings.auditChannelId,
+                caseFilesChannelId: previousSettings.caseFilesChannelId,
                 botPermissionsRoleId: previousSettings.botPermissionsRoleId,
               },
         afterState: {
           configured: true,
           transferChannelId: settings.transferChannelId,
           auditChannelId: settings.auditChannelId,
+          caseFilesChannelId: settings.caseFilesChannelId,
           botPermissionsRoleId: settings.botPermissionsRoleId,
           offerTimeoutSeconds: settings.offerTimeoutSeconds,
         },
@@ -287,6 +298,7 @@ export class GuildSetupService {
     if (!settings?.staffChannelId) missing.push('Staff Channel');
     if (!settings?.transferChannelId) missing.push('Transfer Channel');
     if (!settings?.auditChannelId) missing.push('Audit Channel');
+    if (!settings?.caseFilesChannelId) missing.push('Case Files Channel');
     if (!settings?.botPermissionsRoleId) missing.push('Legacy Bot Permissions Role');
     if (!settings?.teamManagerRoleId) missing.push('Team Manager Role');
     if (!settings?.assistantManagerRoleId) missing.push('Assistant Manager Role');
@@ -299,6 +311,7 @@ export class GuildSetupService {
         staffChannelId: settings?.staffChannelId ?? null,
         transferChannelId: settings?.transferChannelId ?? null,
         auditChannelId: settings?.auditChannelId ?? null,
+        caseFilesChannelId: settings?.caseFilesChannelId ?? null,
       },
       roles: {
         botPermissionsRoleId: settings?.botPermissionsRoleId ?? null,

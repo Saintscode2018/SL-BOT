@@ -187,6 +187,25 @@ describe('administration services', () => {
     ).resolves.toBe(3);
   });
 
+  it('persists and presents the Case Files channel through the existing channels setup flow', async () => {
+    const result = await new GuildSetupService(database.client).setupChannels({
+      authorization: authorization(ownerId),
+      guildName: 'Development League',
+      botCommandsChannelId: '910000000000000020',
+      staffChannelId: '910000000000000021',
+      transferChannelId: '910000000000000022',
+      auditChannelId: '910000000000000023',
+      caseFilesChannelId: '910000000000000024',
+    });
+    expect(result.settings.caseFilesChannelId).toBe('910000000000000024');
+    await expect(
+      database.client.guildSettings.findUnique({ where: { guildId: result.guild.id } }),
+    ).resolves.toMatchObject({ caseFilesChannelId: '910000000000000024' });
+    const view = await new GuildSetupService(database.client).getView(guildId);
+    expect(view.channels.caseFilesChannelId).toBe('910000000000000024');
+    expect(view.missingConfigurations).not.toContain('Case Files Channel');
+  });
+
   it('creates teams and rejects a duplicate Discord role', async () => {
     const club = await createClub();
     expect(club).toMatchObject({ discordRoleId: '930000000000000001', emoji: '🦁' });

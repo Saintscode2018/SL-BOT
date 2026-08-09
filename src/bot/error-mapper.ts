@@ -47,6 +47,15 @@ import {
   MemberNotOnTeamError,
   ModerationRoleManagementError,
   ModerationCaseError,
+  ModerationBotPermissionError,
+  ModerationChannelNotConfiguredError,
+  ModerationCompensationFailedError,
+  ModerationMemberFetchError,
+  ModerationMemberNotFoundError,
+  ModerationSelfTargetError,
+  ModerationTargetNotModeratableError,
+  ModerationTimeoutApplyError,
+  ModerationTimeoutRemoveError,
   SelfActionForbiddenError,
   SelfReleaseForbiddenError,
   StaffSlotOccupiedError,
@@ -93,6 +102,25 @@ export function mapDiscordError(error: unknown): MappedErrorResponse {
     description = error.message;
   } else if (error instanceof ModerationCaseError) {
     title = `${BOT_EMOJIS.error} Moderation Case Not Changed`;
+    description = error.message;
+  } else if (error instanceof ModerationChannelNotConfiguredError) {
+    title = `${BOT_EMOJIS.error} Moderation Channel Not Configured`;
+    description = error.message;
+  } else if (
+    error instanceof ModerationMemberNotFoundError ||
+    error instanceof ModerationSelfTargetError ||
+    error instanceof ModerationBotPermissionError ||
+    error instanceof ModerationTargetNotModeratableError
+  ) {
+    title = `${BOT_EMOJIS.error} Moderation Unavailable`;
+    description = error.message;
+  } else if (
+    error instanceof ModerationMemberFetchError ||
+    error instanceof ModerationTimeoutApplyError ||
+    error instanceof ModerationTimeoutRemoveError ||
+    error instanceof ModerationCompensationFailedError
+  ) {
+    title = `${BOT_EMOJIS.error} Discord Moderation Failed`;
     description = error.message;
   } else if (error instanceof AdministrativeWrongChannelError) {
     title = `${BOT_EMOJIS.error} Wrong Command Channel`;

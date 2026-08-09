@@ -84,6 +84,7 @@ describe('moderation role configuration and authorization', () => {
       staffChannelId: '930000000000000002',
       transferChannelId: '930000000000000003',
       auditChannelId: '930000000000000004',
+      caseFilesChannelId: '930000000000000005',
     });
     await permissions.addStandard({
       authorization: admin,

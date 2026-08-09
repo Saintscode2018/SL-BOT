@@ -607,6 +607,7 @@ describe('setup/admin Audit plan actor sources', () => {
             staff: textChannel('710000000000000011'),
             transfer: textChannel('710000000000000012'),
             audit: textChannel(channelId),
+            case_files: textChannel('710000000000000013'),
           },
         }),
         context: (publish) =>
@@ -736,6 +737,11 @@ describe('setup/admin Audit plan actor sources', () => {
       expect(message?.actorVerb ?? 'Configured', scenario.name).toBe(scenario.verb);
       expect(message?.actorDiscordUserId, scenario.name).not.toBe(targetUserId);
       expect(message?.actorDiscordUserId, scenario.name).not.toBe(currentTeamManagerId);
+      if (scenario.name === 'channels configured') {
+        const embed = scenario.interaction.editedResponse?.embeds?.[0]?.toJSON();
+        expect(JSON.stringify(embed)).toContain('Case Files');
+        expect(JSON.stringify(embed)).toContain('<#710000000000000013>');
+      }
     }
   });
 });

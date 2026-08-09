@@ -16,6 +16,10 @@ import { DiscordMemberRoleAdapter } from '../bot/discord-member-role-adapter.js'
 import { DiscordSetupAuditMessageAdapter } from '../bot/setup-audit-message-adapter.js';
 import { DiscordAuditAnnouncementAdapter } from '../bot/audit-announcement-adapter.js';
 import { DiscordAuditAnnouncementPresentationProvider } from '../bot/audit-announcement-presentation.js';
+import { DiscordModerationAnnouncementAdapter } from '../bot/moderation-announcement-adapter.js';
+import { DiscordModerationAnnouncementPresentationProvider } from '../bot/moderation-announcement-presentation.js';
+import { DiscordModerationTimeoutAdapter } from '../bot/discord-moderation-timeout-adapter.js';
+import { ModerationCommandHandler } from '../bot/moderation-command-handler.js';
 import { DiscordTransferAnnouncementAdapter } from '../bot/transfer-announcement-adapter.js';
 import { DiscordTransferAnnouncementPresentationProvider } from '../bot/transfer-announcement-presentation.js';
 import type { CommandContext } from '../bot/types.js';
@@ -41,6 +45,8 @@ import { demandRateLimitMs, GuildUserRateLimiter } from '../services/guild-user-
 import { LimitManagementService } from '../services/limit-management-service.js';
 import { MemberRoleSynchronizationService } from '../services/member-role-synchronization-service.js';
 import { ModerationRoleService } from '../services/moderation-role-service.js';
+import { ModerationAnnouncementService } from '../services/moderation-announcement-service.js';
+import { ModerationMuteService } from '../services/moderation-mute-service.js';
 import { OfferAcceptanceService } from '../services/offer-acceptance-service.js';
 import { OfferCreationService } from '../services/offer-creation-service.js';
 import { OfferDeclineService } from '../services/offer-decline-service.js';
@@ -102,6 +108,11 @@ export function createApplication(
     logger,
     new DiscordAuditAnnouncementPresentationProvider(discord),
   );
+  const moderationAnnouncements = new ModerationAnnouncementService(
+    new DiscordModerationAnnouncementAdapter(discord),
+    logger,
+    new DiscordModerationAnnouncementPresentationProvider(discord),
+  );
   const synchronizedMutations = new RoleSynchronizedMutationService(
     memberRoles,
     transferAnnouncements,
@@ -110,6 +121,15 @@ export function createApplication(
   );
   const rosterMutations = new RosterMutationService(prisma, synchronizedMutations);
   const commandChannelPolicy = new CommandChannelPolicyService(prisma);
+  const moderationCommandHandler = new ModerationCommandHandler(
+    commandChannelPolicy,
+    new ModerationMuteService(
+      prisma,
+      new DiscordModerationTimeoutAdapter(discord),
+      moderationAnnouncements,
+      logger,
+    ),
+  );
   const confirmations = new ConfirmationRegistry(logger);
   const departureCommandHandler = new RosterDepartureCommandHandler(
     commandChannelPolicy,
@@ -171,6 +191,7 @@ export function createApplication(
     guildSetupService: new GuildSetupService(prisma),
     botPermissionService: new BotPermissionService(prisma),
     moderationRoleService: new ModerationRoleService(prisma),
+    moderationCommandHandler,
     clubManagementService: new ClubManagementService(prisma),
     staffManagementService: new StaffManagementService(prisma, rosterMutations),
     rosterManagementService: new RosterManagementService(prisma),

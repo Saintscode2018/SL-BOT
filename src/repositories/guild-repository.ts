@@ -15,6 +15,7 @@ export interface UpsertGuildSettingsInput {
   staffChannelId?: string | null;
   transferChannelId?: string | null;
   auditChannelId?: string | null;
+  caseFilesChannelId?: string | null;
   botPermissionsRoleId?: string | null;
   teamManagerRoleId?: string | null;
   assistantManagerRoleId?: string | null;
@@ -32,6 +33,7 @@ function settingsData(
     'staffChannelId',
     'transferChannelId',
     'auditChannelId',
+    'caseFilesChannelId',
     'botPermissionsRoleId',
     'teamManagerRoleId',
     'assistantManagerRoleId',

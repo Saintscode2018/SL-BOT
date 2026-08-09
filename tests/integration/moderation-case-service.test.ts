@@ -108,6 +108,7 @@ describe('moderation case service', () => {
       staffChannelId: '990000000000000002',
       transferChannelId: '990000000000000003',
       auditChannelId: '990000000000000004',
+      caseFilesChannelId: '990000000000000005',
     });
     await permissions.addStandard({
       authorization: administrator,

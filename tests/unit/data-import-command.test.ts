@@ -99,6 +99,7 @@ function result(issueCount = 0): DataImportResult {
       staffChannelId,
       transferChannelId: '960000000000000011',
       auditChannelId,
+      caseFilesChannelId: '960000000000000016',
       botPermissionsRoleId: '960000000000000012',
       teamManagerRoleId: '960000000000000013',
       assistantManagerRoleId: '960000000000000014',

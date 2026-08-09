@@ -81,6 +81,7 @@ describe('database Bot Permissions', () => {
       staffChannelId,
       transferChannelId,
       auditChannelId,
+      caseFilesChannelId: '820000000000000005',
     });
   }
 
@@ -113,6 +114,7 @@ describe('database Bot Permissions', () => {
         staffChannelId,
         transferChannelId,
         auditChannelId,
+        caseFilesChannelId: '820000000000000005',
       }),
     ).resolves.toBeDefined();
     await expect(
@@ -367,6 +369,7 @@ describe('database Bot Permissions', () => {
         staffChannelId,
         transferChannelId,
         auditChannelId,
+        caseFilesChannelId: '820000000000000005',
       }),
     ).rejects.toBeInstanceOf(AuthorizationError);
     await expect(

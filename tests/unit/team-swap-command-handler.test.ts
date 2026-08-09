@@ -33,6 +33,7 @@ const settings: GuildSettings = {
   staffChannelId: '200000000000000001',
   transferChannelId: null,
   auditChannelId: null,
+  caseFilesChannelId: null,
   botPermissionsRoleId: '300000000000000001',
   teamManagerRoleId: '300000000000000002',
   assistantManagerRoleId: '300000000000000003',

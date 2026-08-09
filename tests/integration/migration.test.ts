@@ -38,6 +38,7 @@ interface PreservedSettingsRow {
   staffChannelId: string;
   transferChannelId: string;
   auditChannelId: string;
+  caseFilesChannelId: null;
   botPermissionsRoleId: string;
   teamManagerRoleId: string;
   assistantManagerRoleId: string;
@@ -202,12 +203,13 @@ describe('database migrations', () => {
           'bannerHasRole',
         ]),
       );
+      expect(settingsColumns.find(({ name }) => name === 'caseFilesChannelId')?.notnull).toBe(0);
     } finally {
       sqlite.close();
     }
   });
 
-  it('migrates a populated pre-Stage-2 database without losing existing data', () => {
+  it('migrates a populated pre-Stage-3 database without losing existing data', () => {
     const databasePath = join(process.cwd(), 'prisma', `.stage4a-${randomUUID()}.db`);
     writeFileSync(databasePath, '', { flag: 'wx' });
     const sqlite = new DatabaseSync(databasePath);
@@ -378,10 +380,22 @@ describe('database migrations', () => {
           { encoding: 'utf8' },
         ),
       );
+      sqlite.exec(
+        readFileSync(
+          join(
+            process.cwd(),
+            'prisma',
+            'migrations',
+            '20260809230000_case_files_channel',
+            'migration.sql',
+          ),
+          { encoding: 'utf8' },
+        ),
+      );
 
       const settings = sqlite
         .prepare(
-          'SELECT "botCommandsChannelId", "staffChannelId", "transferChannelId", "auditChannelId", "botPermissionsRoleId", "teamManagerRoleId", "assistantManagerRoleId", "playerManagerRoleId", "defaultSquadLimit", "offerTimeoutSeconds" FROM "GuildSettings" WHERE "id" = ?',
+          'SELECT "botCommandsChannelId", "staffChannelId", "transferChannelId", "auditChannelId", "caseFilesChannelId", "botPermissionsRoleId", "teamManagerRoleId", "assistantManagerRoleId", "playerManagerRoleId", "defaultSquadLimit", "offerTimeoutSeconds" FROM "GuildSettings" WHERE "id" = ?',
         )
         .get('settings-1') as unknown as PreservedSettingsRow;
       expect(settings).toEqual({
@@ -389,6 +403,7 @@ describe('database migrations', () => {
         staffChannelId: '200000000000000002',
         transferChannelId: '200000000000000003',
         auditChannelId: '200000000000000004',
+        caseFilesChannelId: null,
         botPermissionsRoleId: '300000000000000001',
         teamManagerRoleId: '300000000000000002',
         assistantManagerRoleId: '300000000000000003',

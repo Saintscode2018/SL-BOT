@@ -35,6 +35,12 @@ import {
   MemberNotOnTeamError,
   ModerationRoleManagementError,
   ModerationCaseError,
+  ModerationChannelNotConfiguredError,
+  ModerationCompensationFailedError,
+  ModerationMemberFetchError,
+  ModerationMemberNotFoundError,
+  ModerationTimeoutApplyError,
+  ModerationTimeoutRemoveError,
   NoStaffAppointmentError,
   NoTeamChangesProvidedError,
   NotCurrentlySignedError,
@@ -201,6 +207,7 @@ const EXPECTED_USER_REJECTION_CLASSES: Array<abstract new (...args: any[]) => an
   // Bot User / Discord Member Rejections
   BotUserNotAllowedError,
   DiscordMemberMissingError,
+  ModerationMemberNotFoundError,
 
   // Bot Permission Management Rejections
   BotPermissionAlreadyGrantedError,
@@ -211,6 +218,7 @@ const EXPECTED_USER_REJECTION_CLASSES: Array<abstract new (...args: any[]) => an
   BotPermissionManagementError,
   ModerationRoleManagementError,
   ModerationCaseError,
+  ModerationChannelNotConfiguredError,
 ];
 
 export function isExpectedInteractionRejection(error: unknown): boolean {
@@ -266,6 +274,10 @@ export function classifyInteractionError(error: unknown): ClassifiedInteractionE
   if (
     error instanceof DiscordRoleCompensationFailedError ||
     error instanceof DiscordRoleUpdateFailedError ||
+    error instanceof ModerationCompensationFailedError ||
+    error instanceof ModerationMemberFetchError ||
+    error instanceof ModerationTimeoutApplyError ||
+    error instanceof ModerationTimeoutRemoveError ||
     isPrismaError(error) ||
     isDiscordAPIError(error) ||
     isNetworkError(error)

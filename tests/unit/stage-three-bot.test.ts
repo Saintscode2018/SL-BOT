@@ -349,6 +349,8 @@ describe('stage three command registry and deployment', () => {
       'release',
       'promote',
       'demote',
+      'mute',
+      'unmute',
     ];
     if (process.env['SLBOT_ENABLE_DEBUG_COMMANDS'] === 'true') expectedNames.push('debugreset');
     expect(registry.toJSON().map(({ name }) => name)).toEqual(expectedNames);
@@ -450,6 +452,7 @@ describe('stage three command registry and deployment', () => {
             staffChannelId: null,
             transferChannelId: null,
             auditChannelId: null,
+            caseFilesChannelId: null,
             botPermissionsRoleId: null,
             teamManagerRoleId: null,
             assistantManagerRoleId: null,
