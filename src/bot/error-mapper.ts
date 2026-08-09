@@ -45,6 +45,7 @@ import {
   MemberAlreadySignedError,
   MemberIsFreeAgentError,
   MemberNotOnTeamError,
+  ModerationRoleManagementError,
   SelfActionForbiddenError,
   SelfReleaseForbiddenError,
   StaffSlotOccupiedError,
@@ -85,6 +86,9 @@ export function mapDiscordError(error: unknown): MappedErrorResponse {
     description = error.message;
   } else if (error instanceof BotPermissionManagementError) {
     title = `${BOT_EMOJIS.error} Bot Permission Not Changed`;
+    description = error.message;
+  } else if (error instanceof ModerationRoleManagementError) {
+    title = `${BOT_EMOJIS.error} Moderation Role Not Changed`;
     description = error.message;
   } else if (error instanceof AdministrativeWrongChannelError) {
     title = `${BOT_EMOJIS.error} Wrong Command Channel`;

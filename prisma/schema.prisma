@@ -20,6 +20,7 @@ model Guild {
   transactions   LeagueTransaction[]
   auditEvents    AuditEvent[]
   botPermissions BotPermission[]
+  moderationRoles ModerationRole[]
 }
 
 model GuildSettings {
@@ -79,6 +80,7 @@ model LeagueUser {
   auditEvents           AuditEvent[]        @relation("auditActor")
   botPermissions        BotPermission[]     @relation("botPermissionHolder")
   botPermissionsGranted BotPermission[]     @relation("botPermissionGranter")
+  moderationRolesCreated ModerationRole[]   @relation("moderationRoleCreator")
 }
 
 model BotPermission {
@@ -95,6 +97,19 @@ model BotPermission {
 
   @@unique([guildId, userId])
   @@index([guildId, level])
+}
+
+model ModerationRole {
+  id              String     @id @default(uuid())
+  guildId         String
+  discordRoleId   String
+  createdByUserId String
+  createdAt       DateTime   @default(now())
+  guild           Guild      @relation(fields: [guildId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  createdBy       LeagueUser @relation("moderationRoleCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([guildId, discordRoleId])
+  @@index([guildId, createdAt])
 }
 
 model ClubMembership {

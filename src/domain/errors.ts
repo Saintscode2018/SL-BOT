@@ -79,6 +79,32 @@ export class LastBotPermissionRemovalError extends BotPermissionManagementError 
   }
 }
 
+export class ModerationRoleManagementError extends DomainError {}
+
+export class ModerationRoleAlreadyConfiguredError extends ModerationRoleManagementError {
+  public constructor(public readonly discordRoleId: string) {
+    super(`The role <@&${discordRoleId}> is already configured for moderation.`);
+  }
+}
+
+export class ModerationRoleNotConfiguredError extends ModerationRoleManagementError {
+  public constructor(public readonly discordRoleId: string) {
+    super(`The role <@&${discordRoleId}> is not configured for moderation.`);
+  }
+}
+
+export class ModerationRoleGuildMismatchError extends ModerationRoleManagementError {
+  public constructor() {
+    super('The selected moderation role must belong to this server.');
+  }
+}
+
+export class ModerationAuthorizationError extends AuthorizationError {
+  public constructor() {
+    super('A configured moderation role or database Bot Permission is required.');
+  }
+}
+
 export class AdministrativeWrongChannelError extends ConfigurationError {
   public constructor(public readonly staffChannelId: string) {
     super(`administrative command used outside staff channel ${staffChannelId}`);

@@ -40,6 +40,7 @@ import { GuildSetupService } from '../services/guild-setup-service.js';
 import { demandRateLimitMs, GuildUserRateLimiter } from '../services/guild-user-rate-limiter.js';
 import { LimitManagementService } from '../services/limit-management-service.js';
 import { MemberRoleSynchronizationService } from '../services/member-role-synchronization-service.js';
+import { ModerationRoleService } from '../services/moderation-role-service.js';
 import { OfferAcceptanceService } from '../services/offer-acceptance-service.js';
 import { OfferCreationService } from '../services/offer-creation-service.js';
 import { OfferDeclineService } from '../services/offer-decline-service.js';
@@ -169,6 +170,7 @@ export function createApplication(
     offerAcceptanceService,
     guildSetupService: new GuildSetupService(prisma),
     botPermissionService: new BotPermissionService(prisma),
+    moderationRoleService: new ModerationRoleService(prisma),
     clubManagementService: new ClubManagementService(prisma),
     staffManagementService: new StaffManagementService(prisma, rosterMutations),
     rosterManagementService: new RosterManagementService(prisma),

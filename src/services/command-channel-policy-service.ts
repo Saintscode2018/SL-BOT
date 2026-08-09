@@ -42,7 +42,9 @@ export class CommandChannelPolicyService {
       (commandName === 'staff' && subcommand === 'list') ||
       (commandName === 'limit' && subcommand === 'view') ||
       (commandName === 'setup' &&
-        (subcommandGroup === 'botperm' || subcommandGroup === 'botpermadmin') &&
+        (subcommandGroup === 'botperm' ||
+          subcommandGroup === 'botpermadmin' ||
+          subcommandGroup === 'modrole') &&
         subcommand === 'view')
     ) {
       return 'BOT_OR_STAFF';
@@ -101,7 +103,9 @@ export class CommandChannelPolicyService {
 
     if (
       input.commandName === 'setup' &&
-      (input.subcommandGroup === 'botperm' || input.subcommandGroup === 'botpermadmin') &&
+      (input.subcommandGroup === 'botperm' ||
+        input.subcommandGroup === 'botpermadmin' ||
+        input.subcommandGroup === 'modrole') &&
       !globallyAuthorized
     ) {
       throw new AdministrativePermissionDeniedError();

@@ -182,9 +182,14 @@ class DiscordCommandOptions implements CommandInteractionOptions {
     return { id: user.id, bot: user.bot, displayName: displayName || 'Unknown User' };
   }
 
-  public getRole(name: string): { id: string } | null {
+  public getRole(name: string): { id: string; guildId?: string } | null {
     const role = this.interaction.options.getRole(name);
-    return role === null ? null : { id: role.id };
+    return role === null
+      ? null
+      : {
+          id: role.id,
+          ...(this.interaction.guildId === null ? {} : { guildId: this.interaction.guildId }),
+        };
   }
 
   public getChannel(name: string): { id: string; type: number } | null {

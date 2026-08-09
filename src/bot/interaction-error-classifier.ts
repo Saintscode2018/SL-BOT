@@ -33,6 +33,7 @@ import {
   MemberAlreadySignedError,
   MemberIsFreeAgentError,
   MemberNotOnTeamError,
+  ModerationRoleManagementError,
   NoStaffAppointmentError,
   NoTeamChangesProvidedError,
   NotCurrentlySignedError,
@@ -207,6 +208,7 @@ const EXPECTED_USER_REJECTION_CLASSES: Array<abstract new (...args: any[]) => an
   BotPermissionNotFoundError,
   LastBotPermissionRemovalError,
   BotPermissionManagementError,
+  ModerationRoleManagementError,
 ];
 
 export function isExpectedInteractionRejection(error: unknown): boolean {

@@ -110,7 +110,7 @@ describe('/setup database Bot Permission commands', () => {
     const botperm = groups.find((option) => option.name === 'botperm');
     const botpermadmin = groups.find((option) => option.name === 'botpermadmin');
 
-    expect(groups.map(({ name }) => name)).toEqual(['botperm', 'botpermadmin']);
+    expect(groups.map(({ name }) => name)).toEqual(['botperm', 'botpermadmin', 'modrole']);
     expect(botperm?.options?.map(({ name }) => name)).toEqual(['add', 'remove', 'view']);
     expect(botpermadmin?.options?.map(({ name }) => name)).toEqual(['add', 'view']);
     expect(botpermadmin?.options?.some(({ name }) => name === 'remove')).toBe(false);

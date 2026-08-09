@@ -12,6 +12,7 @@ import {
   ConfigurationError,
   DiscordRoleCompensationFailedError,
   MemberAlreadySignedError,
+  ModerationRoleAlreadyConfiguredError,
   SquadFullError,
   StaleConfirmationError,
   StaleMutationStateError,
@@ -374,5 +375,18 @@ describe('Logging Classification & Global Error Handling', () => {
 
     expect(classified.level).toBe('error');
     expect(classified.isInfrastructure).toBe(true);
+  });
+
+  it('classifies moderation-role business rejections as expected user errors', () => {
+    const error = new ModerationRoleAlreadyConfiguredError('950000000000000001');
+
+    expect(classifyInteractionError(error)).toMatchObject({
+      level: 'info',
+      isInfrastructure: false,
+      reason: 'ModerationRoleAlreadyConfiguredError',
+    });
+    expect(mapDiscordError(error)).toMatchObject({
+      description: 'The role <@&950000000000000001> is already configured for moderation.',
+    });
   });
 });

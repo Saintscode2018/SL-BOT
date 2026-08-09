@@ -1,11 +1,16 @@
 import type { Guild, GuildSettings } from '@prisma/client';
 
 import { botPermissionLevelSchema, type BotPermissionLevel } from '../domain/enums.js';
-import { AuthorizationError, GuildNotConfiguredError } from '../domain/errors.js';
+import {
+  AuthorizationError,
+  GuildNotConfiguredError,
+  ModerationAuthorizationError,
+} from '../domain/errors.js';
 import type { DatabaseClient } from '../domain/types.js';
 import { BotPermissionRepository } from '../repositories/bot-permission-repository.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
 import { MembershipRepository } from '../repositories/membership-repository.js';
+import { ModerationRoleRepository } from '../repositories/moderation-role-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
 
 export interface AuthorizationInput {
@@ -24,6 +29,14 @@ export interface AuthorizationResult {
 
 export type GlobalAuthorizationKind = BotPermissionLevel;
 
+export type ModerationAuthorizationKind = BotPermissionLevel | 'moderation_role';
+
+export interface ModerationAuthorizationResult {
+  guild: Guild;
+  settings: GuildSettings;
+  kind: ModerationAuthorizationKind;
+}
+
 export class AuthorizationService {
   public constructor(private readonly database: DatabaseClient) {}
 
@@ -41,6 +54,30 @@ export class AuthorizationService {
     const guild = await new GuildRepository(this.database).getByDiscordGuildId(discordGuildId);
     if (guild === null) return false;
     return (await new BotPermissionRepository(this.database).countForGuild(guild.id)) > 0;
+  }
+
+  public async getModerationAuthorizationKind(
+    input: AuthorizationInput,
+  ): Promise<ModerationAuthorizationKind | null> {
+    const globalKind = await this.getGlobalAuthorizationKind(input);
+    if (globalKind !== null) return globalKind;
+    const hasConfiguredRole = await new ModerationRoleRepository(
+      this.database,
+    ).hasAnyForDiscordGuild(input.discordGuildId, input.memberRoleIds);
+    return hasConfiguredRole ? 'moderation_role' : null;
+  }
+
+  public async canModerate(input: AuthorizationInput): Promise<boolean> {
+    return (await this.getModerationAuthorizationKind(input)) !== null;
+  }
+
+  public async authorizeModeration(
+    input: AuthorizationInput,
+  ): Promise<ModerationAuthorizationResult> {
+    const configuration = await this.loadConfiguration(input.discordGuildId);
+    const kind = await this.getModerationAuthorizationKind(input);
+    if (kind !== null) return { ...configuration, kind };
+    throw new ModerationAuthorizationError();
   }
 
   public async assertCanSetup(

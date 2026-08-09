@@ -41,7 +41,7 @@ export function requireRole(
   options: CommandInteractionOptions,
   name: string,
   errorMessage?: string,
-): { id: string } {
+): { id: string; guildId?: string } {
   const value = options.getRole(name);
   if (value === null) {
     throw new ConfigurationError(errorMessage ?? `${name} is required`);

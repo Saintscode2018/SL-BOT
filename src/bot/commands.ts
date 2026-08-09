@@ -5,6 +5,7 @@ import {
   BotUserNotAllowedError,
   ConfigurationError,
   DiscordRoleMissingError,
+  ModerationRoleGuildMismatchError,
   ValidationError,
 } from '../domain/errors.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
@@ -128,6 +129,24 @@ function requireBotPermissionService(context: CommandContext) {
     throw new ConfigurationError('bot permission service is unavailable');
   }
   return context.botPermissionService;
+}
+
+function requireModerationRoleService(context: CommandContext) {
+  if (context.moderationRoleService === undefined) {
+    throw new ConfigurationError('moderation role service is unavailable');
+  }
+  return context.moderationRoleService;
+}
+
+async function formatModerationRole(
+  interaction: CommandInteraction,
+  discordRoleId: string,
+): Promise<string> {
+  const cached = interaction.getGuildRoleMetadata?.(discordRoleId);
+  const resolved = cached ?? (await interaction.resolveGuildRoleMetadata?.(discordRoleId));
+  return resolved === null || resolved === undefined
+    ? `Deleted role (ID: \`${discordRoleId}\`)`
+    : `<@&${discordRoleId}> \`@${resolved.name}\``;
 }
 
 export { formatRosterAdminWarning };
@@ -470,6 +489,30 @@ const setupCommand: CommandDefinition = {
           subcommand.setName('view').setDescription('View Bot Permission Admins'),
         ),
     )
+    .addSubcommandGroup((group) =>
+      group
+        .setName('modrole')
+        .setDescription('Manage Discord roles authorized for moderation')
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName('add')
+            .setDescription('Authorize a Discord role for moderation')
+            .addRoleOption((option) =>
+              option.setName('role').setDescription('Role to authorize').setRequired(true),
+            ),
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName('remove')
+            .setDescription('Remove moderation authorization from a role')
+            .addRoleOption((option) =>
+              option.setName('role').setDescription('Role to remove').setRequired(true),
+            ),
+        )
+        .addSubcommand((subcommand) =>
+          subcommand.setName('view').setDescription('View configured moderation roles'),
+        ),
+    )
     .addSubcommand((subcommand) =>
       subcommand
         .setName('league')
@@ -546,6 +589,87 @@ const setupCommand: CommandDefinition = {
     const subcommand = execution.options.getSubcommand();
     const subcommandGroup = execution.options.getSubcommandGroup?.() ?? null;
     const actorDisplayName = getUserDisplayName(interaction, execution.authorization.discordUserId);
+
+    if (subcommandGroup === 'modrole') {
+      const service = requireModerationRoleService(context);
+      const now = new Date();
+      const author = createGuildAuthor({
+        guildName: execution.guildName,
+        guildIconUrl: interaction.guildIconUrl,
+      });
+
+      if (subcommand === 'view') {
+        const result = await service.list(execution.authorization);
+        const roleLines = await Promise.all(
+          result.moderationRoles.map(({ discordRoleId }) =>
+            formatModerationRole(interaction, discordRoleId),
+          ),
+        );
+        const footer = createActorFooter({
+          verb: 'Viewed',
+          username: actorDisplayName,
+          timestamp: now,
+        });
+        const embed = createInfoEmbed({
+          title: `${BOT_EMOJIS.botPermissions} Moderation Roles`,
+          author,
+          description:
+            roleLines.length === 0
+              ? 'No moderation roles configured.'
+              : roleLines.map((line) => `- ${line}`).join('\n'),
+          footer: footer.text,
+          ...(footer.iconURL ? { footerIconURL: footer.iconURL } : {}),
+        });
+        await interaction.editReply({ embeds: [embed] });
+        return;
+      }
+
+      const role = requireRole(execution.options, 'role');
+      if (role.guildId !== undefined && role.guildId !== execution.guildId) {
+        throw new ModerationRoleGuildMismatchError();
+      }
+      const result =
+        subcommand === 'add'
+          ? await service.add({
+              authorization: execution.authorization,
+              discordRoleId: role.id,
+            })
+          : await service.remove({
+              authorization: execution.authorization,
+              discordRoleId: role.id,
+            });
+      const formattedRole = await formatModerationRole(interaction, role.id);
+      const added = result.mutation === 'added';
+      const verb = added ? 'Added' : 'Removed';
+      const title = `${BOT_EMOJIS.success} Moderation Role ${verb}`;
+      const description = added
+        ? `${formattedRole} can now use moderation commands.`
+        : `${formattedRole} can no longer be used for moderation authorization.`;
+      const auditFields = [{ name: 'Role', value: formattedRole, inline: false }];
+      const auditPublished = await publishSetupAudit(context, {
+        channelId: result.auditChannelId,
+        title,
+        description,
+        fields: auditFields,
+        actorDiscordUserId: execution.authorization.discordUserId,
+        actorVerb: verb,
+      });
+      const footer = createActorFooter({
+        verb,
+        username: actorDisplayName,
+        timestamp: now,
+      });
+      const embed = createSuccessEmbed({
+        title,
+        author,
+        description: withAuditWarning(description, auditPublished),
+        fields: auditFields,
+        footer: footer.text,
+        ...(footer.iconURL ? { footerIconURL: footer.iconURL } : {}),
+      });
+      await interaction.editReply({ embeds: [embed] });
+      return;
+    }
 
     if (subcommandGroup === 'botperm' || subcommandGroup === 'botpermadmin') {
       const service = requireBotPermissionService(context);

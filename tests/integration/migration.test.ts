@@ -74,6 +74,7 @@ describe('database migrations', () => {
           'LeagueTransaction',
           'AuditEvent',
           'BotPermission',
+          'ModerationRole',
           '_prisma_migrations',
         ]),
       );
@@ -328,6 +329,18 @@ describe('database migrations', () => {
           { encoding: 'utf8' },
         ),
       );
+      sqlite.exec(
+        readFileSync(
+          join(
+            process.cwd(),
+            'prisma',
+            'migrations',
+            '20260809120000_moderation_roles',
+            'migration.sql',
+          ),
+          { encoding: 'utf8' },
+        ),
+      );
 
       const settings = sqlite
         .prepare(
@@ -347,6 +360,9 @@ describe('database migrations', () => {
         offerTimeoutSeconds: 7200,
       });
       expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "BotPermission"').get()).toEqual({
+        count: 0,
+      });
+      expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ModerationRole"').get()).toEqual({
         count: 0,
       });
 
