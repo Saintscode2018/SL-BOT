@@ -246,6 +246,12 @@ describe('TeamSwapService Integration Tests', () => {
 
   describe('Database Swap & History Scenarios', () => {
     it('atomically swaps active memberships, preserves staff ranks, and creates Audit DB trail', async () => {
+      const auditChannelId = '500000000000000088';
+      await client.guildSettings.update({
+        where: { guildId },
+        data: { auditChannelId },
+      });
+
       // Setup Team 1: 1 TM, 1 ATM, 1 Player
       const tm1 = await client.leagueUser.create({ data: { discordUserId: 'tm-1' } });
       const atm1 = await client.leagueUser.create({ data: { discordUserId: 'atm-1' } });
@@ -325,6 +331,16 @@ describe('TeamSwapService Integration Tests', () => {
       });
       expect(auditEvents).toHaveLength(1);
       expect(auditEvents[0]?.entityId).toBe(team1Id);
+      expect(auditEvents[0]?.actorUserId).not.toBe(tm1.id);
+      expect(result.auditAnnouncement).toMatchObject({
+        operation: 'TEAM_SWAPPED',
+        actorDiscordUserId: ownerId,
+        channelId: auditChannelId,
+      });
+      if (result.auditAnnouncement?.operation !== 'TEAM_SWAPPED') {
+        throw new Error('Expected a team-swapped Audit announcement');
+      }
+      expect(result.auditAnnouncement.actorDiscordUserId).not.toBe(tm1.discordUserId);
 
       // Verify LeagueTransaction entries
       const transactions = await client.leagueTransaction.findMany({

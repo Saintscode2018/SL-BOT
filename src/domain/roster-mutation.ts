@@ -178,6 +178,7 @@ export interface OfferCreatedAuditAnnouncementPlan {
   teamIdentity: TeamIdentitySource;
   occurredAt: Date;
   expiresAt: Date;
+  presentation?: TransferAnnouncementPresentation;
 }
 
 export interface OfferAcceptedAuditAnnouncementPlan {
@@ -199,6 +200,7 @@ export interface OfferDeclinedAuditAnnouncementPlan {
   playerDiscordUserId: string;
   teamIdentity: TeamIdentitySource;
   occurredAt: Date;
+  presentation?: TransferAnnouncementPresentation;
 }
 
 export interface OfferExpiredAuditAnnouncementPlan {
@@ -208,6 +210,7 @@ export interface OfferExpiredAuditAnnouncementPlan {
   playerDiscordUserId: string;
   teamIdentity: TeamIdentitySource;
   occurredAt: Date;
+  presentation?: TransferAnnouncementPresentation;
 }
 
 export type OfferAuditAnnouncementPlan =

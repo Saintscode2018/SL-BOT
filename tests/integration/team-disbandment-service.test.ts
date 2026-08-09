@@ -382,6 +382,8 @@ describe('TeamDisbandmentService', () => {
   it('produces Audit and Transfer announcement plans and publishes post-commit when channels are configured', async () => {
     const auditChannelId = '500000000000000088';
     const transferChannelId = '500000000000000099';
+    const currentTeamManager = await user('200000000000000009');
+    await membership(currentTeamManager.id, 'TEAM_MANAGER');
     await client.guildSettings.update({
       where: { guildId },
       data: { auditChannelId, transferChannelId },
@@ -389,6 +391,7 @@ describe('TeamDisbandmentService', () => {
 
     let publishedAudit = false;
     let publishedTransfer = false;
+    let capturedAuditAnnouncement: unknown;
     const synchronizedMutations = {
       executeMany: async <T>(
         plans: readonly MemberRoleMutationPlan[],
@@ -400,6 +403,7 @@ describe('TeamDisbandmentService', () => {
         publishedTransfer = payload.announcement !== null && payload.announcement !== undefined;
         publishedAudit =
           payload.auditAnnouncement !== null && payload.auditAnnouncement !== undefined;
+        capturedAuditAnnouncement = payload.auditAnnouncement;
         return {
           ...res,
           announcementDelivered: publishedTransfer ? true : null,
@@ -419,6 +423,14 @@ describe('TeamDisbandmentService', () => {
     expect(publishedTransfer).toBe(true);
     expect(result.announcementDelivered).toBe(true);
     expect(result.auditAnnouncementDelivered).toBe(true);
+    expect(capturedAuditAnnouncement).toMatchObject({
+      operation: 'TEAM_DISBANDED',
+      actorDiscordUserId: ownerId,
+      channelId: auditChannelId,
+    });
+    expect(capturedAuditAnnouncement).not.toMatchObject({
+      actorDiscordUserId: currentTeamManager.discordUserId,
+    });
   });
 
   it('returns null delivery status when announcement channels are not configured', async () => {

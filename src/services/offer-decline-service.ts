@@ -72,7 +72,6 @@ export class OfferDeclineService {
           const expired = await offers.transition(offer.id, 'EXPIRED', respondedAt);
           await new AuditEventRepository(transaction).create({
             guildId: offer.guildId,
-            actorUserId: player.id,
             eventType: offerExpiredAuditEventType,
             entityType: 'offer',
             entityId: offer.id,

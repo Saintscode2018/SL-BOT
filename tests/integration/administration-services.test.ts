@@ -30,7 +30,12 @@ import {
   offerCreatedAuditEventType,
   OfferCreationService,
 } from '../../src/services/offer-creation-service.js';
-import { OfferDeclineService } from '../../src/services/offer-decline-service.js';
+import {
+  offerDeclinedAuditEventType,
+  offerExpiredAuditEventType,
+  OfferDeclineService,
+} from '../../src/services/offer-decline-service.js';
+import { OfferExpirationService } from '../../src/services/offer-expiration-service.js';
 import {
   offerDeliveryFailedAuditEventType,
   OfferDeliveryService,
@@ -492,6 +497,48 @@ describe('administration services', () => {
     ).rejects.toBeInstanceOf(SquadFullError);
   });
 
+  it('attributes offer creation to the persisted sender rather than the current TM or player', async () => {
+    const destination = await createClub('930000000000000001', 5);
+    const staff = new StaffManagementService(database.client);
+    await staff.appoint({
+      authorization: authorization(),
+      clubId: destination.id,
+      staffDiscordUserId: ownerId,
+      staffType: 'TEAM_MANAGER',
+      staffIsBot: false,
+    });
+    await staff.appoint({
+      authorization: authorization(),
+      clubId: destination.id,
+      staffDiscordUserId: outsiderId,
+      staffType: 'PLAYER_MANAGER',
+      staffIsBot: false,
+    });
+
+    const result = await new OfferCreationService(database.client).createOffer({
+      authorization: authorization(outsiderId),
+      destinationClubId: destination.id,
+      playerDiscordUserId: playerId,
+      playerIsBot: false,
+    });
+    const sender = await database.client.leagueUser.findUniqueOrThrow({
+      where: { discordUserId: outsiderId },
+    });
+    const audit = await database.client.auditEvent.findFirstOrThrow({
+      where: { eventType: offerCreatedAuditEventType, entityId: result.offer.id },
+    });
+
+    expect(result.offer.offeredByUserId).toBe(sender.id);
+    expect(audit.actorUserId).toBe(sender.id);
+    expect(result.auditAnnouncement).toMatchObject({
+      operation: 'OFFER_CREATED',
+      actorDiscordUserId: outsiderId,
+      playerDiscordUserId: playerId,
+    });
+    expect(result.auditAnnouncement?.actorDiscordUserId).not.toBe(ownerId);
+    expect(result.auditAnnouncement?.actorDiscordUserId).not.toBe(playerId);
+  });
+
   it.each([
     ['source', 'TEAM_MANAGER', 'ASSISTANT_MANAGER'],
     ['source', 'ASSISTANT_MANAGER', 'TEAM_MANAGER'],
@@ -608,9 +655,22 @@ describe('administration services', () => {
     await expect(
       service.declineOffer({ offerId: result.offer.id, decliningDiscordUserId: outsiderId }),
     ).rejects.toBeInstanceOf(UnauthorizedOfferAcceptanceError);
-    await expect(
-      service.declineOffer({ offerId: result.offer.id, decliningDiscordUserId: playerId }),
-    ).resolves.toMatchObject({ status: 'DECLINED' });
+    const declined = await service.declineOffer({
+      offerId: result.offer.id,
+      decliningDiscordUserId: playerId,
+    });
+    expect(declined).toMatchObject({
+      status: 'DECLINED',
+      auditAnnouncement: {
+        operation: 'OFFER_DECLINED',
+        actorDiscordUserId: playerId,
+        playerDiscordUserId: playerId,
+      },
+    });
+    const declineAudit = await database.client.auditEvent.findFirstOrThrow({
+      where: { eventType: offerDeclinedAuditEventType, entityId: result.offer.id },
+    });
+    expect(declineAudit.actorUserId).toBe(result.player.id);
     await expect(database.client.clubMembership.count()).resolves.toBe(0);
     await expect(database.client.leagueTransaction.count()).resolves.toBe(0);
   });
@@ -636,6 +696,10 @@ describe('administration services', () => {
     await expect(
       database.client.offer.findUniqueOrThrow({ where: { id: stale.offer.id } }),
     ).resolves.toMatchObject({ status: 'EXPIRED' });
+    const staleExpiryAudit = await database.client.auditEvent.findFirstOrThrow({
+      where: { eventType: offerExpiredAuditEventType, entityId: stale.offer.id },
+    });
+    expect(staleExpiryAudit.actorUserId).toBeNull();
 
     const concurrent = await creation.createOffer({
       authorization: authorization(),
@@ -649,6 +713,39 @@ describe('administration services', () => {
     ]);
     expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
     expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(1);
+  });
+
+  it('keeps scheduled offer expiration attributed to System with no human actor', async () => {
+    const destination = await createClub();
+    const expiresAt = new Date(Date.now() + 60_000);
+    const created = await new OfferCreationService(database.client).createOffer({
+      authorization: authorization(),
+      destinationClubId: destination.id,
+      playerDiscordUserId: playerId,
+      playerIsBot: false,
+      expiresAt,
+    });
+    const publish = vi.fn((plan: unknown) => {
+      void plan;
+      return Promise.resolve(true);
+    });
+
+    await expect(
+      new OfferExpirationService(database.client, { publish }).expire(
+        new Date(expiresAt.getTime() + 1),
+      ),
+    ).resolves.toMatchObject([{ id: created.offer.id, status: 'EXPIRED' }]);
+    const event = await database.client.auditEvent.findFirstOrThrow({
+      where: { eventType: offerExpiredAuditEventType, entityId: created.offer.id },
+    });
+    const plan = publish.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
+
+    expect(event.actorUserId).toBeNull();
+    expect(plan).toMatchObject({
+      operation: 'OFFER_EXPIRED',
+      playerDiscordUserId: playerId,
+    });
+    expect(plan).not.toHaveProperty('actorDiscordUserId');
   });
 
   it('saves offer message references after delivery', async () => {

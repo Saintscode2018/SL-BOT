@@ -108,6 +108,7 @@ describe('roster mutation service', () => {
       });
       expect(result.auditAnnouncement).toMatchObject({
         operation: 'STAFF_APPOINTED',
+        actorDiscordUserId: actorId,
         staffRole: code,
         playerDiscordUserId: memberId,
       });
@@ -169,6 +170,12 @@ describe('roster mutation service', () => {
       addRoles: [],
       removeRoles: [{ purpose: 'PM' }],
     });
+    expect(result.auditAnnouncement).toMatchObject({
+      operation: 'ROSTER_DEMANDED',
+      actorDiscordUserId: memberId,
+      playerDiscordUserId: memberId,
+      departureMode: 'STAFF_ONLY',
+    });
   });
 
   it.each([
@@ -227,6 +234,7 @@ describe('roster mutation service', () => {
       );
       expect(removed.auditAnnouncement).toMatchObject({
         operation: 'STAFF_REMOVED',
+        actorDiscordUserId: actorId,
         staffRole: purpose,
         playerDiscordUserId: memberId,
       });
@@ -280,6 +288,12 @@ describe('roster mutation service', () => {
       { id: team.discordRoleId, purpose: 'TEAM' },
       { id: '400000000000000002', purpose: 'ATM' },
     ]);
+    expect(result.auditAnnouncement).toMatchObject({
+      operation: 'ROSTER_DEMANDED',
+      actorDiscordUserId: memberId,
+      playerDiscordUserId: memberId,
+      departureMode: 'FULL',
+    });
     await expect(
       database.client.clubMembership.count({ where: { userId: result.user.id } }),
     ).resolves.toBe(2);
@@ -302,6 +316,16 @@ describe('roster mutation service', () => {
       addRoles: [{ purpose: 'ATM' }],
       removeRoles: [{ purpose: 'PM' }],
     });
+    expect(promoted.auditAnnouncement).toMatchObject({
+      operation: 'ROSTER_PROMOTED',
+      actorDiscordUserId: actorId,
+      playerDiscordUserId: memberId,
+    });
+    expect(promotedAgain.auditAnnouncement).toMatchObject({
+      operation: 'ROSTER_PROMOTED',
+      actorDiscordUserId: actorId,
+      playerDiscordUserId: memberId,
+    });
     await expect(
       database.client.clubMembership.count({
         where: { userId: promoted.user.id, membershipType: 'PLAYER_MANAGER', status: 'ENDED' },
@@ -322,6 +346,11 @@ describe('roster mutation service', () => {
     expect(demoted.roleMutation.removeRoles).toEqual([
       { id: '400000000000000002', purpose: 'ATM' },
     ]);
+    expect(demoted.auditAnnouncement).toMatchObject({
+      operation: 'ROSTER_DEMOTED',
+      actorDiscordUserId: actorId,
+      playerDiscordUserId: memberId,
+    });
   });
 
   it('ranked release ends a staff target fully and preserves both historical rows', async () => {
@@ -334,6 +363,11 @@ describe('roster mutation service', () => {
     expect(released.playerMembership!.status).toBe('ENDED');
     expect(released.staffMembership?.status).toBe('ENDED');
     expect(released.roleMutation.removeRoles.map(({ purpose }) => purpose)).toEqual(['TEAM', 'PM']);
+    expect(released.auditAnnouncement).toMatchObject({
+      operation: 'ROSTER_RELEASED',
+      actorDiscordUserId: actorId,
+      playerDiscordUserId: memberId,
+    });
   });
 
   it('keeps Discord and announcements outside one short release write transaction', async () => {

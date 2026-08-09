@@ -451,6 +451,13 @@ describe('offer acceptance service', () => {
 
   it('publishes audit announcement with correct player, team, and accepting-player actor semantics when audit channel is configured', async () => {
     const data = await seed();
+    const currentTeamManager = await users.getOrCreateByDiscordUserId('830000000000000003');
+    await memberships.createActive({
+      guildId: data.guild.id,
+      clubId: data.destination.id,
+      userId: currentTeamManager.id,
+      membershipType: 'TEAM_MANAGER',
+    });
     await guilds.upsertSettings(data.guild.id, {
       transferChannelId: '840000000000000001',
       auditChannelId: '840000000000000002',
@@ -468,6 +475,16 @@ describe('offer acceptance service', () => {
       teamIdentity: { id: data.destination.id },
       occurredAt: acceptedAt,
     });
+    expect(result.announcement).toMatchObject({
+      actorDiscordUserId: data.manager.discordUserId,
+      roster: { teamManagerDiscordUserId: currentTeamManager.discordUserId },
+    });
+    expect(data.manager.discordUserId).not.toBe(currentTeamManager.discordUserId);
+    expect(data.manager.discordUserId).not.toBe(data.player.discordUserId);
+    if (result.auditAnnouncement?.operation !== 'OFFER_ACCEPTED') {
+      throw new Error('Expected an offer-accepted Audit announcement');
+    }
+    expect(result.auditAnnouncement.actorDiscordUserId).not.toBe(currentTeamManager.discordUserId);
     expect(result.auditAnnouncement?.operation).not.toBe('ROSTER_PLAYER_ADDED');
   });
 

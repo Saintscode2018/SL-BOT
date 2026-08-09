@@ -45,6 +45,7 @@ describe('Stage 4B.3 Roster promotion and demotion integration', () => {
         assistantManagerRoleId: '400000000000000002',
         playerManagerRoleId: '400000000000000003',
         transferChannelId: '300000000000000001',
+        auditChannelId: '300000000000000002',
       },
     });
   });
@@ -126,6 +127,11 @@ describe('Stage 4B.3 Roster promotion and demotion integration', () => {
     expect(pmResult.roleMutation.addRoles).toContainEqual({
       id: '400000000000000003',
       purpose: 'PM',
+    });
+    expect(pmResult.auditAnnouncement).toMatchObject({
+      operation: 'ROSTER_PROMOTED',
+      actorDiscordUserId: tmDiscordId,
+      playerDiscordUserId: playerDiscordId,
     });
 
     // Roster count check
@@ -250,12 +256,77 @@ describe('Stage 4B.3 Roster promotion and demotion integration', () => {
       purpose: 'ATM',
     });
     expect(demoteResult.roleMutation.addRoles).toHaveLength(0);
+    expect(demoteResult.auditAnnouncement).toMatchObject({
+      operation: 'ROSTER_DEMOTED',
+      actorDiscordUserId: tmDiscordId,
+      playerDiscordUserId: atmDiscordId,
+    });
 
     // Verify active player membership remains
     const activePlayer = await prisma.clubMembership.findFirst({
       where: { userId: atmUser.id, membershipType: 'PLAYER', status: 'ACTIVE' },
     });
     expect(activePlayer).not.toBeNull();
+  });
+
+  it('attributes an ATM promotion to the ATM rather than the current TM or target', async () => {
+    const guild = await prisma.guild.findUniqueOrThrow({ where: { discordGuildId } });
+    const tmUser = await prisma.leagueUser.create({ data: { discordUserId: tmDiscordId } });
+    const atmUser = await prisma.leagueUser.create({ data: { discordUserId: atmDiscordId } });
+    const playerUser = await prisma.leagueUser.create({ data: { discordUserId: playerDiscordId } });
+    const club = await prisma.club.create({
+      data: {
+        guildId: guild.id,
+        discordRoleId: '400000000000000010',
+        emoji: '⚽',
+      },
+    });
+    await prisma.clubMembership.createMany({
+      data: [
+        {
+          guildId: guild.id,
+          clubId: club.id,
+          userId: tmUser.id,
+          membershipType: 'TEAM_MANAGER',
+        },
+        {
+          guildId: guild.id,
+          clubId: club.id,
+          userId: atmUser.id,
+          membershipType: 'ASSISTANT_MANAGER',
+        },
+        {
+          guildId: guild.id,
+          clubId: club.id,
+          userId: playerUser.id,
+          membershipType: 'PLAYER',
+        },
+      ],
+    });
+
+    const result = await new RosterPromotionDemotionService(
+      prisma,
+      new RosterMutationService(prisma),
+    ).promote({
+      discordGuildId,
+      actorDiscordUserId: atmDiscordId,
+      targetDiscordUserId: playerDiscordId,
+      clubId: club.id,
+      destinationStaffType: 'PLAYER_MANAGER',
+      expectedActorStaffRole: 'ATM',
+      expectedTargetStaffRole: null,
+    });
+
+    expect(result.auditAnnouncement).toMatchObject({
+      operation: 'ROSTER_PROMOTED',
+      actorDiscordUserId: atmDiscordId,
+      playerDiscordUserId: playerDiscordId,
+    });
+    if (result.auditAnnouncement?.operation !== 'ROSTER_PROMOTED') {
+      throw new Error('Expected a roster-promoted Audit announcement');
+    }
+    expect(result.auditAnnouncement.actorDiscordUserId).not.toBe(tmDiscordId);
+    expect(result.auditAnnouncement.actorDiscordUserId).not.toBe(playerDiscordId);
   });
 
   it('blocks database mutation when Discord role synchronization fails', async () => {

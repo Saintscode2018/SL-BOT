@@ -335,6 +335,12 @@ describe('Stage 4B.2 roster departure service', () => {
         departureMode: 'FULL',
         roster: { currentSize: 0, maximumSize: 17 },
       });
+      expect(result.auditAnnouncement).toMatchObject({
+        operation: 'ROSTER_DEMANDED',
+        actorDiscordUserId: playerId,
+        playerDiscordUserId: playerId,
+        departureMode: 'FULL',
+      });
       await expect(
         database.client.clubMembership.count({ where: { userId: signed.user.id } }),
       ).resolves.toBe(1);
@@ -367,6 +373,12 @@ describe('Stage 4B.2 roster departure service', () => {
           type: 'DEMOTED',
           departureMode: 'STAFF_ONLY',
           roster: { currentSize: 1 },
+        });
+        expect(result.auditAnnouncement).toMatchObject({
+          operation: 'ROSTER_DEMANDED',
+          actorDiscordUserId: atmId,
+          playerDiscordUserId: atmId,
+          departureMode: 'STAFF_ONLY',
         });
         await expect(database.client.auditEvent.count()).resolves.toBe(auditCountBefore);
       },
@@ -460,6 +472,36 @@ describe('Stage 4B.2 roster departure service', () => {
           where: { id: manager.staffMembership!.id },
         }),
       ).resolves.toMatchObject({ status: 'ACTIVE' });
+    });
+
+    it('attributes release to the acting ATM rather than the current TM or target', async () => {
+      await appoint(tmId, 'TEAM_MANAGER');
+      await appoint(atmId, 'ASSISTANT_MANAGER');
+      await sign(playerId);
+      const eligibility = await service.getReleaseEligibility(discordGuildId, atmId, playerId);
+
+      const result = await service.release({
+        discordGuildId,
+        actorDiscordUserId: atmId,
+        targetDiscordUserId: playerId,
+        clubId: team.id,
+        expectedActorStaffRole: eligibility.callerStaffRole,
+        expectedTargetStaffRole: eligibility.targetStaffRole,
+      });
+
+      expect(result.auditAnnouncement).toMatchObject({
+        operation: 'ROSTER_RELEASED',
+        actorDiscordUserId: atmId,
+        playerDiscordUserId: playerId,
+      });
+      if (result.auditAnnouncement?.operation !== 'ROSTER_RELEASED') {
+        throw new Error('Expected a roster-released Audit announcement');
+      }
+      expect(result.auditAnnouncement.actorDiscordUserId).not.toBe(tmId);
+      expect(result.auditAnnouncement.actorDiscordUserId).not.toBe(playerId);
+      expect(result.announcement).toMatchObject({
+        roster: { teamManagerDiscordUserId: tmId },
+      });
     });
 
     it('releases ATM/PM staff, vacates the staff slot, and retains unrelated roles in the plan', async () => {

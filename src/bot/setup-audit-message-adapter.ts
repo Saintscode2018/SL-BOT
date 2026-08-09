@@ -6,6 +6,14 @@ import type {
 } from '../services/setup-audit-service.js';
 import { createActorField, createSuccessEmbed } from './embeds.js';
 
+function memberDisplayName(member: GuildMember | null): string | null {
+  return member?.displayName?.trim() || member?.user?.globalName || member?.user?.username || null;
+}
+
+function userDisplayName(user: User | null): string | null {
+  return user?.globalName || user?.username || null;
+}
+
 export class DiscordSetupAuditMessageAdapter implements SetupAuditMessageAdapter {
   public constructor(private readonly client: Client) {}
 
@@ -16,18 +24,24 @@ export class DiscordSetupAuditMessageAdapter implements SetupAuditMessageAdapter
     }
 
     const guild = 'guild' in channel && channel.guild ? channel.guild : null;
-    const member: GuildMember | null =
+    const cachedMember: GuildMember | null =
       guild && 'members' in guild && guild.members?.cache
         ? (guild.members.cache.get(message.actorDiscordUserId) ?? null)
         : null;
-    const user: User | null = this.client.users?.cache?.get(message.actorDiscordUserId) ?? null;
-    const actorDisplayName =
-      member?.displayName?.trim() ||
-      member?.user?.globalName ||
-      member?.user?.username ||
-      user?.globalName ||
-      user?.username ||
-      'Unknown User';
+    const member: GuildMember | null =
+      cachedMember ??
+      (guild !== null && typeof guild.members?.fetch === 'function'
+        ? await guild.members.fetch(message.actorDiscordUserId).catch(() => null)
+        : null);
+    const memberName = memberDisplayName(member);
+    const user: User | null =
+      memberName !== null
+        ? null
+        : (this.client.users?.cache?.get(message.actorDiscordUserId) ??
+          (typeof this.client.users?.fetch === 'function'
+            ? await this.client.users.fetch(message.actorDiscordUserId).catch(() => null)
+            : null));
+    const actorDisplayName = memberName || userDisplayName(user) || 'Unknown User';
 
     const actorVerb = message.actorVerb ?? 'Configured';
 

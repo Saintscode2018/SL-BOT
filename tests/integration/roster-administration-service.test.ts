@@ -40,6 +40,7 @@ import { MemoryLogger } from '../helpers/memory-logger.js';
 const discordGuildId = '810000000000000001';
 const ownerId = '810000000000000002';
 const playerId = '810000000000000003';
+const currentManagerId = '810000000000000004';
 
 describe('administrative roster service', () => {
   let database: TestDatabase;
@@ -400,6 +401,17 @@ describe('administrative roster service', () => {
       transferChannelId: '810000000000000030',
       auditChannelId: '810000000000000040',
     });
+    const currentManager = await database.client.leagueUser.create({
+      data: { discordUserId: currentManagerId },
+    });
+    await database.client.clubMembership.create({
+      data: {
+        guildId: guild.id,
+        clubId: team.id,
+        userId: currentManager.id,
+        membershipType: 'TEAM_MANAGER',
+      },
+    });
 
     let addMemberStatusDuringPublish: string | null = null;
     let addTxCountDuringPublish: number = 0;
@@ -438,6 +450,7 @@ describe('administrative roster service', () => {
       discordUserId: playerId,
       actorDiscordUserId: ownerId,
       teamIdentity: { id: team.id },
+      roster: { teamManagerDiscordUserId: currentManagerId },
     });
     expect(added.auditAnnouncement).toMatchObject({
       operation: 'ROSTER_PLAYER_ADDED',
@@ -447,6 +460,11 @@ describe('administrative roster service', () => {
       actorDiscordUserId: ownerId,
       teamIdentity: { id: team.id },
     });
+    if (added.auditAnnouncement?.operation !== 'ROSTER_PLAYER_ADDED') {
+      throw new Error('Expected a roster-player-added Audit announcement');
+    }
+    expect(added.auditAnnouncement.actorDiscordUserId).not.toBe(currentManagerId);
+    expect(added.auditAnnouncement.actorDiscordUserId).not.toBe(playerId);
 
     let removeMemberStatusDuringPublish: string | null = null;
     const customServiceRemove = makeService(
@@ -485,6 +503,11 @@ describe('administrative roster service', () => {
       actorDiscordUserId: ownerId,
       teamIdentity: { id: team.id },
     });
+    if (removed.auditAnnouncement?.operation !== 'ROSTER_PLAYER_REMOVED') {
+      throw new Error('Expected a roster-player-removed Audit announcement');
+    }
+    expect(removed.auditAnnouncement.actorDiscordUserId).not.toBe(currentManagerId);
+    expect(removed.auditAnnouncement.actorDiscordUserId).not.toBe(playerId);
   });
 
   it('handles partial and both delivery failures without rolling back roster state', async () => {
