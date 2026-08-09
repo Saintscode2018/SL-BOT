@@ -351,7 +351,7 @@ export class OfferAcceptanceService {
             : {
                 discordGuildId: guild.discordGuildId,
                 channelId: settings.auditChannelId,
-                operation: 'ROSTER_PLAYER_ADDED',
+                operation: 'OFFER_ACCEPTED',
                 actorDiscordUserId: player.discordUserId,
                 playerDiscordUserId: player.discordUserId,
                 teamIdentity: destinationClub,

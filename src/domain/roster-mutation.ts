@@ -113,7 +113,11 @@ export type UserAuditAnnouncementOperation =
   | 'ROSTER_PROMOTED'
   | 'ROSTER_DEMOTED';
 
-export type OfferAuditAnnouncementOperation = 'OFFER_CREATED' | 'OFFER_DECLINED' | 'OFFER_EXPIRED';
+export type OfferAuditAnnouncementOperation =
+  | 'OFFER_CREATED'
+  | 'OFFER_ACCEPTED'
+  | 'OFFER_DECLINED'
+  | 'OFFER_EXPIRED';
 
 export type AuditAnnouncementOperation =
   | UserAuditAnnouncementOperation
@@ -176,6 +180,17 @@ export interface OfferCreatedAuditAnnouncementPlan {
   expiresAt: Date;
 }
 
+export interface OfferAcceptedAuditAnnouncementPlan {
+  discordGuildId: string;
+  channelId: string;
+  operation: 'OFFER_ACCEPTED';
+  actorDiscordUserId: string;
+  playerDiscordUserId: string;
+  teamIdentity: TeamIdentitySource;
+  occurredAt: Date;
+  presentation?: TransferAnnouncementPresentation;
+}
+
 export interface OfferDeclinedAuditAnnouncementPlan {
   discordGuildId: string;
   channelId: string;
@@ -197,6 +212,7 @@ export interface OfferExpiredAuditAnnouncementPlan {
 
 export type OfferAuditAnnouncementPlan =
   | OfferCreatedAuditAnnouncementPlan
+  | OfferAcceptedAuditAnnouncementPlan
   | OfferDeclinedAuditAnnouncementPlan
   | OfferExpiredAuditAnnouncementPlan;
 

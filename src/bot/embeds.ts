@@ -55,6 +55,7 @@ export function createActorField(
     | 'Swapped'
     | 'Imported'
     | 'Created'
+    | 'Accepted'
     | 'Declined',
   userId: string,
   displayName?: string | null,

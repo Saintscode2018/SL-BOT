@@ -462,12 +462,13 @@ describe('offer acceptance service', () => {
     expect(result.auditAnnouncement).toMatchObject({
       discordGuildId: data.guild.discordGuildId,
       channelId: '840000000000000002',
-      operation: 'ROSTER_PLAYER_ADDED',
+      operation: 'OFFER_ACCEPTED',
       actorDiscordUserId: data.player.discordUserId,
       playerDiscordUserId: data.player.discordUserId,
       teamIdentity: { id: data.destination.id },
       occurredAt: acceptedAt,
     });
+    expect(result.auditAnnouncement?.operation).not.toBe('ROSTER_PLAYER_ADDED');
   });
 
   it('returns null audit announcement and null warning state when audit channel is unconfigured', async () => {

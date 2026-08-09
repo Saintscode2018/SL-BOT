@@ -6,7 +6,10 @@ import {
   OfferButtonHandler,
   type OfferButtonInteraction,
 } from '../../src/bot/offer-button-handler.js';
-import type { OfferAuditAnnouncementPlan } from '../../src/domain/roster-mutation.js';
+import type {
+  AuditAnnouncementPlan,
+  OfferAuditAnnouncementPlan,
+} from '../../src/domain/roster-mutation.js';
 import type { Logger } from '../../src/logging/logger.js';
 import type {
   OfferDeliveryService,
@@ -370,6 +373,136 @@ describe('Presentation System Foundation', () => {
           inline: false,
         },
       ]);
+    });
+
+    it('renders OFFER_ACCEPTED with "Offer Accepted" title, correct player, correct team, and "Accepted by" field', async () => {
+      const sendFn = vi.fn().mockResolvedValue({ id: 'audit-msg-2' });
+      const mockChannel = {
+        isSendable: () => true,
+        guildId: '100000000000000001',
+        send: sendFn,
+      };
+      const mockClient = {
+        channels: {
+          fetch: vi.fn().mockResolvedValue(mockChannel),
+        },
+      } as unknown as Client;
+
+      const adapter = new DiscordAuditAnnouncementAdapter(mockClient);
+
+      const offerAcceptedPlan: AuditAnnouncementPlan = {
+        discordGuildId: '100000000000000001',
+        channelId: '900000000000000001',
+        operation: 'OFFER_ACCEPTED',
+        actorDiscordUserId: '300000000000000001',
+        playerDiscordUserId: '300000000000000001',
+        teamIdentity: {
+          discordRoleId: '200000000000000001',
+          discordRoleName: 'Alpha Team',
+          emoji: '🔴',
+        },
+        occurredAt: new Date('2026-08-09T12:00:00Z'),
+        presentation: {
+          serverName: 'Test Guild',
+          serverIconUrl: null,
+          teamRoleName: 'Alpha Team',
+          teamRoleColor: 0xff0000,
+          subject: { username: 'PlayerOne', avatarUrl: null },
+          actor: { username: 'PlayerOne', avatarUrl: null },
+        },
+      };
+
+      await adapter.send(offerAcceptedPlan);
+
+      expect(sendFn).toHaveBeenCalledTimes(1);
+      const sendArg = sendFn.mock.calls[0]?.[0] as {
+        embeds: Array<{
+          data: {
+            title: string;
+            description: string;
+            fields: Array<{ name: string; value: string }>;
+          };
+        }>;
+      };
+
+      const embedData = sendArg.embeds[0]?.data;
+      expect(embedData?.title).toBe('✅ Offer Accepted');
+      expect(embedData?.description).toContain('<@300000000000000001> `PlayerOne`');
+      expect(embedData?.description).toContain('accepted the contract offer from');
+      expect(embedData?.description).toContain('<@&200000000000000001>');
+      expect(embedData?.fields).toEqual([
+        {
+          name: 'Accepted by',
+          value: '<@300000000000000001> `PlayerOne`',
+          inline: false,
+        },
+      ]);
+    });
+
+    it('renders ROSTER_PLAYER_ADDED with "Player Added to Roster" title (distinguishing from OFFER_ACCEPTED)', async () => {
+      const sendFn = vi.fn().mockResolvedValue({ id: 'audit-msg-3' });
+      const mockChannel = {
+        isSendable: () => true,
+        guildId: '100000000000000001',
+        send: sendFn,
+      };
+      const mockClient = {
+        channels: {
+          fetch: vi.fn().mockResolvedValue(mockChannel),
+        },
+      } as unknown as Client;
+
+      const adapter = new DiscordAuditAnnouncementAdapter(mockClient);
+
+      const rosterAddPlan: AuditAnnouncementPlan = {
+        discordGuildId: '100000000000000001',
+        channelId: '900000000000000001',
+        operation: 'ROSTER_PLAYER_ADDED',
+        actorDiscordUserId: '400000000000000001',
+        playerDiscordUserId: '300000000000000001',
+        teamIdentity: {
+          discordRoleId: '200000000000000001',
+          discordRoleName: 'Alpha Team',
+          emoji: '🔴',
+        },
+        occurredAt: new Date('2026-08-09T12:00:00Z'),
+        presentation: {
+          serverName: 'Test Guild',
+          serverIconUrl: null,
+          teamRoleName: 'Alpha Team',
+          teamRoleColor: 0xff0000,
+          subject: { username: 'PlayerOne', avatarUrl: null },
+          actor: { username: 'ManagerOne', avatarUrl: null },
+        },
+      };
+
+      await adapter.send(rosterAddPlan);
+
+      expect(sendFn).toHaveBeenCalledTimes(1);
+      const sendArg = sendFn.mock.calls[0]?.[0] as {
+        embeds: Array<{
+          data: {
+            title: string;
+            description: string;
+            fields: Array<{ name: string; value: string }>;
+          };
+        }>;
+      };
+
+      const embedData = sendArg.embeds[0]?.data;
+      expect(embedData?.title).toBe('✅ Player Added to Roster');
+      expect(embedData?.description).toContain('was added to');
+      expect(embedData?.fields).toEqual([
+        {
+          name: 'Added by',
+          value: '<@400000000000000001> `ManagerOne`',
+          inline: false,
+        },
+      ]);
+
+      // Assert distinctness: ROSTER_PLAYER_ADDED title and verb cannot be confused with OFFER_ACCEPTED
+      expect(embedData?.title).not.toBe('✅ Offer Accepted');
+      expect(embedData?.fields[0]?.name).not.toBe('Accepted by');
     });
   });
 });

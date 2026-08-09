@@ -157,6 +157,11 @@ export class DiscordAuditAnnouncementAdapter implements AuditAnnouncementAdapter
           });
         }
         break;
+      case 'OFFER_ACCEPTED':
+        title = `${BOT_EMOJIS.success} Offer Accepted`;
+        description = `${playerFormatted} accepted the contract offer from ${teamFormatted}.`;
+        fields.push(createActorField('Accepted', plan.actorDiscordUserId, actorName));
+        break;
       case 'OFFER_DECLINED':
         title = `${BOT_EMOJIS.success} Offer Declined`;
         description = `${playerFormatted} declined the contract offer from ${teamFormatted}.`;
