@@ -303,6 +303,7 @@ export class RosterAdministrationService {
           discordUserId: resolved.player.discordUserId,
           teamIdentity: resolved.club,
           occurredAt,
+          actorDiscordUserId: actor.discordUserId,
           roster: {
             currentSize: activePlayerCount,
             maximumSize: getEffectiveSquadLimit(resolved.club, settings),

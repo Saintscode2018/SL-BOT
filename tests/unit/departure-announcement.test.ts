@@ -108,7 +108,7 @@ describe('Stage 4B.2 transfer announcements', () => {
     expect(JSON.stringify(embed)).not.toMatch(/Demands Left|reason|audit/i);
   });
 
-  it('renders release with adjacent roster/TM lines and no acting-manager attribution', async () => {
+  it('renders release with adjacent roster/TM lines and acting actor attribution in footer', async () => {
     const { embed } = await render(plan('RELEASED'));
     expect(embed).toMatchObject({
       author: { name: 'Stage 4B League' },
@@ -120,15 +120,13 @@ describe('Stage 4B.2 transfer announcements', () => {
         '> 👑 Team Manager: <@300000000000000009> `Team Manager`',
       ].join('\n'),
       footer: {
-        text: 'Player: Visible Player • 02.08.2026 12:00 UTC',
-        icon_url: 'https://cdn.discordapp.com/avatars/player/avatar.png',
+        text: 'Released by Secret Manager • 02.08.2026 12:00 UTC',
+        icon_url: 'https://cdn.discordapp.com/avatars/actor/avatar.png',
       },
     });
     expect(embed.description?.split('\n')).toHaveLength(3);
     expect(embed.description).not.toContain('\n>\n');
-    expect(JSON.stringify(embed)).not.toContain(actorId);
-    expect(JSON.stringify(embed)).not.toContain('Secret Manager');
-    expect(JSON.stringify(embed)).not.toMatch(/released by|reason|audit/i);
+    expect(JSON.stringify(embed)).not.toMatch(/reason|audit/i);
   });
 
   it('renders staff-only demand as a self-authored step-down demotion', async () => {

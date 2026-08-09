@@ -474,13 +474,9 @@ describe('administrative roster service', () => {
       discordGuildId,
       channelId: '810000000000000030',
       discordUserId: playerId,
+      actorDiscordUserId: ownerId,
       teamIdentity: { id: team.id },
     });
-    expect(
-      removed.announcement && 'actorDiscordUserId' in removed.announcement
-        ? removed.announcement.actorDiscordUserId
-        : undefined,
-    ).toBeUndefined();
     expect(removed.auditAnnouncement).toMatchObject({
       operation: 'ROSTER_PLAYER_REMOVED',
       discordGuildId,

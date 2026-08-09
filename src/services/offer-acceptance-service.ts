@@ -288,6 +288,7 @@ export class OfferAcceptanceService {
       },
     });
 
+    const offeredByUser = await repositories.users.getById(pendingOffer.offeredByUserId);
     const guild = await new GuildRepository(transactionClient).requireById(pendingOffer.guildId);
     const teamManagerMembership = await repositories.memberships.getActiveStaffAppointment(
       destinationClub.id,
@@ -335,6 +336,9 @@ export class OfferAcceptanceService {
                 discordUserId: player.discordUserId,
                 teamIdentity: destinationClub,
                 occurredAt: acceptedAt,
+                ...(offeredByUser === null
+                  ? {}
+                  : { actorDiscordUserId: offeredByUser.discordUserId }),
                 roster: {
                   currentSize: activePlayerCount + 1,
                   maximumSize: effectiveLimit,

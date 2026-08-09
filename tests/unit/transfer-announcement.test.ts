@@ -14,6 +14,7 @@ const announcement: TransferAnnouncementPlan = {
   channelId: '200000000000000001',
   type: 'SIGNED',
   discordUserId: '300000000000000001',
+  actorDiscordUserId: '300000000000000009',
   teamIdentity: {
     emoji: '⚽',
     discordRoleId: '400000000000000001',
@@ -32,6 +33,10 @@ const announcement: TransferAnnouncementPlan = {
     subject: {
       username: 'ARDA2',
       avatarUrl: 'https://cdn.discordapp.com/avatars/player/avatar.png',
+    },
+    actor: {
+      username: 'Manager',
+      avatarUrl: 'https://cdn.discordapp.com/avatars/tm/avatar.png',
     },
     teamManager: {
       username: 'Manager',
@@ -86,8 +91,8 @@ describe('transfer-market announcements', () => {
         '> <@300000000000000001> `ARDA2` has accepted the offer from ⚽ <@&400000000000000001>\n> 📊 Roster: 4/17\n> 👑 Team Manager: <@300000000000000009> `Manager`',
       color: 0x123456,
       footer: {
-        text: 'Player: ARDA2 • 02.08.2026 12:00 UTC',
-        icon_url: 'https://cdn.discordapp.com/avatars/player/avatar.png',
+        text: 'Offered by Manager • 02.08.2026 12:00 UTC',
+        icon_url: 'https://cdn.discordapp.com/avatars/tm/avatar.png',
       },
     });
     expect(payload.embeds[0]!.toJSON().thumbnail?.url).toContain('twemoji');

@@ -12,7 +12,6 @@ import {
   BOT_LABELS,
   createActorFooter,
   createGuildAuthor,
-  createPlayerFooter,
   createTimestampedFooter,
   formatBlockquote,
   formatTeamPlainRoleName,
@@ -230,9 +229,10 @@ export class DiscordTransferAnnouncementAdapter implements TransferAnnouncementA
             })()
           : plan.type === 'SIGNED'
             ? (() => {
-                const footer = createPlayerFooter({
-                  username: plan.presentation?.subject?.username || 'Unknown Player',
-                  avatarUrl: plan.presentation?.subject?.avatarUrl ?? null,
+                const footer = createActorFooter({
+                  verb: 'Offered',
+                  username: actorUsername,
+                  avatarUrl: actorAvatarUrl,
                   timestamp: plan.occurredAt,
                 });
 
@@ -262,9 +262,10 @@ export class DiscordTransferAnnouncementAdapter implements TransferAnnouncementA
                         avatarUrl: plan.presentation?.subject?.avatarUrl ?? null,
                         timestamp: plan.occurredAt,
                       })
-                    : createPlayerFooter({
-                        username: subjectName,
-                        avatarUrl: plan.presentation?.subject?.avatarUrl ?? null,
+                    : createActorFooter({
+                        verb: 'Released',
+                        username: actorUsername,
+                        avatarUrl: actorAvatarUrl,
                         timestamp: plan.occurredAt,
                       });
                   const descriptionLines = [
