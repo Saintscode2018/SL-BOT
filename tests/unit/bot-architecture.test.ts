@@ -9,16 +9,23 @@ import type {
   CommandContext,
   CommandDefinition,
   CommandInteraction,
+  DeferredInteractionResponse,
   EditedInteractionResponse,
   SafeInteractionResponse,
 } from '../../src/bot/types.js';
-import { ConflictError } from '../../src/domain/errors.js';
+import {
+  ConflictError,
+  MemberAlreadySignedError,
+  SquadFullError,
+  TeamNotFoundError,
+} from '../../src/domain/errors.js';
 import { MemoryLogger } from '../helpers/memory-logger.js';
 
 class FakeInteraction implements CommandInteraction {
   public readonly replies: SafeInteractionResponse[] = [];
   public readonly edits: EditedInteractionResponse[] = [];
   public readonly followUps: SafeInteractionResponse[] = [];
+  public readonly deferrals: Array<DeferredInteractionResponse | undefined> = [];
 
   public constructor(
     public readonly commandName: string,
@@ -32,7 +39,8 @@ class FakeInteraction implements CommandInteraction {
     return Promise.resolve();
   }
 
-  public deferReply(): Promise<void> {
+  public deferReply(response?: DeferredInteractionResponse): Promise<void> {
+    this.deferrals.push(response);
     this.deferred = true;
     return Promise.resolve();
   }
@@ -53,7 +61,10 @@ class FakeInteraction implements CommandInteraction {
   }
 }
 
-function command(name: string, execute = vi.fn(() => Promise.resolve())): CommandDefinition {
+function command(
+  name: string,
+  execute: CommandDefinition['execute'] = vi.fn(() => Promise.resolve()),
+): CommandDefinition {
   return {
     data: new SlashCommandBuilder().setName(name).setDescription('test command'),
     execute,
@@ -221,4 +232,103 @@ describe('interaction handler', () => {
     expect(interaction.edits[0]?.embeds?.[0]?.data?.title).toBe('❌ Command Failed');
     expect(JSON.stringify(interaction.edits)).not.toContain('private detail');
   });
+
+  it('uses a follow-up after an interaction already replied', async () => {
+    const logger = new MemoryLogger();
+    const registry = new CommandRegistry([
+      command(
+        'alpha',
+        vi.fn(() => Promise.reject(new Error('private detail'))),
+      ),
+    ]);
+    const interaction = new FakeInteraction('alpha', true, false);
+    await handleInteractionCreate(interaction, registry, context(logger), logger);
+    expect(interaction.replies).toEqual([]);
+    expect(interaction.edits).toEqual([]);
+    expect(interaction.followUps).toHaveLength(1);
+  });
+
+  it('preserves a public defer and does not acknowledge twice', async () => {
+    const logger = new MemoryLogger();
+    const interaction = new FakeInteraction('alpha');
+    const slowWork = vi.fn(() => Promise.resolve());
+    const registry = new CommandRegistry([
+      command('alpha', async (current) => {
+        await current.deferReply();
+        await slowWork();
+      }),
+    ]);
+    await handleInteractionCreate(interaction, registry, context(logger), logger);
+    expect(interaction.deferrals).toEqual([undefined]);
+    expect(slowWork).toHaveBeenCalledOnce();
+    expect(interaction.replies).toEqual([]);
+  });
+
+  it('does not retry a response when Discord reports unknown interaction', async () => {
+    const logger = new MemoryLogger();
+    const registry = new CommandRegistry([
+      command(
+        'alpha',
+        vi.fn(() =>
+          Promise.reject(Object.assign(new Error('Unknown interaction'), { code: 10_062 })),
+        ),
+      ),
+    ]);
+    const interaction = new FakeInteraction('alpha');
+    await handleInteractionCreate(interaction, registry, context(logger), logger);
+    expect(interaction.replies).toEqual([]);
+    expect(interaction.edits).toEqual([]);
+    expect(interaction.followUps).toEqual([]);
+    expect(logger.entries).toEqual([
+      expect.objectContaining({
+        level: 'warn',
+        message: 'command interaction expired before acknowledgement',
+      }),
+    ]);
+  });
+
+  it.each([
+    new SquadFullError('full'),
+    new MemberAlreadySignedError(),
+    new TeamNotFoundError('missing'),
+  ])('logs expected domain rejection %s below error level', async (error) => {
+    const logger = new MemoryLogger();
+    const registry = new CommandRegistry([
+      command(
+        'alpha',
+        vi.fn(() => Promise.reject(error)),
+      ),
+    ]);
+    await handleInteractionCreate(new FakeInteraction('alpha'), registry, context(logger), logger);
+    expect(logger.entries.some(({ level }) => level === 'error')).toBe(false);
+    expect(logger.entries).toContainEqual(
+      expect.objectContaining({
+        level: 'info',
+        message: 'command execution failed: expected rejection',
+      }),
+    );
+  });
+
+  it.each(['P2028', 50_013] as const)(
+    'keeps infrastructure failure $code at error level',
+    async (code) => {
+      const logger = new MemoryLogger();
+      const error = Object.assign(new Error(`infrastructure failure ${code}`), { code });
+      const registry = new CommandRegistry([
+        command(
+          'alpha',
+          vi.fn(() => Promise.reject(error)),
+        ),
+      ]);
+      await handleInteractionCreate(
+        new FakeInteraction('alpha'),
+        registry,
+        context(logger),
+        logger,
+      );
+      expect(logger.entries).toContainEqual(
+        expect.objectContaining({ level: 'error', message: 'command execution failed' }),
+      );
+    },
+  );
 });

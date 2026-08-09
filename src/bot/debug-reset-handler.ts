@@ -88,11 +88,13 @@ export async function sendDebugResetPrompt(
       'This will permanently delete all SL Bot league data for this server, including teams, memberships, staff appointments, offers, transactions, settings and audit history.\n\nThis action cannot be undone.',
   });
 
-  const response = await interaction.reply({
-    embeds: [embed],
-    components: [row],
-    flags: MessageFlags.Ephemeral,
-  });
+  const response = interaction.deferred
+    ? await interaction.editReply({ embeds: [embed], components: [row] })
+    : await interaction.reply({
+        embeds: [embed],
+        components: [row],
+        flags: MessageFlags.Ephemeral,
+      });
 
   let confirmation: ButtonInteraction;
   try {
@@ -143,11 +145,13 @@ export async function sendDebugResetPrompt(
     return;
   }
 
+  await confirmation.deferUpdate();
+
   // Recheck the database permission at confirmation time.
   try {
     await assertCanDebugReset(confirmation, database);
   } catch {
-    await confirmation.update({
+    await confirmation.editReply({
       embeds: [
         createErrorEmbed({
           title: `${BOT_EMOJIS.error} Permission Denied`,
@@ -200,7 +204,7 @@ export async function sendDebugResetPrompt(
     'All SL Bot league and setup data for this server has been removed. Database Bot Permissions were preserved to prevent an administrative lockout.\n\nThe server can now be configured again with /setup league.';
   const description = warning !== null ? `${baseDescription}\n\n${warning}` : baseDescription;
 
-  await confirmation.update({
+  await confirmation.editReply({
     embeds: [
       createSuccessEmbed({
         title: `${BOT_EMOJIS.success} Debug Data Reset`,

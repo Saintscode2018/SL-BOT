@@ -34,7 +34,7 @@ export async function handleConfirmationCancel(
 ): Promise<boolean> {
   if (!interaction.customId.endsWith(':cancel')) return false;
 
-  await confirmations.cancel(interaction.customId, interaction.userId, now, interaction.guildId);
+  confirmations.cancel(interaction.customId, interaction.userId, now, interaction.guildId);
   await interaction.deferUpdate();
   await interaction.editReply({
     embeds: [createConfirmationCancelledEmbed(embedOptions)],

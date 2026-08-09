@@ -199,6 +199,10 @@ describe('/team disband command and confirmation', () => {
   it('shows an ephemeral warning with confirm/cancel buttons and preservation details', async () => {
     const { handler, validateChannelPolicy } = fixture();
     const interaction = new CommandFixture();
+    validateChannelPolicy.mockImplementationOnce(() => {
+      expect(interaction.deferred).toBe(true);
+      return Promise.resolve();
+    });
 
     await handler.begin(interaction);
 
@@ -249,6 +253,10 @@ describe('/team disband command and confirmation', () => {
     const interaction = new CommandFixture();
     await handler.begin(interaction);
     const confirm = new ButtonFixture(customIds(interaction).confirm);
+    validateChannelPolicy.mockImplementationOnce(() => {
+      expect(confirm.deferred).toBe(true);
+      return Promise.resolve();
+    });
 
     await expect(handler.handleButton(confirm)).resolves.toBe(true);
     expect(validateChannelPolicy).toHaveBeenCalledTimes(2);

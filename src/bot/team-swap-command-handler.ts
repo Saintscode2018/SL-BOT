@@ -54,14 +54,13 @@ export class TeamSwapCommandHandler {
     const team1Id = requireString(execution.options, 'team1');
     const team2Id = requireString(execution.options, 'team2');
 
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await this.channelPolicy.validateChannelPolicy({
       authorization: execution.authorization,
       channelId: execution.channelId,
       commandName: 'team',
       subcommand: 'swap',
     });
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
     const eligibility = await this.service.getEligibility(
       execution.authorization,
       team1Id,
@@ -180,13 +179,13 @@ export class TeamSwapCommandHandler {
     }
 
     const authorization = requireButtonAuthorization(interaction);
+    await interaction.deferUpdate();
     await this.channelPolicy.validateChannelPolicy({
       authorization,
       channelId: interaction.channelId!,
       commandName: 'team',
       subcommand: 'swap',
     });
-    await interaction.deferUpdate();
     await this.complete(interaction, consumed.context, authorization);
     return true;
   }

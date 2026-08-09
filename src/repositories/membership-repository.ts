@@ -105,6 +105,16 @@ export class MembershipRepository {
     });
   }
 
+  public async getActiveStaffAppointmentWithUser(
+    clubId: string,
+    membershipType: Exclude<MembershipType, 'PLAYER'>,
+  ): Promise<(ClubMembership & { user: LeagueUser }) | null> {
+    return this.db.clubMembership.findFirst({
+      where: { clubId, membershipType, status: 'ACTIVE' },
+      include: { user: true },
+    });
+  }
+
   public async getActiveStaffMembershipForUser(
     clubId: string,
     userId: string,
@@ -199,6 +209,25 @@ export class MembershipRepository {
         throw error;
       }
       return translateDatabaseError(error, 'end membership');
+    }
+  }
+
+  public async endActiveForUserOnClub(
+    clubId: string,
+    userId: string,
+    input: { leftAt: Date; endedByUserId: string },
+  ): Promise<ClubMembership[]> {
+    try {
+      return await this.db.clubMembership.updateManyAndReturn({
+        where: { clubId, userId, status: 'ACTIVE' },
+        data: {
+          status: 'ENDED',
+          leftAt: input.leftAt,
+          endedByUserId: input.endedByUserId,
+        },
+      });
+    } catch (error: unknown) {
+      return translateDatabaseError(error, 'end active memberships for user on club');
     }
   }
 

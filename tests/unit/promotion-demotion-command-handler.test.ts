@@ -237,6 +237,9 @@ describe('Stage 4B.3 /promote and /demote command registration and handler', () 
 
     expect(deferReplySpy).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
     expect(validateChannelPolicySpy).toHaveBeenCalled();
+    expect(deferReplySpy.mock.invocationCallOrder[0]).toBeLessThan(
+      validateChannelPolicySpy.mock.invocationCallOrder[0]!,
+    );
     expect(getPromotionEligibilitySpy).toHaveBeenCalledWith(
       guildId,
       callerId,
@@ -305,6 +308,9 @@ describe('Stage 4B.3 /promote and /demote command registration and handler', () 
 
     expect(deferReplySpy).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
     expect(validateChannelPolicySpy).toHaveBeenCalled();
+    expect(deferReplySpy.mock.invocationCallOrder[0]).toBeLessThan(
+      validateChannelPolicySpy.mock.invocationCallOrder[0]!,
+    );
     expect(getDemotionEligibilitySpy).toHaveBeenCalledWith(guildId, callerId, targetId);
     expect(editReply).toHaveBeenCalled();
     const payload = (
@@ -469,7 +475,7 @@ describe('Stage 4B.3 /promote and /demote command registration and handler', () 
     expect(handled).toBe(true);
     expect(editReply).toHaveBeenCalled();
     // After cancellation the registry entry is finalized; re-attempting cancel must throw.
-    await expect(registry.cancel(registration.cancelCustomId, callerId)).rejects.toThrow();
+    expect(() => registry.cancel(registration.cancelCustomId, callerId)).toThrow();
   });
 
   it('rejects confirmation attempts by non-initiator users', async () => {
@@ -538,7 +544,7 @@ describe('Stage 4B.3 /promote and /demote command registration and handler', () 
     await expect(handler.handleButton(buttonAdapter)).rejects.toThrow(StaleConfirmationError);
   });
 
-  it('does not defer or register prompt when wrong channel policy rejects execution', async () => {
+  it('defers before rejecting wrong channel and does not register a prompt', async () => {
     const registry = new ConfirmationRegistry(new MemoryLogger());
     const channelPolicy = {
       validateChannelPolicy: vi
@@ -580,6 +586,6 @@ describe('Stage 4B.3 /promote and /demote command registration and handler', () 
     };
 
     await expect(handler.beginPromote(interaction)).rejects.toThrow(WrongCommandChannelError);
-    expect(deferReplySpy).not.toHaveBeenCalled();
+    expect(deferReplySpy).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
   });
 });

@@ -409,6 +409,7 @@ describe('Presentation Hotfix - Hard Regression Guards & Presentation Logic', ()
         replied: false,
         deferred: true,
         deferReply: vi.fn().mockResolvedValue(undefined),
+        deferUpdate: vi.fn().mockResolvedValue(undefined),
         reply: vi.fn(),
         editReply: editReplyFn,
         followUp: vi.fn(),

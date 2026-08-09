@@ -34,7 +34,7 @@ export interface OfferButtonInteraction {
   resolveGuildMemberDisplayName?(userId: string): Promise<string | null>;
   reply(response: SafeInteractionResponse): Promise<void>;
   deferReply(response: DeferredInteractionResponse): Promise<void>;
-  deferUpdate?(): Promise<void>;
+  deferUpdate(): Promise<void>;
   editReply(response: EditedInteractionResponse): Promise<void>;
   followUp(response: SafeInteractionResponse): Promise<void>;
 }
@@ -56,7 +56,7 @@ export class OfferButtonHandler {
     };
 
     if (parsed.action === 'decline') {
-      await interaction.deferUpdate?.();
+      await interaction.deferUpdate();
       try {
         const declineResult = await this.responses.declineOffer({
           offerId: parsed.offerId,

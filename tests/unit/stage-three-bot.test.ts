@@ -29,6 +29,7 @@ import type {
   CommandContext,
   CommandInteraction,
   CommandInteractionOptions,
+  DeferredInteractionResponse,
   EditedInteractionResponse,
   SafeInteractionResponse,
 } from '../../src/bot/types.js';
@@ -182,6 +183,8 @@ class ReplyInteraction implements CommandInteraction {
   public deferred = false;
   public readonly replies: SafeInteractionResponse[] = [];
   public readonly edits: EditedInteractionResponse[] = [];
+  public readonly deferrals: Array<DeferredInteractionResponse | undefined> = [];
+  public readonly order: string[] = [];
 
   public reply(response: SafeInteractionResponse): Promise<void> {
     this.replies.push(response);
@@ -189,12 +192,15 @@ class ReplyInteraction implements CommandInteraction {
     return Promise.resolve();
   }
 
-  public deferReply(): Promise<void> {
+  public deferReply(response?: DeferredInteractionResponse): Promise<void> {
+    this.order.push('defer');
+    this.deferrals.push(response);
     this.deferred = true;
     return Promise.resolve();
   }
 
   public editReply(response: EditedInteractionResponse): Promise<void> {
+    this.order.push('edit');
     this.edits.push(response);
     this.replied = true;
     return Promise.resolve();
@@ -382,16 +388,22 @@ describe('stage three command registry and deployment', () => {
   it('reports health safely even when the database check fails', async () => {
     const command = loadCommands(commandDefinitions).resolve('health');
     const interaction = new ReplyInteraction();
-    await command?.execute(
-      interaction,
-      commandContext(new MemoryLogger(), () => Promise.reject(new Error('database secret'))),
-    );
-    expect(interaction.replies).toHaveLength(1);
-    expect(interaction.replies[0]?.flags).toBe(MessageFlags.Ephemeral);
-    expect(interaction.deferred).toBe(false);
-    expect(interaction.edits).toEqual([]);
-    expect(interaction.replies[0]?.embeds?.[0]?.data?.title).toBe('SL Bot System Health');
-    expect(JSON.stringify(interaction.replies)).not.toContain('database secret');
+    const currentContext = commandContext(new MemoryLogger(), () => {
+      interaction.order.push('database');
+      return Promise.reject(new Error('database secret'));
+    });
+    currentContext.commandChannelPolicyService.validateChannelPolicy = () => {
+      interaction.order.push('policy');
+      return Promise.resolve();
+    };
+    await command?.execute(interaction, currentContext);
+    expect(interaction.replies).toEqual([]);
+    expect(interaction.deferrals).toEqual([{ flags: MessageFlags.Ephemeral }]);
+    expect(interaction.deferred).toBe(true);
+    expect(interaction.edits).toHaveLength(1);
+    expect(interaction.edits[0]?.embeds?.[0]?.data?.title).toBe('SL Bot System Health');
+    expect(interaction.order).toEqual(['defer', 'policy', 'database', 'edit']);
+    expect(JSON.stringify(interaction.edits)).not.toContain('database secret');
   });
 
   it('formats roster using effective squad limit from guild settings', async () => {
@@ -818,6 +830,7 @@ describe('persistent offer buttons', () => {
         interaction.deferred = true;
         return Promise.resolve();
       },
+      deferUpdate: () => Promise.resolve(),
       editReply: (response) => {
         order.push('edit');
         replies.push({ ...response, flags: MessageFlags.Ephemeral });

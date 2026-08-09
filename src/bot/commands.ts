@@ -59,6 +59,7 @@ async function enforceChannelPolicy(
   if (interaction.channelId === undefined) {
     throw new ConfigurationError('this command must be used in a Discord channel');
   }
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   await context.commandChannelPolicyService.validateChannelPolicy({
     authorization: execution.authorization,
     channelId: interaction.channelId,
@@ -254,14 +255,23 @@ async function autocompleteTeam(
   const roleMetadata = interaction.getGuildRoles?.() ?? [];
   const roleNamesById = Object.fromEntries(roleMetadata.map((role) => [role.id, role.name]));
 
-  const choices = await context.clubManagementService.autocomplete(
-    interaction.guildId,
-    interaction.focusedValue,
-    25,
-    roleNamesById,
-  );
-
-  await interaction.respond(choices);
+  let choices: Array<{ name: string; value: string }>;
+  try {
+    choices = await context.clubManagementService.autocomplete(
+      interaction.guildId,
+      interaction.focusedValue,
+      25,
+      roleNamesById,
+    );
+  } catch (error: unknown) {
+    context.logger.error('team autocomplete lookup failed', error, {
+      commandName: interaction.commandName,
+      guildId: interaction.guildId,
+    });
+    await interaction.respond([]);
+    return;
+  }
+  await interaction.respond(choices.slice(0, 25));
 }
 
 function chunkDataImportIssues(issues: readonly DataImportIssue[]): string[] {
@@ -301,7 +311,6 @@ const dataCommand: CommandDefinition = {
       throw new ConfigurationError('data import support is unavailable');
     }
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const result = await service.importGuild({
       authorization: execution.authorization,
       fetchMembers: () => interaction.fetchGuildMembers!(),
@@ -403,10 +412,7 @@ const healthCommand: CommandDefinition = {
         },
       ],
     });
-    await interaction.reply({
-      embeds: [embed],
-      flags: MessageFlags.Ephemeral,
-    });
+    await interaction.editReply({ embeds: [embed] });
   },
 };
 
@@ -545,7 +551,6 @@ const setupCommand: CommandDefinition = {
       });
 
       if (subcommand === 'view') {
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const result = await service.list(execution.authorization);
         const resolved = await Promise.all(
           result.permissions.map(async (permission) => ({
@@ -586,7 +591,6 @@ const setupCommand: CommandDefinition = {
 
       const target = requireUser(execution.options, 'user');
       if (target.bot) throw new BotUserNotAllowedError('bots cannot hold Bot Permissions');
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result =
         subcommandGroup === 'botpermadmin'
           ? await service.addAdmin({
@@ -656,7 +660,6 @@ const setupCommand: CommandDefinition = {
 
     if (subcommand === 'league') {
       const timeoutMinutes = execution.options.getInteger('offer_timeout_minutes');
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.guildSetupService.setupGuildOnly({
         authorization: execution.authorization,
         guildName: execution.guildName,
@@ -701,7 +704,6 @@ const setupCommand: CommandDefinition = {
       validateTextChannel(transfer, 'transfer');
       validateTextChannel(audit, 'audit');
 
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.guildSetupService.setupChannels({
         authorization: execution.authorization,
         guildName: execution.guildName,
@@ -746,7 +748,6 @@ const setupCommand: CommandDefinition = {
       const atm = requireRole(execution.options, 'assistant_manager');
       const pm = requireRole(execution.options, 'player_manager');
 
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.guildSetupService.setupRoles({
         authorization: execution.authorization,
         guildName: execution.guildName,
@@ -786,7 +787,6 @@ const setupCommand: CommandDefinition = {
     }
 
     if (subcommand === 'view') {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const view = await context.guildSetupService.getView(execution.guildId);
 
       const channelLines = [
@@ -916,7 +916,6 @@ const teamCommand: CommandDefinition = {
     const actorDisplayName = getUserDisplayName(interaction, execution.authorization.discordUserId);
 
     if (subcommand === 'add') {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const rawEmoji = requireString(execution.options, 'emoji');
       const validatedEmoji = validateTeamEmoji(rawEmoji, guildEmojis);
       const role = requireRole(execution.options, 'role');
@@ -967,7 +966,6 @@ const teamCommand: CommandDefinition = {
     }
 
     if (subcommand === 'edit') {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const teamId = requireString(execution.options, 'team');
       const role = execution.options.getRole('role');
       const rawEmoji = execution.options.getString('emoji');
@@ -1028,7 +1026,6 @@ const teamCommand: CommandDefinition = {
     }
 
     // team list is private to the invoking user
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const teams = await context.clubManagementService.listActive(execution.guildId);
     if (teams.length === 0) {
       const embed = createInfoEmbed({
@@ -1109,7 +1106,6 @@ const limitCommand: CommandDefinition = {
 
     if (subcommand === 'default') {
       const amount = requireInteger(execution.options, 'amount');
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.limitManagementService.setDefaultLimit({
         authorization: execution.authorization,
         amount,
@@ -1151,7 +1147,6 @@ const limitCommand: CommandDefinition = {
     if (subcommand === 'team') {
       const teamId = requireString(execution.options, 'team');
       const amount = requireInteger(execution.options, 'amount');
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.limitManagementService.setTeamLimit({
         authorization: execution.authorization,
         clubId: teamId,
@@ -1196,7 +1191,6 @@ const limitCommand: CommandDefinition = {
 
     if (subcommand === 'reset') {
       const teamId = requireString(execution.options, 'team');
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.limitManagementService.resetTeamLimit({
         authorization: execution.authorization,
         clubId: teamId,
@@ -1244,7 +1238,6 @@ const limitCommand: CommandDefinition = {
 
     // limit view is private to the invoking user
     const teamId = execution.options.getString('team') ?? undefined;
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const view = await context.limitManagementService.viewLimit(execution.guildId, teamId);
 
     if (view.selectedClub !== undefined) {
@@ -1353,7 +1346,6 @@ const staffCommand: CommandDefinition = {
       const staffType = requireString(execution.options, 'staff_type') as StaffType;
       const targetDisplayName = user.displayName || getUserDisplayName(interaction, user.id);
 
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.staffManagementService.appoint({
         authorization: execution.authorization,
         clubId: teamId,
@@ -1391,7 +1383,6 @@ const staffCommand: CommandDefinition = {
     if (subcommand === 'remove') {
       const teamId = requireString(execution.options, 'team');
       const staffType = requireString(execution.options, 'staff_type') as StaffType;
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await context.staffManagementService.remove(
         execution.authorization,
         teamId,
@@ -1426,7 +1417,6 @@ const staffCommand: CommandDefinition = {
     }
 
     // staff list is private to the invoking user
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const selectedTeamId = execution.options.getString('team');
     if (selectedTeamId) {
       const staff = await context.staffManagementService.list(execution.guildId, selectedTeamId);
@@ -1551,7 +1541,6 @@ const rosterCommand: CommandDefinition = {
       }
       const selectedPlayer = requireUser(execution.options, 'player');
       const occurredAt = new Date();
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result =
         subcommand === 'add'
           ? await service.add({
@@ -1616,7 +1605,6 @@ const rosterCommand: CommandDefinition = {
     const teamId = requireString(execution.options, 'team');
 
     // roster view is private to the invoking user and matches the visual specification
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const result = await context.rosterManagementService.list(execution.guildId, teamId);
     const settings = await context.guildConfigurationService
       .load(execution.guildId)
@@ -1740,7 +1728,6 @@ const teamHealthCommand: CommandDefinition = {
     ),
   async execute(interaction, context) {
     const execution = await enforceChannelPolicy(interaction, context);
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const service = context.teamHealthService;
     if (service === undefined) {
@@ -1848,7 +1835,6 @@ const folistCommand: CommandDefinition = {
     .setDescription("List every active team's Team Manager"),
   async execute(interaction, context) {
     const execution = await enforceChannelPolicy(interaction, context);
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const service = context.franchiseOwnerListService;
     if (service === undefined) {
@@ -1939,8 +1925,6 @@ const offerCommand: CommandDefinition = {
     const player = requireUser(execution.options, 'player');
     const targetDisplayName = player.displayName || getUserDisplayName(interaction, player.id);
     const actorDisplayName = getUserDisplayName(interaction, execution.authorization.discordUserId);
-
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     // derive the team from the staff appointment
     const destinationClub = await context.staffManagementService.getCallerActiveStaffClub(

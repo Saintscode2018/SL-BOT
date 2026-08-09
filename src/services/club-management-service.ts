@@ -196,9 +196,9 @@ export class ClubManagementService {
     limit = 25,
     roleNamesById: Readonly<Record<string, string>> = {},
   ): Promise<Array<{ name: string; value: string }>> {
-    const guild = await new GuildRepository(this.database).getByDiscordGuildId(discordGuildId);
-    if (guild === null) return [];
-    const clubs = await new ClubRepository(this.database).listActive(guild.id);
+    const clubs = await new ClubRepository(this.database).listActiveByDiscordGuildId(
+      discordGuildId,
+    );
     const normalized = query.trim().toLowerCase();
     return clubs
       .map((club) => ({
@@ -209,7 +209,7 @@ export class ClubManagementService {
         ),
       }))
       .filter(({ label }) => normalized.length === 0 || label.toLowerCase().includes(normalized))
-      .slice(0, Math.min(limit, 25))
+      .slice(0, Math.min(Math.max(limit, 0), 25))
       .map(({ club, label }) => ({ name: label, value: club.id }));
   }
 }

@@ -97,14 +97,13 @@ export class RosterPromotionDemotionCommandHandler {
     const destinationStaffType: Exclude<StaffMembershipType, 'TEAM_MANAGER'> =
       rankOption === 'ATM' ? 'ASSISTANT_MANAGER' : 'PLAYER_MANAGER';
 
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await this.channelPolicy.validateChannelPolicy({
       authorization: execution.authorization,
       channelId: execution.channelId,
       commandName: 'promote',
       subcommand: null,
     });
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
     const eligibility = await this.service.getPromotionEligibility(
       execution.guildId,
       execution.authorization.discordUserId,
@@ -196,14 +195,13 @@ export class RosterPromotionDemotionCommandHandler {
     const execution = requireGuildExecution(interaction, { requireChannel: true });
     const staffOption = requireUser(execution.options, 'staff');
 
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await this.channelPolicy.validateChannelPolicy({
       authorization: execution.authorization,
       channelId: execution.channelId,
       commandName: 'demote',
       subcommand: null,
     });
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
     const eligibility = await this.service.getDemotionEligibility(
       execution.guildId,
       execution.authorization.discordUserId,

@@ -83,6 +83,13 @@ export class ClubRepository {
     });
   }
 
+  public async listActiveByDiscordGuildId(discordGuildId: string): Promise<Club[]> {
+    return this.db.club.findMany({
+      where: { active: true, guild: { discordGuildId } },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+  }
+
   public async listActiveWithUniqueMemberCounts(
     guildId: string,
   ): Promise<Array<Club & { activePlayerCount: number }>> {

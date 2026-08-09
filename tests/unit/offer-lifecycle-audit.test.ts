@@ -287,7 +287,10 @@ describe('Offer Lifecycle Audit Routing', () => {
         $transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => {
           const fakeTx = {
             offer: {
-              findUnique: vi.fn().mockResolvedValue(dummyOffer),
+              findUnique: vi.fn().mockResolvedValue({
+                ...dummyOffer,
+                expiresAt: new Date('2100-08-09T10:00:00Z'),
+              }),
               updateMany: vi.fn().mockResolvedValue({ count: 1 }),
             },
             leagueUser: {

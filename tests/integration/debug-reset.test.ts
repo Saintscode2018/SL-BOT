@@ -131,9 +131,13 @@ function button(
   interaction: ButtonInteraction;
   reply: ReturnType<typeof vi.fn>;
   update: ReturnType<typeof vi.fn>;
+  deferUpdate: ReturnType<typeof vi.fn>;
+  editReply: ReturnType<typeof vi.fn>;
 } {
   const reply = vi.fn();
   const update = vi.fn();
+  const deferUpdate = vi.fn(() => Promise.resolve());
+  const editReply = vi.fn(() => Promise.resolve());
   const interaction = {
     customId,
     guildId: firstDiscordGuildId,
@@ -143,8 +147,10 @@ function button(
     memberPermissions: { has: () => administrator },
     reply,
     update,
+    deferUpdate,
+    editReply,
   } as unknown as ButtonInteraction;
-  return { interaction, reply, update };
+  return { interaction, reply, update, deferUpdate, editReply };
 }
 
 function resetInteraction(input: {
@@ -230,7 +236,8 @@ describe('debug reset', () => {
     expect(accepted).toEqual([originalConfirm.interaction]);
     expect(otherConfirm.reply).not.toHaveBeenCalled();
     expect(otherCancel.reply).not.toHaveBeenCalled();
-    expect(originalConfirm.update).toHaveBeenCalledOnce();
+    expect(originalConfirm.deferUpdate).toHaveBeenCalledOnce();
+    expect(originalConfirm.editReply).toHaveBeenCalledOnce();
     expect(await context.client.guild.count()).toBe(1);
     expect(await context.client.guildSettings.count()).toBe(0);
     expect(await context.client.botPermission.count()).toBe(1);
@@ -388,6 +395,7 @@ describe('debug reset', () => {
       deferred: false,
       reply: vi.fn(),
       deferReply: vi.fn(),
+      deferUpdate: vi.fn(),
       editReply: vi.fn(),
       followUp: vi.fn(),
     };
@@ -434,8 +442,9 @@ describe('debug reset', () => {
         }),
       );
 
-      expect(confirm.update).toHaveBeenCalledOnce();
-      const updateCall = confirm.update.mock.calls[0] as [
+      expect(confirm.deferUpdate).toHaveBeenCalledOnce();
+      expect(confirm.editReply).toHaveBeenCalledOnce();
+      const updateCall = confirm.editReply.mock.calls[0] as [
         { embeds: Array<{ data: { title?: string; description?: string } }> },
       ];
       expect(updateCall[0].embeds[0]?.data.title).toContain('Debug Data Reset');
@@ -458,8 +467,9 @@ describe('debug reset', () => {
 
       expect(setupAuditService.publish).not.toHaveBeenCalled();
       expect(await context.client.guild.count()).toBe(1);
-      expect(confirm.update).toHaveBeenCalledOnce();
-      const updateCall = confirm.update.mock.calls[0] as [
+      expect(confirm.deferUpdate).toHaveBeenCalledOnce();
+      expect(confirm.editReply).toHaveBeenCalledOnce();
+      const updateCall = confirm.editReply.mock.calls[0] as [
         { embeds: Array<{ data: { description?: string } }> },
       ];
       expect(updateCall[0].embeds[0]?.data.description).not.toContain('could not be delivered');
@@ -486,8 +496,9 @@ describe('debug reset', () => {
 
       expect(setupAuditService.publish).toHaveBeenCalledOnce();
       expect(await context.client.guild.count()).toBe(1);
-      expect(confirm.update).toHaveBeenCalledOnce();
-      const updateCall = confirm.update.mock.calls[0] as [
+      expect(confirm.deferUpdate).toHaveBeenCalledOnce();
+      expect(confirm.editReply).toHaveBeenCalledOnce();
+      const updateCall = confirm.editReply.mock.calls[0] as [
         { embeds: Array<{ data: { description?: string } }> },
       ];
       expect(updateCall[0].embeds[0]?.data.description).toContain(

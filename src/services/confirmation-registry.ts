@@ -128,12 +128,12 @@ export class ConfirmationRegistry {
     return executeWithFreshAuthorization(context);
   }
 
-  public async cancel(
+  public cancel(
     customId: string,
     discordUserId: string,
     now = new Date(),
     discordGuildId?: string,
-  ): Promise<ConfirmationContext> {
+  ): ConfirmationContext {
     const record = this.resolve(customId, discordUserId, now, ['cancel']);
     if (discordGuildId !== undefined && record.discordGuildId !== discordGuildId) {
       throw new StaleConfirmationError();
@@ -141,14 +141,15 @@ export class ConfirmationRegistry {
     record.status = 'CANCELLED';
     clearTimeout(record.timer);
     if (record.onCancel !== undefined) {
-      try {
-        await record.onCancel();
-      } catch (error: unknown) {
-        this.logger.warn('confirmation cancel response could not be updated', {
-          confirmationId: record.id,
-          error,
+      const onCancel = record.onCancel;
+      queueMicrotask(() => {
+        void onCancel().catch((error: unknown) => {
+          this.logger.warn('confirmation cancel response could not be updated', {
+            confirmationId: record.id,
+            error,
+          });
         });
-      }
+      });
     }
     return this.context(record);
   }

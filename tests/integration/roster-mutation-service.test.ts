@@ -1,4 +1,4 @@
-import type { Club, Guild } from '@prisma/client';
+import type { Club, Guild, Prisma } from '@prisma/client';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -334,6 +334,74 @@ describe('roster mutation service', () => {
     expect(released.playerMembership!.status).toBe('ENDED');
     expect(released.staffMembership?.status).toBe('ENDED');
     expect(released.roleMutation.removeRoles.map(({ purpose }) => purpose)).toEqual(['TEAM', 'PM']);
+  });
+
+  it('keeps Discord and announcements outside one short release write transaction', async () => {
+    await service.appointStaffImmediately({ ...input(actorId), staffType: 'TEAM_MANAGER' });
+    await service.appointStaffImmediately({ ...input(memberId), staffType: 'PLAYER_MANAGER' });
+    let insideTransaction = false;
+    let transactionCount = 0;
+    let transactionTimeout: number | undefined;
+    const order: string[] = [];
+    const trackedClient = new Proxy(database.client, {
+      get(target, property) {
+        if (property === '$transaction') {
+          return async (
+            callback: (transaction: Prisma.TransactionClient) => Promise<unknown>,
+            options?: { timeout?: number },
+          ) => {
+            transactionCount += 1;
+            transactionTimeout = options?.timeout;
+            return target.$transaction(async (transaction) => {
+              insideTransaction = true;
+              order.push('transaction:start');
+              try {
+                return await callback(transaction);
+              } finally {
+                order.push('transaction:end');
+                insideTransaction = false;
+              }
+            }, options);
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function'
+          ? (...args: unknown[]): unknown => Reflect.apply(value, target, args) as unknown
+          : value;
+      },
+    });
+    const apply = vi.fn(() => {
+      expect(insideTransaction).toBe(false);
+      order.push('roles');
+      return Promise.resolve({ addedRoles: [], removedRoles: [] });
+    });
+    const transferPublish = vi.fn(() => {
+      expect(insideTransaction).toBe(false);
+      order.push('transfer');
+      return Promise.resolve(true);
+    });
+    const auditPublish = vi.fn(() => {
+      expect(insideTransaction).toBe(false);
+      order.push('audit');
+      return Promise.resolve(true);
+    });
+    const synchronized = new RoleSynchronizedMutationService(
+      { apply, compensate: vi.fn(() => Promise.resolve()) },
+      { publish: transferPublish },
+      { publish: auditPublish },
+      new MemoryLogger(),
+    );
+
+    const released = await new RosterMutationService(
+      trackedClient,
+      synchronized,
+    ).releaseMemberCompletely(input(memberId));
+
+    expect(released.playerMembership?.status).toBe('ENDED');
+    expect(released.staffMembership?.status).toBe('ENDED');
+    expect(transactionCount).toBe(1);
+    expect(transactionTimeout).toBe(10_000);
+    expect(order).toEqual(['roles', 'transaction:start', 'transaction:end', 'transfer', 'audit']);
   });
 
   it('enforces team scope and squad capacity inside the mutation transaction', async () => {

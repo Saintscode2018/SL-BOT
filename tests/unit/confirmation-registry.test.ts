@@ -52,13 +52,15 @@ describe('confirmation registry', () => {
     ).toThrow(StaleConfirmationError);
   });
 
-  it('consumes cancel atomically, updates the response, and rejects double handling', async () => {
+  it('consumes cancel atomically, queues the response update, and rejects double handling', async () => {
     const registry = new ConfirmationRegistry(new MemoryLogger());
     const onCancel = vi.fn(() => Promise.resolve());
     const confirmation = registry.create(context, { now, onCancel });
-    await expect(
+    expect(
       registry.cancel(confirmation.cancelCustomId, context.initiatorDiscordUserId, now),
-    ).resolves.toEqual(context);
+    ).toEqual(context);
+    expect(onCancel).not.toHaveBeenCalled();
+    await Promise.resolve();
     expect(onCancel).toHaveBeenCalledOnce();
     expect(() =>
       registry.consume(confirmation.confirmCustomId, context.initiatorDiscordUserId, now),

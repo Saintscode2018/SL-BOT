@@ -76,7 +76,7 @@ describe('confirmation-ui helpers', () => {
       const mockConfirmations: Pick<ConfirmationRegistry, 'cancel'> = {
         cancel: (customId: string, userId: string, now?: Date, guildId?: string) => {
           cancelFn(customId, userId, now, guildId);
-          return Promise.resolve(mockContext);
+          return mockContext;
         },
       };
       const result = await handleConfirmationCancel(mockInteraction, mockConfirmations, new Date());
@@ -108,7 +108,7 @@ describe('confirmation-ui helpers', () => {
       const mockConfirmations: Pick<ConfirmationRegistry, 'cancel'> = {
         cancel: (customId: string, userId: string, now?: Date, guildId?: string) => {
           cancelFn(customId, userId, now, guildId);
-          return Promise.resolve(mockContext);
+          return mockContext;
         },
       };
       const now = new Date('2026-08-07T12:00:00Z');

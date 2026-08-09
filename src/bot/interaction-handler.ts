@@ -8,6 +8,14 @@ import {
 } from 'discord.js';
 
 import type { Logger } from '../logging/logger.js';
+import {
+  AuthorizationError,
+  ConflictError,
+  EntityNotFoundError,
+  InvalidStateTransitionError,
+  SquadFullError,
+  ValidationError,
+} from '../domain/errors.js';
 import type { GuildMemberSnapshot } from '../services/data-import-service.js';
 import type { CommandRegistry } from './command-registry.js';
 import { createErrorEmbed } from './embeds.js';
@@ -28,6 +36,47 @@ import type {
 } from './types.js';
 
 type ResolvableDiscordInteraction = ChatInputCommandInteraction | ButtonInteraction;
+
+function discordErrorCode(error: unknown): number | null {
+  if (typeof error !== 'object' || error === null) return null;
+  if ('code' in error) {
+    const code = Number(error.code);
+    if (Number.isFinite(code)) return code;
+  }
+  return 'cause' in error ? discordErrorCode(error.cause) : null;
+}
+
+export function isUnknownInteractionError(error: unknown): boolean {
+  return discordErrorCode(error) === 10_062;
+}
+
+export function isExpectedInteractionRejection(error: unknown): boolean {
+  return (
+    error instanceof AuthorizationError ||
+    error instanceof ConflictError ||
+    error instanceof EntityNotFoundError ||
+    error instanceof InvalidStateTransitionError ||
+    error instanceof SquadFullError ||
+    error instanceof ValidationError
+  );
+}
+
+function logInteractionFailure(
+  logger: Logger,
+  message: string,
+  error: unknown,
+  context: Readonly<Record<string, unknown>>,
+): void {
+  if (isExpectedInteractionRejection(error)) {
+    logger.info(`${message}: expected rejection`, {
+      ...context,
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+    return;
+  }
+  logger.error(message, error, context);
+}
 
 function memberDisplayName(member: {
   displayName: string;
@@ -391,7 +440,16 @@ export async function handleInteractionCreate(
   try {
     await command.execute(interaction, context);
   } catch (error: unknown) {
-    logger.error('command execution failed', error, { commandName: interaction.commandName });
+    if (isUnknownInteractionError(error)) {
+      logger.warn('command interaction expired before acknowledgement', {
+        commandName: interaction.commandName,
+        discordErrorCode: 10_062,
+      });
+      return;
+    }
+    logInteractionFailure(logger, 'command execution failed', error, {
+      commandName: interaction.commandName,
+    });
 
     const mapped = mapDiscordError(error);
     const response: SafeInteractionResponse = {
@@ -407,10 +465,16 @@ export async function handleInteractionCreate(
         await interaction.reply(response);
       }
     } catch (responseError: unknown) {
-      logger.warn('command failure response could not be sent', {
-        commandName: interaction.commandName,
-        error: responseError,
-      });
+      if (isUnknownInteractionError(responseError)) {
+        logger.warn('command interaction expired while sending failure response', {
+          commandName: interaction.commandName,
+          discordErrorCode: 10_062,
+        });
+      } else {
+        logger.error('command failure response could not be sent', responseError, {
+          commandName: interaction.commandName,
+        });
+      }
     }
   }
 }
@@ -599,8 +663,26 @@ export function createInteractionCreateHandler(
       try {
         await command.autocomplete(adapted, context);
       } catch (error: unknown) {
+        if (isUnknownInteractionError(error)) {
+          logger.warn('autocomplete interaction expired before response', {
+            commandName: adapted.commandName,
+            discordErrorCode: 10_062,
+          });
+          return;
+        }
         logger.error('command autocomplete failed', error, { commandName: adapted.commandName });
-        await adapted.respond([]).catch(() => undefined);
+        await adapted.respond([]).catch((responseError: unknown) => {
+          if (isUnknownInteractionError(responseError)) {
+            logger.warn('autocomplete interaction expired while sending fallback response', {
+              commandName: adapted.commandName,
+              discordErrorCode: 10_062,
+            });
+          } else {
+            logger.error('autocomplete fallback response could not be sent', responseError, {
+              commandName: adapted.commandName,
+            });
+          }
+        });
       }
       return;
     }
@@ -625,23 +707,45 @@ export function createInteractionCreateHandler(
           await context.offerButtonHandler.handle(adapted);
         }
       } catch (error: unknown) {
-        logger.error('button interaction failed', error, { customId: adapted.customId });
+        if (isUnknownInteractionError(error)) {
+          logger.warn('button interaction expired before acknowledgement', {
+            customId: adapted.customId,
+            discordErrorCode: 10_062,
+          });
+          return;
+        }
+        logInteractionFailure(logger, 'button interaction failed', error, {
+          customId: adapted.customId,
+        });
         const mapped = mapDiscordError(error);
         const response = {
           embeds: [mapped.embed],
           flags: MessageFlags.Ephemeral,
         } as const;
-        if (adapted.deferred && !adapted.replied) {
-          await adapted.editReply({
-            embeds: [mapped.embed],
-            ...(isDeparture || isPromotionDemotion || isTeamDisbandment || isTeamSwap
-              ? { components: [] }
-              : {}),
-          });
-        } else if (adapted.replied) {
-          await adapted.followUp(response);
-        } else {
-          await adapted.reply(response);
+        try {
+          if (adapted.deferred && !adapted.replied) {
+            await adapted.editReply({
+              embeds: [mapped.embed],
+              ...(isDeparture || isPromotionDemotion || isTeamDisbandment || isTeamSwap
+                ? { components: [] }
+                : {}),
+            });
+          } else if (adapted.replied) {
+            await adapted.followUp(response);
+          } else {
+            await adapted.reply(response);
+          }
+        } catch (responseError: unknown) {
+          if (isUnknownInteractionError(responseError)) {
+            logger.warn('button interaction expired while sending failure response', {
+              customId: adapted.customId,
+              discordErrorCode: 10_062,
+            });
+          } else {
+            logger.error('button failure response could not be sent', responseError, {
+              customId: adapted.customId,
+            });
+          }
         }
       }
     }

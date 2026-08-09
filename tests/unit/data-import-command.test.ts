@@ -237,7 +237,7 @@ describe('/data import command', () => {
     ]);
   });
 
-  it('does not defer, fetch, import, or audit after channel-policy authorization denial', async () => {
+  it('defers before policy but does not fetch, import, or audit after authorization denial', async () => {
     const interaction = new DataCommandInteraction();
     const policy = vi.fn(() => Promise.reject(new AdministrativePermissionDeniedError()));
     const setup = context(result(), policy);
@@ -245,7 +245,7 @@ describe('/data import command', () => {
     await expect(dataCommand.execute(interaction, setup.commandContext)).rejects.toBeInstanceOf(
       AdministrativePermissionDeniedError,
     );
-    expect(interaction.deferredResponses).toEqual([]);
+    expect(interaction.deferredResponses).toEqual([{ flags: MessageFlags.Ephemeral }]);
     expect(interaction.fetchGuildMembers).not.toHaveBeenCalled();
     expect(setup.importGuild).not.toHaveBeenCalled();
     expect(setup.publish).not.toHaveBeenCalled();

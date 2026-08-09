@@ -232,6 +232,10 @@ describe('/team swap command and confirmation UI', () => {
   it('shows an ephemeral confirmation card with confirm/cancel buttons and team counts', async () => {
     const { handler, validateChannelPolicy } = fixture();
     const interaction = new CommandFixture();
+    validateChannelPolicy.mockImplementationOnce(() => {
+      expect(interaction.deferred).toBe(true);
+      return Promise.resolve();
+    });
 
     await handler.begin(interaction);
 
@@ -283,6 +287,10 @@ describe('/team swap command and confirmation UI', () => {
     const interaction = new CommandFixture();
     await handler.begin(interaction);
     const confirm = new ButtonFixture(customIds(interaction).confirm);
+    validateChannelPolicy.mockImplementationOnce(() => {
+      expect(confirm.deferred).toBe(true);
+      return Promise.resolve();
+    });
 
     await expect(handler.handleButton(confirm)).resolves.toBe(true);
     expect(validateChannelPolicy).toHaveBeenCalledTimes(2);

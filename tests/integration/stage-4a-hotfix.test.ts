@@ -7,6 +7,7 @@ import type {
   CommandContext,
   CommandInteraction,
   CommandInteractionOptions,
+  DeferredInteractionResponse,
   EditedInteractionResponse,
   SafeInteractionResponse,
 } from '../../src/bot/types.js';
@@ -33,6 +34,7 @@ import { MemoryLogger } from '../helpers/memory-logger.js';
 
 class MockCommandInteraction implements CommandInteraction {
   public readonly replies: SafeInteractionResponse[] = [];
+  public readonly deferrals: DeferredInteractionResponse[] = [];
   public readonly edits: EditedInteractionResponse[] = [];
   public readonly followUps: SafeInteractionResponse[] = [];
   public replied = false;
@@ -104,7 +106,8 @@ class MockCommandInteraction implements CommandInteraction {
     return Promise.resolve();
   }
 
-  public deferReply(): Promise<void> {
+  public deferReply(response?: DeferredInteractionResponse): Promise<void> {
+    this.deferrals.push(response ?? {});
     this.deferred = true;
     return Promise.resolve();
   }
@@ -458,11 +461,11 @@ describe('Stage 4A Hotfix Verification', () => {
 
       await handleInteractionCreate(interaction, registry, commandContext, logger);
 
-      expect(interaction.replies).toHaveLength(1);
-      const reply = interaction.replies[0];
-      expect(reply?.flags).toBe(64); // ephemeral message flag
-      expect(reply?.embeds).toBeDefined();
-      expect(reply?.embeds?.[0]?.data.title).toBe('❌ Wrong Command Channel');
+      expect(interaction.replies).toHaveLength(0);
+      expect(interaction.deferrals).toEqual([{ flags: 64 }]); // ephemeral message flag
+      expect(interaction.edits).toHaveLength(1);
+      expect(interaction.edits[0]?.embeds).toBeDefined();
+      expect(interaction.edits[0]?.embeds?.[0]?.data.title).toBe('❌ Wrong Command Channel');
     });
 
     it('returns an ephemeral embed for a successful mutation in the staff channel', async () => {

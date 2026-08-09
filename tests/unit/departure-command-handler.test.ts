@@ -422,7 +422,12 @@ describe('/demand confirmation flow', () => {
     await fixture.handler.beginDemand(command);
     const confirmId = buttonJson(command).find(({ label }) => label === 'Demand')?.custom_id;
     if (!confirmId) throw new Error('missing demand id');
-    await expect(fixture.handler.handleButton(new FakeButton(confirmId))).resolves.toBe(true);
+    const button = new FakeButton(confirmId);
+    fixture.departures.getDemandEligibility.mockImplementationOnce(() => {
+      expect(button.deferred).toBe(true);
+      return Promise.resolve(demandEligibility());
+    });
+    await expect(fixture.handler.handleButton(button)).resolves.toBe(true);
     expect(fixture.departures.demandFullDeparture).toHaveBeenCalledOnce();
     await expect(fixture.handler.handleButton(new FakeButton(confirmId))).rejects.toThrow(
       'already been handled',
@@ -520,6 +525,10 @@ describe('/release confirmation flow', () => {
       fixture.handler.handleButton(new FakeButton(releaseId, targetId)),
     ).rejects.toBeInstanceOf(ConfirmationOwnershipError);
     const button = new FakeButton(releaseId);
+    fixture.departures.getReleaseEligibility.mockImplementationOnce(() => {
+      expect(button.deferred).toBe(true);
+      return Promise.resolve(releaseEligibility());
+    });
     await expect(fixture.handler.handleButton(button)).resolves.toBe(true);
     expect(fixture.departures.release).toHaveBeenCalledOnce();
     expect(button.edits[0]?.embeds?.[0]?.data.title).toBe('✅ Player Released');

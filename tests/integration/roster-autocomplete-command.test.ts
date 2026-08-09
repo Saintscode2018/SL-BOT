@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { commandDefinitions } from '../../src/bot/commands.js';
 import type {
@@ -48,6 +48,7 @@ class RosterAutocompleteInteraction implements CommandAutocompleteInteraction {
   public readonly guildId = discordGuildId;
   public readonly focusedName = 'team';
   public readonly choices: Array<{ name: string; value: string }> = [];
+  public responseCount = 0;
 
   public constructor(
     public readonly commandName: string,
@@ -60,6 +61,7 @@ class RosterAutocompleteInteraction implements CommandAutocompleteInteraction {
   }
 
   public respond(choices: Array<{ name: string; value: string }>): Promise<void> {
+    this.responseCount += 1;
     this.choices.push(...choices);
     return Promise.resolve();
   }
@@ -274,5 +276,68 @@ describe('roster autocomplete command correlation', () => {
     await expect(
       rosters.list(discordGuildId, '123e4567-e89b-42d3-a456-426614174000'),
     ).rejects.toBeInstanceOf(TeamNotFoundError);
+  });
+
+  it('returns at most 25 active teams and never includes inactive teams', async () => {
+    const guild = await new GuildRepository(database.client).getByDiscordGuildId(discordGuildId);
+    if (guild === null) throw new Error('missing test guild');
+    const rows = Array.from({ length: 27 }, (_, index) => ({
+      guildId: guild.id,
+      discordRoleId: String(700000000000000100n + BigInt(index)),
+      emoji: '⚽',
+      active: index !== 26,
+    }));
+    await database.client.club.createMany({ data: rows });
+    const command = commandDefinitions.find(({ data }) => data.name === 'roster');
+    if (command?.autocomplete === undefined) throw new Error('roster autocomplete is missing');
+    const interaction = new RosterAutocompleteInteraction('roster', '', []);
+
+    await command.autocomplete(interaction, context);
+
+    expect(interaction.responseCount).toBe(1);
+    expect(interaction.choices).toHaveLength(25);
+    expect(interaction.choices.map(({ value }) => value)).not.toContain(
+      (
+        await database.client.club.findFirstOrThrow({
+          where: { discordRoleId: rows[26]!.discordRoleId },
+        })
+      ).id,
+    );
+  });
+
+  it('uses one lightweight club query without a guild lookup', async () => {
+    const findMany = vi.fn(() => Promise.resolve([]));
+    const lightweightService = new ClubManagementService({
+      club: { findMany },
+      guild: { findUnique: vi.fn(() => Promise.reject(new Error('unexpected guild lookup'))) },
+    } as unknown as CommandContext['database']);
+
+    await expect(lightweightService.autocomplete(discordGuildId, '', 25)).resolves.toEqual([]);
+    expect(findMany).toHaveBeenCalledOnce();
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { active: true, guild: { discordGuildId } },
+      }),
+    );
+  });
+
+  it('logs lookup failures, responds once with no choices, and does not mutate teams', async () => {
+    const command = commandDefinitions.find(({ data }) => data.name === 'roster');
+    if (command?.autocomplete === undefined) throw new Error('roster autocomplete is missing');
+    const logger = context.logger as MemoryLogger;
+    const countBefore = await database.client.club.count();
+    context.clubManagementService = {
+      autocomplete: vi.fn(() => Promise.reject(new Error('lookup failed'))),
+    } as unknown as CommandContext['clubManagementService'];
+    const interaction = new RosterAutocompleteInteraction('roster', 'team', []);
+
+    await command.autocomplete(interaction, context);
+
+    expect(interaction.responseCount).toBe(1);
+    expect(interaction.choices).toEqual([]);
+    expect(logger.entries).toContainEqual(
+      expect.objectContaining({ level: 'error', message: 'team autocomplete lookup failed' }),
+    );
+    await expect(database.client.club.count()).resolves.toBe(countBefore);
   });
 });

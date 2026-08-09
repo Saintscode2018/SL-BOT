@@ -21,6 +21,7 @@ import {
   MemberNotOnTeamError,
   SelfActionForbiddenError,
   SquadFullError,
+  StaleMutationStateError,
   StaleConfirmationError,
   StaffAlreadyAppointedError,
   StaffSlotOccupiedError,
@@ -43,6 +44,7 @@ import { toStaffRoleCode } from '../domain/roster-mutation.js';
 import { canReleaseStaffRole } from '../domain/roster-mutation.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { formatTeamIdentity } from '../domain/team-label.js';
+import type { DatabaseClient } from '../domain/types.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { ClubRepository } from '../repositories/club-repository.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
@@ -86,6 +88,13 @@ interface MutationContext {
   memberships: MembershipRepository;
 }
 
+interface PlannedMutation {
+  rolePlan: MemberRoleMutationPlan;
+  teamMemberships: ClubMembership[];
+  player: ClubMembership | null;
+  staff: ClubMembership | null;
+}
+
 type MutationKind =
   | 'APPOINT'
   | 'REMOVE_STAFF'
@@ -95,6 +104,19 @@ type MutationKind =
   | 'PROMOTE'
   | 'DEMOTE'
   | 'SIGN';
+
+// The write transaction contains only Prisma work, but SQLite lock contention can consume the
+// default five-second budget. Keep this override local to roster mutations after minimizing queries.
+export const rosterMutationTransactionTimeoutMs = 10_000;
+
+function sameRolePlan(left: MemberRoleMutationPlan, right: MemberRoleMutationPlan): boolean {
+  return (
+    left.discordGuildId === right.discordGuildId &&
+    left.discordUserId === right.discordUserId &&
+    JSON.stringify(left.addRoles) === JSON.stringify(right.addRoles) &&
+    JSON.stringify(left.removeRoles) === JSON.stringify(right.removeRoles)
+  );
+}
 
 export class RosterMutationService {
   public constructor(
@@ -140,65 +162,74 @@ export class RosterMutationService {
     kind: MutationKind,
     input: MemberMutationInput | StaffMutationInput,
   ): Promise<RosterMutationResult> {
-    const rolePlan = await this.database.$transaction(async (transaction) => {
-      const context = await this.loadContext(
-        transaction,
-        input,
-        kind === 'APPOINT' || kind === 'SIGN',
-      );
-      return this.validateAndPlan(transaction, context, kind, input);
-    });
+    const planningContext = await this.loadContext(
+      this.database,
+      input,
+      kind === 'APPOINT' || kind === 'SIGN',
+    );
+    const rolePlan = (await this.validateAndPlan(this.database, planningContext, kind, input))
+      .rolePlan;
     const mutate = () =>
-      this.database.$transaction(async (transaction) => {
-        const context = await this.loadContext(
-          transaction,
-          input,
-          kind === 'APPOINT' || kind === 'SIGN',
-        );
-        const commitRolePlan = await this.validateAndPlan(transaction, context, kind, input);
-        return this.mutate(transaction, context, kind, input, commitRolePlan);
-      });
+      this.database.$transaction(
+        async (transaction) => {
+          const context = await this.loadContext(
+            transaction,
+            input,
+            kind === 'APPOINT' || kind === 'SIGN',
+          );
+          const commitPlan = await this.validateAndPlan(transaction, context, kind, input);
+          if (!sameRolePlan(rolePlan, commitPlan.rolePlan)) throw new StaleMutationStateError();
+          return this.mutate(transaction, context, kind, input, commitPlan);
+        },
+        { timeout: rosterMutationTransactionTimeoutMs },
+      );
     if (this.synchronization === undefined) return mutate();
     return this.synchronization.execute(rolePlan, mutate);
   }
 
   private async loadContext(
-    transaction: Prisma.TransactionClient,
+    database: DatabaseClient,
     input: MemberMutationInput,
     createTarget: boolean,
   ): Promise<MutationContext> {
-    const guilds = new GuildRepository(transaction);
+    const guilds = new GuildRepository(database);
     const guild = await guilds.getByDiscordGuildId(input.discordGuildId);
     if (guild === null) throw new EntityNotFoundError('server is not configured');
-    const club = await new ClubRepository(transaction).getByIdInGuild(input.clubId, guild.id);
+    const users = new UserRepository(database);
+    const [club, settings, actor] = await Promise.all([
+      new ClubRepository(database).getByIdInGuild(input.clubId, guild.id),
+      guilds.getSettings(guild.id),
+      users.getOrCreateByDiscordUserId(input.actorDiscordUserId),
+    ]);
     if (club === null) throw new EntityNotFoundError('team was not found');
     if (!club.active) throw new ClubInactiveError('team is inactive');
-    const users = new UserRepository(transaction);
-    const actor = await users.getOrCreateByDiscordUserId(input.actorDiscordUserId);
-    const existingUser = await users.getByDiscordUserId(input.targetDiscordUserId);
+    const existingUser =
+      input.targetDiscordUserId === input.actorDiscordUserId
+        ? actor
+        : await users.getByDiscordUserId(input.targetDiscordUserId);
     if (existingUser === null && !createTarget) throw new MemberIsFreeAgentError();
     const user =
       existingUser ?? (await users.getOrCreateByDiscordUserId(input.targetDiscordUserId));
     return {
       guild,
-      settings: await guilds.getSettings(guild.id),
+      settings,
       club,
       actor,
       user,
-      memberships: new MembershipRepository(transaction),
+      memberships: new MembershipRepository(database),
     };
   }
 
   private async validateAndPlan(
-    transaction: Prisma.TransactionClient,
+    database: DatabaseClient,
     context: MutationContext,
     kind: MutationKind,
     input: MemberMutationInput | StaffMutationInput,
-  ): Promise<MemberRoleMutationPlan> {
-    const activeMemberships = await context.memberships.listActiveMembershipsForUserInGuild(
-      context.guild.id,
-      context.user.id,
-    );
+  ): Promise<PlannedMutation> {
+    const [activeMemberships, actorStaff] = await Promise.all([
+      context.memberships.listActiveMembershipsForUserInGuild(context.guild.id, context.user.id),
+      context.memberships.getActiveStaffMembershipForUser(context.club.id, context.actor.id),
+    ]);
     const teamMemberships = activeMemberships.filter(({ clubId }) => clubId === context.club.id);
     const player =
       teamMemberships.find(({ membershipType }) => membershipType === 'PLAYER') ?? null;
@@ -207,10 +238,6 @@ export class RosterMutationService {
       teamMemberships.find(({ membershipType }) => membershipType === 'ASSISTANT_MANAGER') ??
       teamMemberships.find(({ membershipType }) => membershipType === 'PLAYER_MANAGER') ??
       null;
-    const actorStaff = await context.memberships.getActiveStaffMembershipForUser(
-      context.club.id,
-      context.actor.id,
-    );
     const addRoles: PlannedDiscordRole[] = [];
     const removeRoles: PlannedDiscordRole[] = [];
 
@@ -230,7 +257,7 @@ export class RosterMutationService {
       if (activeMemberships.some(({ clubId }) => clubId !== context.club.id)) {
         throw new MemberAlreadySignedError();
       }
-      await this.assertSlotOpen(transaction, context.club.id, desired);
+      await this.assertSlotOpen(database, context.club.id, desired);
       if (teamMemberships.length === 0) await this.assertCapacity(context);
       addRoles.push(this.teamRole(context), this.staffRole(context.settings, desired));
     } else if (kind === 'SIGN') {
@@ -272,7 +299,7 @@ export class RosterMutationService {
         const desired = (input as StaffMutationInput).staffType;
         this.assertPromotion(actorStaff, staff, desired, context.club.id);
         if (staff?.membershipType === desired) throw new TargetAlreadyDesiredRankError();
-        await this.assertSlotOpen(transaction, context.club.id, desired);
+        await this.assertSlotOpen(database, context.club.id, desired);
         addRoles.push(this.staffRole(context.settings, desired));
         if (staff !== null) {
           removeRoles.push(
@@ -325,10 +352,15 @@ export class RosterMutationService {
     }
 
     return {
-      discordGuildId: context.guild.discordGuildId,
-      discordUserId: context.user.discordUserId,
-      addRoles,
-      removeRoles,
+      rolePlan: {
+        discordGuildId: context.guild.discordGuildId,
+        discordUserId: context.user.discordUserId,
+        addRoles,
+        removeRoles,
+      },
+      teamMemberships,
+      player,
+      staff,
     };
   }
 
@@ -337,18 +369,12 @@ export class RosterMutationService {
     context: MutationContext,
     kind: MutationKind,
     input: MemberMutationInput | StaffMutationInput,
-    roleMutation: MemberRoleMutationPlan,
+    plan: PlannedMutation,
   ): Promise<RosterMutationResult> {
     const occurredAt = input.occurredAt ?? new Date();
-    let player = await context.memberships.getActivePlayerMembership(
-      context.guild.id,
-      context.user.id,
-    );
+    let player = plan.player;
     if (player?.clubId !== context.club.id) player = null;
-    let staff = await context.memberships.getActiveStaffMembershipForUser(
-      context.club.id,
-      context.user.id,
-    );
+    let staff = plan.staff;
     const previousStaffType = staff === null ? null : (staff.membershipType as StaffMembershipType);
     let transactionType: LeagueTransactionType;
     let staffAudit: {
@@ -431,17 +457,17 @@ export class RosterMutationService {
         staff = ended;
         transactionType = 'STAFF_DEMOTION';
       } else {
-        const activeTeamMemberships = await context.memberships.listActiveMembershipsForUserOnClub(
+        const endedMemberships = await context.memberships.endActiveForUserOnClub(
           context.club.id,
           context.user.id,
+          { leftAt: occurredAt, endedByUserId: context.actor.id },
         );
-        for (const membership of activeTeamMemberships) {
-          const ended = await context.memberships.end(membership.id, {
-            leftAt: occurredAt,
-            endedByUserId: context.actor.id,
-          });
-          if (membership.membershipType === 'PLAYER') player = ended;
-          else if (staff?.id === membership.id) staff = ended;
+        if (endedMemberships.length !== plan.teamMemberships.length) {
+          throw new StaleMutationStateError();
+        }
+        for (const ended of endedMemberships) {
+          if (ended.membershipType === 'PLAYER') player = ended;
+          else if (staff?.id === ended.id) staff = ended;
         }
         transactionType = kind === 'LEAVE_TEAM' ? 'DEMAND_RELEASE' : 'RELEASE';
       }
@@ -470,15 +496,10 @@ export class RosterMutationService {
         leagueTransaction.id,
       );
     }
-    const currentRosterSize = await context.memberships.countActiveUniqueMembers(context.club.id);
-    const teamManagerMembership = await context.memberships.getActiveStaffAppointment(
-      context.club.id,
-      'TEAM_MANAGER',
-    );
-    const teamManager =
-      teamManagerMembership === null
-        ? null
-        : await new UserRepository(transactionClient).getById(teamManagerMembership.userId);
+    const [currentRosterSize, teamManagerMembership] = await Promise.all([
+      context.memberships.countActiveUniqueMembers(context.club.id),
+      context.memberships.getActiveStaffAppointmentWithUser(context.club.id, 'TEAM_MANAGER'),
+    ]);
     const announcement = this.buildAnnouncement(
       context,
       kind,
@@ -488,7 +509,7 @@ export class RosterMutationService {
       previousStaffType,
       occurredAt,
       currentRosterSize,
-      teamManager?.discordUserId ?? null,
+      teamManagerMembership?.user.discordUserId ?? null,
     );
     const auditAnnouncement = this.buildAuditAnnouncement(
       context,
@@ -506,7 +527,7 @@ export class RosterMutationService {
       staffMembership: staff,
       previousStaffType,
       transaction: leagueTransaction,
-      roleMutation,
+      roleMutation: plan.rolePlan,
       announcement,
       auditAnnouncement,
     };
@@ -668,11 +689,11 @@ export class RosterMutationService {
   }
 
   private async assertSlotOpen(
-    transaction: Prisma.TransactionClient,
+    database: DatabaseClient,
     clubId: string,
     staffType: StaffMembershipType,
   ): Promise<void> {
-    const occupied = await new MembershipRepository(transaction).getActiveStaffAppointment(
+    const occupied = await new MembershipRepository(database).getActiveStaffAppointment(
       clubId,
       staffType,
     );

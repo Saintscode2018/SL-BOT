@@ -53,14 +53,13 @@ export class TeamDisbandmentCommandHandler {
     const execution = requireGuildExecution(interaction, { requireChannel: true });
     const teamId = requireString(execution.options, 'team');
 
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await this.channelPolicy.validateChannelPolicy({
       authorization: execution.authorization,
       channelId: execution.channelId,
       commandName: 'team',
       subcommand: 'disband',
     });
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
     const eligibility = await this.service.getEligibility(execution.authorization, teamId);
     const { team, role } = await resolveTeamPresentation(interaction, eligibility.team);
     const occurredAt = this.now();
@@ -166,13 +165,13 @@ export class TeamDisbandmentCommandHandler {
     }
 
     const authorization = requireButtonAuthorization(interaction);
+    await interaction.deferUpdate();
     await this.channelPolicy.validateChannelPolicy({
       authorization,
       channelId: interaction.channelId!,
       commandName: 'team',
       subcommand: 'disband',
     });
-    await interaction.deferUpdate();
     await this.complete(interaction, consumed.context, authorization);
     return true;
   }
