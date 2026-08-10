@@ -169,6 +169,14 @@ export class ModerationTimeoutTooLongError extends ModerationCaseError {
   }
 }
 
+export class ModerationExistingTimeoutLongerError extends ModerationCaseError {
+  public readonly code = 'MODERATION_EXISTING_TIMEOUT_LONGER';
+
+  public constructor() {
+    super('That user already has a longer active Discord timeout.');
+  }
+}
+
 export class ModerationChannelNotConfiguredError extends ConfigurationError {
   public readonly code = 'MODERATION_CHANNEL_NOT_CONFIGURED';
 

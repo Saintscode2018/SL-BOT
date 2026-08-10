@@ -8,6 +8,7 @@ import {
   ModerationCaseNotActiveError,
   ModerationChannelNotConfiguredError,
   ModerationCompensationFailedError,
+  ModerationExistingTimeoutLongerError,
   ModerationSelfTargetError,
   ModerationTargetNotModeratableError,
   ModerationTimeoutTooLongError,
@@ -146,6 +147,9 @@ export class ModerationMuteService {
     validateMember(member);
     const expiresAt = new Date(issuedAt.getTime() + input.durationSeconds * 1000);
     const priorTimeout = previousActiveTimeout(member, issuedAt);
+    if (priorTimeout !== null && priorTimeout.getTime() > expiresAt.getTime()) {
+      throw new ModerationExistingTimeoutLongerError();
+    }
     await this.timeouts.applyTimeout(
       input.authorization.discordGuildId,
       input.targetDiscordUserId,

@@ -8,6 +8,8 @@ import {
   ModerationCaseAlreadyActiveError,
   ModerationChannelNotConfiguredError,
   ModerationCompensationFailedError,
+  ModerationExistingTimeoutLongerError,
+  ModerationMemberFetchError,
   ModerationMemberNotFoundError,
   ModerationSelfTargetError,
   ModerationTargetNotModeratableError,
@@ -273,6 +275,133 @@ describe('moderation mute execution service', () => {
     ]);
   });
 
+  it.each([
+    ['one millisecond before', -1],
+    ['at the exact boundary of', 0],
+  ])(
+    'treats a Discord timeout expiring %s the operation clock as inactive',
+    async (_label, expiryOffsetMilliseconds) => {
+      timeouts.snapshot = {
+        ...timeouts.snapshot,
+        timeoutUntil: new Date(issuedAt.getTime() + expiryOffsetMilliseconds),
+      };
+
+      const result = await service.mute({
+        authorization: authorization(),
+        targetDiscordUserId: targetId,
+        durationSeconds: 600,
+        bail: 0,
+        issuedAt,
+      });
+
+      expect(timeouts.applyTimeout).toHaveBeenCalledWith(
+        discordGuildId,
+        targetId,
+        result.moderationCase.expiresAt,
+        expect.any(String),
+      );
+      expect(result.moderationCase.expiresAt).toEqual(new Date(issuedAt.getTime() + 600_000));
+    },
+  );
+
+  it('extends a shorter active Discord timeout to the requested expiry', async () => {
+    timeouts.snapshot = {
+      ...timeouts.snapshot,
+      timeoutUntil: new Date(issuedAt.getTime() + 300_000),
+    };
+    const requestedUntil = new Date(issuedAt.getTime() + 600_000);
+
+    const result = await service.mute({
+      authorization: authorization(),
+      targetDiscordUserId: targetId,
+      durationSeconds: 600,
+      bail: 0,
+      issuedAt,
+    });
+
+    expect(timeouts.applyTimeout).toHaveBeenCalledWith(
+      discordGuildId,
+      targetId,
+      requestedUntil,
+      expect.any(String),
+    );
+    expect(timeouts.snapshot.timeoutUntil).toEqual(requestedUntil);
+    expect(result.moderationCase.expiresAt).toEqual(requestedUntil);
+  });
+
+  it('harmlessly reapplies an active Discord timeout at the exact requested expiry', async () => {
+    const requestedUntil = new Date(issuedAt.getTime() + 600_000);
+    timeouts.snapshot = { ...timeouts.snapshot, timeoutUntil: requestedUntil };
+
+    const result = await service.mute({
+      authorization: authorization(),
+      targetDiscordUserId: targetId,
+      durationSeconds: 600,
+      bail: 0,
+      issuedAt,
+    });
+
+    expect(timeouts.applyTimeout).toHaveBeenCalledWith(
+      discordGuildId,
+      targetId,
+      requestedUntil,
+      expect.any(String),
+    );
+    expect(result.moderationCase.expiresAt).toEqual(requestedUntil);
+    expect(announcements.plans).toHaveLength(1);
+  });
+
+  it.each([
+    ['one millisecond', 600_001],
+    ['seven days', 7 * 24 * 60 * 60 * 1000],
+  ])(
+    'rejects when the active Discord timeout is longer by %s without mutating state',
+    async (_label, existingOffsetMilliseconds) => {
+      const existingUntil = new Date(issuedAt.getTime() + existingOffsetMilliseconds);
+      timeouts.snapshot = { ...timeouts.snapshot, timeoutUntil: existingUntil };
+
+      const error = await service
+        .mute({
+          authorization: authorization(),
+          targetDiscordUserId: targetId,
+          durationSeconds: 600,
+          bail: 0,
+          issuedAt,
+        })
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ModerationExistingTimeoutLongerError);
+      expect(error).toMatchObject({
+        code: 'MODERATION_EXISTING_TIMEOUT_LONGER',
+        message: 'That user already has a longer active Discord timeout.',
+      });
+      expect(timeouts.applyTimeout).not.toHaveBeenCalled();
+      expect(timeouts.snapshot.timeoutUntil).toEqual(existingUntil);
+      await expect(database.client.moderationCase.count()).resolves.toBe(0);
+      expect(announcements.plans).toHaveLength(0);
+    },
+  );
+
+  it('preserves Discord inspection failures as infrastructure errors', async () => {
+    const inspectionError = new ModerationMemberFetchError({
+      cause: new Error('Discord inspection failed'),
+    });
+    timeouts.inspectError = inspectionError;
+
+    await expect(
+      service.mute({
+        authorization: authorization(),
+        targetDiscordUserId: targetId,
+        durationSeconds: 600,
+        bail: 0,
+        issuedAt,
+      }),
+    ).rejects.toBe(inspectionError);
+    expect(timeouts.applyTimeout).not.toHaveBeenCalled();
+    await expect(database.client.moderationCase.count()).resolves.toBe(0);
+    expect(announcements.plans).toHaveLength(0);
+  });
+
   it('removes the timeout and manually resolves the original case without changing issue fields', async () => {
     const original = await cases.createCase({
       authorization: authorization(),
@@ -516,6 +645,43 @@ describe('moderation mute execution service', () => {
     });
     expect(result.moderationCase).toMatchObject({ type: 'MUTE', status: 'ACTIVE' });
     expect(timeouts.applyTimeout).toHaveBeenCalledOnce();
+  });
+
+  it('keeps D2 stale-case reconciliation committed before rejecting a longer Discord timeout', async () => {
+    const stale = await cases.createCase({
+      authorization: authorization(),
+      targetDiscordUserId: targetId,
+      type: 'MUTE',
+      bail: 0,
+      durationSeconds: 60,
+      issuedAt: new Date(issuedAt.getTime() - 60_000),
+    });
+    const existingUntil = new Date(issuedAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+    timeouts.snapshot = { ...timeouts.snapshot, timeoutUntil: existingUntil };
+
+    await expect(
+      service.mute({
+        authorization: authorization(secondModeratorId),
+        targetDiscordUserId: targetId,
+        durationSeconds: 600,
+        bail: 10,
+        issuedAt,
+      }),
+    ).rejects.toBeInstanceOf(ModerationExistingTimeoutLongerError);
+
+    await expect(
+      database.client.moderationCase.findUnique({ where: { id: stale.id } }),
+    ).resolves.toMatchObject({
+      status: 'RESOLVED',
+      resolutionType: 'EXPIRED',
+      resolvedByUserId: null,
+      resolutionReason: null,
+      resolvedAt: issuedAt,
+    });
+    await expect(database.client.moderationCase.count()).resolves.toBe(1);
+    expect(timeouts.applyTimeout).not.toHaveBeenCalled();
+    expect(timeouts.snapshot.timeoutUntil).toEqual(existingUntil);
+    expect(announcements.plans).toHaveLength(0);
   });
 
   it('keeps stale-case expiration committed when replacement case creation fails', async () => {
