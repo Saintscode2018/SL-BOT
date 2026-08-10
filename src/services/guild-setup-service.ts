@@ -3,6 +3,8 @@ import type { Guild, GuildSettings, PrismaClient } from '@prisma/client';
 import type { AuthorizationInput } from './authorization-service.js';
 import { AuthorizationService } from './authorization-service.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
+import { assertNoManagementTeamRoleCollision } from '../domain/management-role-collision.js';
+import { ClubRepository } from '../repositories/club-repository.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
 import { ConfigurationError } from '../domain/errors.js';
@@ -190,6 +192,11 @@ export class GuildSetupService {
       assertDistinctManagementRoles(input);
       await guilds.acquireWriteLock(input.authorization.discordGuildId);
       const existing = await guilds.getByDiscordGuildId(input.authorization.discordGuildId);
+      if (existing === null) {
+        throw new ConfigurationError('league has not been setup yet');
+      }
+      const activeTeams = await new ClubRepository(transaction).listActive(existing.id);
+      assertNoManagementTeamRoleCollision(input, activeTeams.map((team) => team.discordRoleId));
       const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
         input.authorization.discordUserId,
       );

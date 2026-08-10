@@ -23,6 +23,7 @@ import type { AuthorizationInput } from '../../src/services/authorization-servic
 import { AuthorizationService } from '../../src/services/authorization-service.js';
 import {
   clubCreatedAuditEventType,
+  clubEditedAuditEventType,
   ClubManagementService,
 } from '../../src/services/club-management-service.js';
 import {
@@ -235,7 +236,64 @@ describe('administration services', () => {
     ).resolves.toEqual(beforeGuild);
   });
 
+  it.each([
+    ['TM', '930000000000000010', '930000000000000011', '930000000000000012'],
+    ['ATM', '930000000000000011', '930000000000000010', '930000000000000012'],
+    ['PM', '930000000000000011', '930000000000000012', '930000000000000010'],
+  ] as const)(
+    'rejects a %s management role that collides with an active team without changing settings or auditing success',
+    async (_, tm, atm, pm) => {
+      await createClub('930000000000000010');
+      const beforeSettings = await database.client.guildSettings.findUniqueOrThrow({
+        where: { guildId: settings.guildId },
+      });
+      const beforeGuild = await database.client.guild.findUniqueOrThrow({
+        where: { id: settings.guildId },
+      });
+
+      await expect(
+        new GuildSetupService(database.client).setupRoles({
+          authorization: authorization(ownerId),
+          guildName: 'Renamed League',
+          botPermissionsRoleId: '920000000000000010',
+          teamManagerRoleId: tm,
+          assistantManagerRoleId: atm,
+          playerManagerRoleId: pm,
+        }),
+      ).rejects.toBeInstanceOf(ConfigurationError);
+
+      await expect(
+        database.client.guildSettings.findUniqueOrThrow({ where: { guildId: settings.guildId } }),
+      ).resolves.toEqual(beforeSettings);
+      await expect(
+        database.client.guild.findUniqueOrThrow({ where: { id: settings.guildId } }),
+      ).resolves.toEqual(beforeGuild);
+      await expect(
+        database.client.auditEvent.count({ where: { eventType: 'guild.roles_configured' } }),
+      ).resolves.toBe(0);
+    },
+  );
+
+  it('allows a management role to reuse an inactive team role', async () => {
+    const club = await createClub('930000000000000010');
+    await new ClubManagementService(database.client).deactivate(authorization(), club.id);
+
+    await expect(
+      new GuildSetupService(database.client).setupRoles({
+        authorization: authorization(ownerId),
+        guildName: 'Renamed League',
+        botPermissionsRoleId: '920000000000000010',
+        teamManagerRoleId: '930000000000000010',
+        assistantManagerRoleId: '930000000000000011',
+        playerManagerRoleId: '930000000000000012',
+      }),
+    ).resolves.toMatchObject({
+      settings: { teamManagerRoleId: '930000000000000010' },
+    });
+  });
+
   it('persists three distinct management role IDs', async () => {
+    await createClub('930000000000000010');
     const result = await new GuildSetupService(database.client).setupRoles({
       authorization: authorization(ownerId),
       guildName: 'Renamed League',
@@ -292,6 +350,80 @@ describe('administration services', () => {
     await expect(
       database.client.auditEvent.count({ where: { eventType: clubCreatedAuditEventType } }),
     ).resolves.toBe(1);
+  });
+
+  it.each([
+    ['TM', '920000000000000002'],
+    ['ATM', '920000000000000003'],
+    ['PM', '920000000000000004'],
+  ] as const)(
+    'rejects a new team role that collides with configured %s without creating or auditing the team',
+    async (_, roleId) => {
+      await expect(createClub(roleId)).rejects.toBeInstanceOf(ConfigurationError);
+      await expect(database.client.club.count()).resolves.toBe(0);
+      await expect(
+        database.client.auditEvent.count({ where: { eventType: clubCreatedAuditEventType } }),
+      ).resolves.toBe(0);
+    },
+  );
+
+  it.each([
+    ['TM', '920000000000000002'],
+    ['ATM', '920000000000000003'],
+    ['PM', '920000000000000004'],
+  ] as const)(
+    'rejects changing a team role to configured %s without changing or auditing the team',
+    async (_, roleId) => {
+      const club = await createClub();
+
+      await expect(
+        new ClubManagementService(database.client).edit({
+          authorization: authorization(),
+          clubId: club.id,
+          discordRoleId: roleId,
+        }),
+      ).rejects.toBeInstanceOf(ConfigurationError);
+
+      await expect(database.client.club.findUniqueOrThrow({ where: { id: club.id } })).resolves.toEqual(
+        club,
+      );
+      await expect(
+        database.client.auditEvent.count({ where: { eventType: clubEditedAuditEventType } }),
+      ).resolves.toBe(0);
+    },
+  );
+
+  it('allows an emoji-only edit for a legacy management-role collision', async () => {
+    const legacyClub = await database.client.club.create({
+      data: {
+        guildId: settings.guildId,
+        discordRoleId: settings.teamManagerRoleId ?? '',
+        emoji: '🦁',
+      },
+    });
+
+    await expect(
+      new ClubManagementService(database.client).edit({
+        authorization: authorization(),
+        clubId: legacyClub.id,
+        emoji: '🐯',
+      }),
+    ).resolves.toMatchObject({
+      discordRoleId: legacyClub.discordRoleId,
+      emoji: '🐯',
+    });
+  });
+
+  it('allows a non-colliding team role change', async () => {
+    const club = await createClub();
+
+    await expect(
+      new ClubManagementService(database.client).edit({
+        authorization: authorization(),
+        clubId: club.id,
+        discordRoleId: '930000000000000002',
+      }),
+    ).resolves.toMatchObject({ discordRoleId: '930000000000000002' });
   });
 
   it('deactivates clubs without deleting history and excludes them from autocomplete', async () => {

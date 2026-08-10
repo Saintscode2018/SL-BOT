@@ -7,6 +7,7 @@ import {
   InvalidTeamEmojiError,
   NoTeamChangesProvidedError,
 } from '../domain/errors.js';
+import { assertNoManagementTeamRoleCollision } from '../domain/management-role-collision.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { formatTeamIdentity } from '../domain/team-label.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
@@ -52,6 +53,12 @@ export class ClubManagementService {
 
     return this.database.$transaction(async (transaction) => {
       const clubs = new ClubRepository(transaction);
+      const guilds = new GuildRepository(transaction);
+      await guilds.acquireWriteLock(input.authorization.discordGuildId);
+      const settings = await guilds.getSettings(authorization.guild.id);
+      if (settings !== null) {
+        assertNoManagementTeamRoleCollision(settings, [input.discordRoleId]);
+      }
       const existingRoleClub = await clubs.getByDiscordRoleId(
         authorization.guild.id,
         input.discordRoleId,
@@ -104,11 +111,17 @@ export class ClubManagementService {
 
     return this.database.$transaction(async (transaction) => {
       const clubs = new ClubRepository(transaction);
+      const guilds = new GuildRepository(transaction);
+      await guilds.acquireWriteLock(input.authorization.discordGuildId);
       const club = await clubs.getByIdInGuild(input.clubId, authorization.guild.id);
       if (club === null) throw new EntityNotFoundError('team was not found');
       if (!club.active) throw new ClubInactiveError('team is inactive');
 
       if (input.discordRoleId !== undefined && input.discordRoleId !== club.discordRoleId) {
+        const settings = await guilds.getSettings(authorization.guild.id);
+        if (settings !== null) {
+          assertNoManagementTeamRoleCollision(settings, [input.discordRoleId]);
+        }
         const existingRoleClub = await clubs.getByDiscordRoleId(
           authorization.guild.id,
           input.discordRoleId,
