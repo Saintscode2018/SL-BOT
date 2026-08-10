@@ -128,7 +128,7 @@ export type AuditAnnouncementOperation =
 export interface TeamDisbandDetails {
   endedMembershipCount: number;
   affectedUserCount: number;
-  expiredOfferCount: number;
+  voidedOfferCount: number;
 }
 
 export interface UserAuditAnnouncementPlan {

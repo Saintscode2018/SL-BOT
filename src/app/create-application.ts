@@ -134,6 +134,14 @@ export function createApplication(
     ),
   );
   const confirmations = new ConfirmationRegistry(logger);
+  const offerMessages = new DiscordOfferMessageAdapter(discord);
+  const offerDeliveryService = new OfferDeliveryService(
+    prisma,
+    offerMessages,
+    logger,
+    new OfferCreationService(prisma),
+    auditAnnouncements,
+  );
   const departureCommandHandler = new RosterDepartureCommandHandler(
     commandChannelPolicy,
     new RosterDepartureService(prisma, rosterMutations),
@@ -147,7 +155,7 @@ export function createApplication(
   );
   const teamDisbandmentCommandHandler = new TeamDisbandmentCommandHandler(
     commandChannelPolicy,
-    new TeamDisbandmentService(prisma, synchronizedMutations),
+    new TeamDisbandmentService(prisma, synchronizedMutations, offerDeliveryService),
     confirmations,
   );
   const teamSwapCommandHandler = new TeamSwapCommandHandler(
@@ -155,17 +163,9 @@ export function createApplication(
     new TeamSwapService(prisma, synchronizedMutations),
     confirmations,
   );
-  const offerMessages = new DiscordOfferMessageAdapter(discord);
   const setupAuditService = new SetupAuditService(
     new DiscordSetupAuditMessageAdapter(discord),
     logger,
-  );
-  const offerDeliveryService = new OfferDeliveryService(
-    prisma,
-    offerMessages,
-    logger,
-    new OfferCreationService(prisma),
-    auditAnnouncements,
   );
   const offerExpirationScheduler = new OfferExpirationScheduler(
     new OfferExpirationService(prisma, auditAnnouncements, offerDeliveryService),

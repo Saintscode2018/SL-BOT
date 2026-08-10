@@ -49,7 +49,7 @@ function disbandAuditPlan(): TeamDisbandAuditAnnouncementPlan {
     disbandDetails: {
       endedMembershipCount: 7,
       affectedUserCount: 4,
-      expiredOfferCount: 2,
+      voidedOfferCount: 2,
     },
     presentation: {
       serverName: 'Super League',
@@ -131,7 +131,7 @@ describe('Team disbandment announcement presentation and routing', () => {
       color: 0x3b82f6,
       description: [
         '> 🦁 <@&300000000000000001> has officially disbanded.',
-        '> Its members are now free agents and outstanding pending offers involving the team have been expired.',
+        '> Its members are now free agents and outstanding pending offers sent by the team have been voided.',
       ].join('\n'),
       footer: {
         text: 'Team Disbanded • 08.08.2026 12:00 UTC',
@@ -159,7 +159,7 @@ describe('Team disbandment announcement presentation and routing', () => {
         '',
         '> Staff and player memberships ended: **7**',
         '> Members moved to free agency: **4**',
-        '> Outstanding offers expired: **2**',
+        '> Outstanding offers voided: **2**',
       ].join('\n'),
       fields: [
         {

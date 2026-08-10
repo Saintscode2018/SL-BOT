@@ -110,7 +110,7 @@ export class DiscordTransferAnnouncementAdapter implements TransferAnnouncementA
       });
       const descriptionLines = [
         `${team} has officially disbanded.`,
-        'Its members are now free agents and outstanding pending offers involving the team have been expired.',
+        'Its members are now free agents and outstanding pending offers sent by the team have been voided.',
       ];
       const embed = createInfoEmbed({
         author,

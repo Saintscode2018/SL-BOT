@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   AdministrativePermissionDeniedError,
@@ -8,10 +8,13 @@ import {
   TeamNotFoundError,
 } from '../../src/domain/errors.js';
 import type { MemberRoleMutationPlan } from '../../src/domain/roster-mutation.js';
+import { AuditEventRepository } from '../../src/repositories/audit-event-repository.js';
 import type { AuthorizationInput } from '../../src/services/authorization-service.js';
 import { CommandChannelPolicyService } from '../../src/services/command-channel-policy-service.js';
+import { OfferAcceptanceService } from '../../src/services/offer-acceptance-service.js';
 import {
   TeamDisbandmentService,
+  offerVoidedForTeamDisbandmentAuditEventType,
   teamDisbandedAuditEventType,
 } from '../../src/services/team-disbandment-service.js';
 import {
@@ -130,7 +133,7 @@ describe('TeamDisbandmentService', () => {
     });
   }
 
-  it('ends all active memberships, expires related offers, preserves history, and audits', async () => {
+  it('ends all active memberships, voids source-team offers, preserves external offers, and audits', async () => {
     const actor = await user(ownerId);
     const ordinary = await user('200000000000000002');
     const tm = await user('200000000000000003');
@@ -156,7 +159,7 @@ describe('TeamDisbandmentService', () => {
         expiresAt: new Date('2030-01-01T00:00:00Z'),
       },
     });
-    const pendingSource = await client.offer.create({
+    const externalOfferToDisbandedPlayer = await client.offer.create({
       data: {
         guildId,
         clubId: otherTeamId,
@@ -175,7 +178,7 @@ describe('TeamDisbandmentService', () => {
       },
     });
     const terminalOffers = await Promise.all(
-      ['ACCEPTED', 'DECLINED', 'EXPIRED'].map((status) =>
+      ['ACCEPTED', 'DECLINED', 'EXPIRED', 'CANCELLED', 'VOIDED'].map((status) =>
         client.offer.create({
           data: {
             guildId,
@@ -185,6 +188,7 @@ describe('TeamDisbandmentService', () => {
             status,
             expiresAt: new Date('2030-01-01T00:00:00Z'),
             respondedAt: new Date('2026-01-01T00:00:00Z'),
+            ...(status === 'CANCELLED' ? { cancelledAt: new Date('2026-01-01T00:00:00Z') } : {}),
           },
         }),
       ),
@@ -219,7 +223,7 @@ describe('TeamDisbandmentService', () => {
     expect(result).toMatchObject({
       endedMembershipCount: 7,
       affectedUserCount: 4,
-      expiredOfferCount: 2,
+      voidedOfferCount: 1,
       team: { id: teamId, active: false, discordRoleId: teamRoleId, emoji: '🦁' },
     });
     await expect(client.club.count({ where: { id: teamId } })).resolves.toBe(1);
@@ -231,11 +235,16 @@ describe('TeamDisbandmentService', () => {
     ).resolves.toMatchObject({ status: 'ENDED', leftAt: new Date('2025-01-01T00:00:00Z') });
     await expect(client.leagueUser.count()).resolves.toBe(7);
     await expect(
-      client.offer.findMany({ where: { id: { in: [pendingDestination.id, pendingSource.id] } } }),
+      client.offer.findMany({
+        where: { id: { in: [pendingDestination.id, externalOfferToDisbandedPlayer.id] } },
+      }),
     ).resolves.toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: pendingDestination.id, status: 'EXPIRED' }),
-        expect.objectContaining({ id: pendingSource.id, status: 'EXPIRED' }),
+        expect.objectContaining({ id: pendingDestination.id, status: 'VOIDED' }),
+        expect.objectContaining({
+          id: externalOfferToDisbandedPlayer.id,
+          status: 'PENDING',
+        }),
       ]),
     );
     await expect(
@@ -283,9 +292,230 @@ describe('TeamDisbandmentService', () => {
       actorDiscordUserId: ownerId,
       endedMembershipCount: 7,
       affectedUserCount: 4,
-      expiredOfferCount: 2,
+      voidedOfferCount: 1,
       timestamp: occurredAt.toISOString(),
     });
+    const voidAudit = await client.auditEvent.findFirstOrThrow({
+      where: {
+        eventType: offerVoidedForTeamDisbandmentAuditEventType,
+        entityId: pendingDestination.id,
+      },
+    });
+    expect(voidAudit).toMatchObject({ guildId, actorUserId: null, entityType: 'offer' });
+    expect(voidAudit.beforeState).toEqual({ status: 'PENDING' });
+    expect(voidAudit.afterState).toEqual({
+      status: 'VOIDED',
+      respondedAt: occurredAt.toISOString(),
+    });
+    await expect(
+      client.auditEvent.count({
+        where: {
+          eventType: offerVoidedForTeamDisbandmentAuditEventType,
+          entityId: externalOfferToDisbandedPlayer.id,
+        },
+      }),
+    ).resolves.toBe(0);
+  });
+
+  it('terminalizes each voided source-team offer after commit and continues after a failure', async () => {
+    const actor = await user(ownerId);
+    const player = await user('200000000000000008');
+    const secondPlayer = await user('200000000000000009');
+    const thirdPlayer = await user('200000000000000010');
+    const first = await client.offer.create({
+      data: {
+        guildId,
+        clubId: teamId,
+        playerUserId: secondPlayer.id,
+        offeredByUserId: actor.id,
+        expiresAt: new Date('2030-01-01T00:00:00Z'),
+        discordChannelId: '600000000000000001',
+        discordMessageId: '700000000000000001',
+      },
+    });
+    const second = await client.offer.create({
+      data: {
+        guildId,
+        clubId: teamId,
+        playerUserId: thirdPlayer.id,
+        offeredByUserId: actor.id,
+        expiresAt: new Date('2030-01-01T00:00:00Z'),
+        discordChannelId: '600000000000000002',
+        discordMessageId: '700000000000000002',
+      },
+    });
+    const withoutReference = await client.offer.create({
+      data: {
+        guildId,
+        clubId: teamId,
+        playerUserId: player.id,
+        offeredByUserId: actor.id,
+        expiresAt: new Date('2030-01-01T00:00:00Z'),
+      },
+    });
+    const terminalizeOffer = vi.fn(async (offer: { id: string }) => {
+      await expect(client.club.findUniqueOrThrow({ where: { id: teamId } })).resolves.toMatchObject(
+        {
+          active: false,
+        },
+      );
+      if (offer.id === first.id) throw new Error('Discord message update failed');
+    });
+    const serviceWithTerminalizer = new TeamDisbandmentService(
+      client,
+      {
+        executeMany: async <T>(
+          plans: readonly MemberRoleMutationPlan[],
+          mutate: () => Promise<T>,
+        ) => {
+          capturedPlans = [...plans];
+          return {
+            ...(await mutate()),
+            announcementDelivered: null,
+            auditAnnouncementDelivered: null,
+          };
+        },
+      },
+      { terminalizeOffer },
+    );
+
+    await expect(
+      serviceWithTerminalizer.disband({
+        authorization: authorization(),
+        teamId,
+        teamName: 'T1',
+      }),
+    ).resolves.toMatchObject({ voidedOfferCount: 3 });
+
+    expect(terminalizeOffer).toHaveBeenCalledTimes(3);
+    expect(terminalizeOffer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: first.id }),
+      'VOIDED',
+    );
+    expect(terminalizeOffer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: second.id }),
+      'VOIDED',
+    );
+    expect(terminalizeOffer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: withoutReference.id }),
+      'VOIDED',
+    );
+    await expect(client.offer.count({ where: { clubId: teamId, status: 'VOIDED' } })).resolves.toBe(
+      3,
+    );
+    await expect(client.leagueTransaction.count()).resolves.toBe(0);
+  });
+
+  it('preserves an external offer so a newly freed player can accept it', async () => {
+    const actor = await user(ownerId);
+    const player = await user('200000000000000011');
+    await membership(player.id, 'PLAYER');
+    const externalOffer = await client.offer.create({
+      data: {
+        guildId,
+        clubId: otherTeamId,
+        playerUserId: player.id,
+        offeredByUserId: actor.id,
+        expiresAt: new Date('2030-01-01T00:00:00Z'),
+      },
+    });
+
+    await service.disband({ authorization: authorization(), teamId, teamName: 'T1' });
+    await expect(
+      client.offer.findUniqueOrThrow({ where: { id: externalOffer.id } }),
+    ).resolves.toMatchObject({
+      status: 'PENDING',
+    });
+    await new OfferAcceptanceService(client).acceptOffer({
+      offerId: externalOffer.id,
+      acceptingDiscordUserId: player.discordUserId,
+    });
+
+    await expect(
+      client.offer.findUniqueOrThrow({ where: { id: externalOffer.id } }),
+    ).resolves.toMatchObject({
+      status: 'ACCEPTED',
+    });
+    await expect(
+      client.clubMembership.findFirstOrThrow({
+        where: { guildId, clubId: otherTeamId, userId: player.id, status: 'ACTIVE' },
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it('leaves cross-guild offers untouched', async () => {
+    const actor = await user(ownerId);
+    const player = await user('200000000000000009');
+    const foreignGuild = await client.guild.create({
+      data: { discordGuildId: foreignDiscordGuildId, name: 'Foreign', settings: { create: {} } },
+    });
+    const foreignClub = await client.club.create({
+      data: { guildId: foreignGuild.id, discordRoleId: '300000000000000099', emoji: '⚪' },
+    });
+    const foreignOffer = await client.offer.create({
+      data: {
+        guildId: foreignGuild.id,
+        clubId: foreignClub.id,
+        playerUserId: player.id,
+        offeredByUserId: actor.id,
+        expiresAt: new Date('2030-01-01T00:00:00Z'),
+      },
+    });
+
+    await service.disband({ authorization: authorization(), teamId, teamName: 'T1' });
+
+    await expect(
+      client.offer.findUniqueOrThrow({ where: { id: foreignOffer.id } }),
+    ).resolves.toMatchObject({
+      status: 'PENDING',
+    });
+  });
+
+  it('rolls back memberships, source-team offers, and audits when a void audit write fails', async () => {
+    const actor = await user(ownerId);
+    const player = await user('200000000000000010');
+    await membership(player.id, 'PLAYER');
+    const offer = await client.offer.create({
+      data: {
+        guildId,
+        clubId: teamId,
+        playerUserId: player.id,
+        offeredByUserId: actor.id,
+        expiresAt: new Date('2030-01-01T00:00:00Z'),
+      },
+    });
+    const createAudit = vi
+      .spyOn(AuditEventRepository.prototype, 'create')
+      .mockRejectedValueOnce(new Error('void audit write failed'));
+
+    try {
+      await expect(
+        service.disband({ authorization: authorization(), teamId, teamName: 'T1' }),
+      ).rejects.toThrow('void audit write failed');
+    } finally {
+      createAudit.mockRestore();
+    }
+
+    await expect(client.club.findUniqueOrThrow({ where: { id: teamId } })).resolves.toMatchObject({
+      active: true,
+    });
+    await expect(
+      client.clubMembership.findFirstOrThrow({ where: { clubId: teamId, userId: player.id } }),
+    ).resolves.toMatchObject({ status: 'ACTIVE' });
+    await expect(
+      client.offer.findUniqueOrThrow({ where: { id: offer.id } }),
+    ).resolves.toMatchObject({
+      status: 'PENDING',
+    });
+    await expect(
+      client.auditEvent.count({
+        where: {
+          eventType: {
+            in: [teamDisbandedAuditEventType, offerVoidedForTeamDisbandmentAuditEventType],
+          },
+        },
+      }),
+    ).resolves.toBe(0);
   });
 
   it('rejects an inactive, foreign-guild, or repeated team without mutation', async () => {

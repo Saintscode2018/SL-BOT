@@ -164,6 +164,31 @@ export class OfferRepository {
     return voidedOffers;
   }
 
+  public async voidPendingForClub(
+    guildId: string,
+    clubId: string,
+    at = new Date(),
+  ): Promise<Offer[]> {
+    const pendingOffers = await this.db.offer.findMany({
+      where: { guildId, clubId, status: 'PENDING' },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    const voidedOffers: Offer[] = [];
+
+    for (const pendingOffer of pendingOffers) {
+      const result = await this.db.offer.updateMany({
+        where: { id: pendingOffer.id, guildId, clubId, status: 'PENDING' },
+        data: { status: 'VOIDED', respondedAt: at },
+      });
+      if (result.count !== 1) continue;
+
+      const voidedOffer = await this.getById(pendingOffer.id);
+      if (voidedOffer !== null) voidedOffers.push(voidedOffer);
+    }
+
+    return voidedOffers;
+  }
+
   public async expirePendingAtOrBefore(id: string, at: Date): Promise<Offer> {
     const result = await this.db.offer.updateMany({
       where: { id, status: 'PENDING', expiresAt: { lte: at } },

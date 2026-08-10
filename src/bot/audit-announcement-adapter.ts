@@ -127,7 +127,7 @@ export class DiscordAuditAnnouncementAdapter implements AuditAnnouncementAdapter
           '',
           `> Staff and player memberships ended: **${plan.disbandDetails?.endedMembershipCount ?? 0}**`,
           `> Members moved to free agency: **${plan.disbandDetails?.affectedUserCount ?? 0}**`,
-          `> Outstanding offers expired: **${plan.disbandDetails?.expiredOfferCount ?? 0}**`,
+          `> Outstanding offers voided: **${plan.disbandDetails?.voidedOfferCount ?? 0}**`,
         ].join('\n');
         fields.push(createActorField('Disbanded', plan.actorDiscordUserId, actorName));
         break;

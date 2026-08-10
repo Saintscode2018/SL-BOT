@@ -4,6 +4,7 @@ import type {
   Guild,
   GuildSettings,
   LeagueUser,
+  Offer,
   PrismaClient,
 } from '@prisma/client';
 
@@ -14,6 +15,7 @@ import {
   TeamNotFoundError,
 } from '../domain/errors.js';
 import type { MembershipType } from '../domain/enums.js';
+import type { DatabaseClient } from '../domain/types.js';
 import type {
   MemberRoleMutationPlan,
   PlannedDiscordRole,
@@ -22,12 +24,15 @@ import type {
 } from '../domain/roster-mutation.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { ClubRepository } from '../repositories/club-repository.js';
+import { OfferRepository } from '../repositories/offer-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
 import type { AuthorizationInput } from './authorization-service.js';
 import { AuthorizationService } from './authorization-service.js';
 import type { RoleSynchronizedMutationService } from './role-synchronized-mutation-service.js';
+import type { OfferDeliveryService } from './offer-delivery-service.js';
 
 export const teamDisbandedAuditEventType = 'team.disbanded';
+export const offerVoidedForTeamDisbandmentAuditEventType = 'offer.voided_for_team_disbandment';
 
 type ActiveMembershipWithUser = ClubMembership & { user: LeagueUser };
 
@@ -47,7 +52,7 @@ export interface TeamDisbandmentResult {
   team: Club;
   endedMembershipCount: number;
   affectedUserCount: number;
-  expiredOfferCount: number;
+  voidedOfferCount: number;
   affectedUsers: TeamDisbandmentAffectedUser[];
   announcementDelivered?: boolean | null;
   auditAnnouncementDelivered?: boolean | null;
@@ -64,6 +69,7 @@ export class TeamDisbandmentService {
   public constructor(
     private readonly database: PrismaClient,
     private readonly synchronizedMutations: Pick<RoleSynchronizedMutationService, 'executeMany'>,
+    private readonly terminalizer?: Pick<OfferDeliveryService, 'terminalizeOffer'>,
   ) {}
 
   public async getEligibility(
@@ -106,7 +112,7 @@ export class TeamDisbandmentService {
         }
       : null;
 
-    return this.synchronizedMutations.executeMany(rolePlans, () =>
+    const outcome = await this.synchronizedMutations.executeMany(rolePlans, () =>
       this.database.$transaction(async (transaction) => {
         const authorization = await new AuthorizationService(
           transaction,
@@ -134,30 +140,18 @@ export class TeamDisbandmentService {
         const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
           input.authorization.discordUserId,
         );
-        const playerUserIds = [
-          ...new Set(
-            currentMemberships
-              .filter(({ membershipType }) => membershipType === 'PLAYER')
-              .map(({ userId }) => userId),
-          ),
-        ];
         const ended = await transaction.clubMembership.updateMany({
           where: { id: { in: currentIds }, status: 'ACTIVE' },
           data: { status: 'ENDED', leftAt: occurredAt, endedByUserId: actor.id },
         });
         if (ended.count !== currentIds.length) throw new StaleMutationStateError();
 
-        const expired = await transaction.offer.updateMany({
-          where: {
-            guildId: authorization.guild.id,
-            status: 'PENDING',
-            OR: [
-              { clubId: team.id },
-              ...(playerUserIds.length === 0 ? [] : [{ playerUserId: { in: playerUserIds } }]),
-            ],
-          },
-          data: { status: 'EXPIRED', respondedAt: occurredAt },
-        });
+        const voidedOffers = await new OfferRepository(transaction).voidPendingForClub(
+          authorization.guild.id,
+          team.id,
+          occurredAt,
+        );
+        await this.auditVoidedOffers(transaction, voidedOffers, team.id, occurredAt);
         const deactivated = await transaction.club.updateMany({
           where: { id: team.id, guildId: authorization.guild.id, active: true },
           data: { active: false },
@@ -183,7 +177,7 @@ export class TeamDisbandmentService {
             actorDiscordUserId: input.authorization.discordUserId,
             endedMembershipCount: ended.count,
             affectedUserCount: affectedUsers.length,
-            expiredOfferCount: expired.count,
+            voidedOfferCount: voidedOffers.length,
             timestamp: occurredAt.toISOString(),
           },
         });
@@ -202,7 +196,7 @@ export class TeamDisbandmentService {
               disbandDetails: {
                 endedMembershipCount: ended.count,
                 affectedUserCount: affectedUsers.length,
-                expiredOfferCount: expired.count,
+                voidedOfferCount: voidedOffers.length,
               },
             }
           : null;
@@ -212,13 +206,49 @@ export class TeamDisbandmentService {
           team: deactivatedTeam,
           endedMembershipCount: ended.count,
           affectedUserCount: affectedUsers.length,
-          expiredOfferCount: expired.count,
+          voidedOfferCount: voidedOffers.length,
           affectedUsers,
+          voidedOffers,
           announcement,
           auditAnnouncement,
         };
       }),
     );
+    const { voidedOffers, ...result } = outcome;
+    await Promise.allSettled(
+      voidedOffers.map(async (offer) => {
+        await this.terminalizer?.terminalizeOffer(offer, 'VOIDED');
+      }),
+    );
+    return result;
+  }
+
+  private async auditVoidedOffers(
+    database: DatabaseClient,
+    offers: readonly Offer[],
+    teamId: string,
+    occurredAt: Date,
+  ): Promise<void> {
+    const audits = new AuditEventRepository(database);
+    for (const offer of offers) {
+      await audits.create({
+        guildId: offer.guildId,
+        eventType: offerVoidedForTeamDisbandmentAuditEventType,
+        entityType: 'offer',
+        entityId: offer.id,
+        beforeState: { status: 'PENDING' },
+        afterState: { status: 'VOIDED', respondedAt: occurredAt.toISOString() },
+        metadata: {
+          reason: 'SOURCE_TEAM_DISBANDED',
+          clubId: teamId,
+          playerUserId: offer.playerUserId,
+          offeredByUserId: offer.offeredByUserId,
+          expiresAt: offer.expiresAt.toISOString(),
+          discordChannelId: offer.discordChannelId,
+          discordMessageId: offer.discordMessageId,
+        },
+      });
+    }
   }
 
   private async listActiveMemberships(

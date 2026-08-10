@@ -105,7 +105,7 @@ export class TeamDisbandmentCommandHandler {
       '> End all active staff and player memberships',
       '> Remove the team role from all affected members',
       '> Remove applicable Team Manager, Assistant Team Manager, and Player Manager roles',
-      '> Expire outstanding offers involving this team',
+      '> Void outstanding offers sent by this team',
       '> Mark the team as inactive',
       '',
       'The Discord team role and team emoji will not be deleted.',
@@ -212,7 +212,7 @@ export class TeamDisbandmentCommandHandler {
       '',
       `> Staff and player memberships ended: **${result.endedMembershipCount}**`,
       `> Members moved to free agency: **${result.affectedUserCount}**`,
-      `> Outstanding offers expired: **${result.expiredOfferCount}**`,
+      `> Outstanding offers voided: **${result.voidedOfferCount}**`,
       '> Discord team role preserved',
       '> Team emoji preserved',
     ];
