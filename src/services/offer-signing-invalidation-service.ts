@@ -1,3 +1,5 @@
+import type { Offer } from '@prisma/client';
+
 import type { DatabaseClient } from '../domain/types.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { OfferRepository } from '../repositories/offer-repository.js';
@@ -16,7 +18,7 @@ export interface VoidCompetingOffersForSigningInput {
 export async function voidCompetingOffersForSigning(
   database: DatabaseClient,
   input: VoidCompetingOffersForSigningInput,
-): Promise<void> {
+): Promise<Offer[]> {
   const voidedOffers = await new OfferRepository(database).voidPendingForSignedPlayer(
     input.guildId,
     input.playerUserId,
@@ -40,4 +42,5 @@ export async function voidCompetingOffersForSigning(
       },
     });
   }
+  return voidedOffers;
 }

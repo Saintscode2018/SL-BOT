@@ -31,7 +31,7 @@ import { LeagueTransactionRepository } from '../repositories/transaction-reposit
 import { UserRepository } from '../repositories/user-repository.js';
 import type { RoleSynchronizedMutationService } from './role-synchronized-mutation-service.js';
 
-import type { AcceptedOfferPresentationData } from './offer-delivery-service.js';
+import type { AcceptedOfferPresentationData, OfferDeliveryService } from './offer-delivery-service.js';
 import { offerExpiredAuditEventType } from './offer-decline-service.js';
 import { voidCompetingOffersForSigning } from './offer-signing-invalidation-service.js';
 
@@ -92,7 +92,7 @@ export function createOfferAcceptanceRepositories(
 }
 
 type AcceptanceTransactionOutcome =
-  | { kind: 'accepted'; result: OfferAcceptanceResult }
+  | { kind: 'accepted'; result: OfferAcceptanceResult; voidedOffers: Offer[] }
   | { kind: 'expired' };
 
 type AcceptancePreparation =
@@ -104,6 +104,7 @@ export class OfferAcceptanceService {
     private readonly database: PrismaClient,
     private readonly repositoryFactory: OfferAcceptanceRepositoryFactory = createOfferAcceptanceRepositories,
     private readonly synchronization?: Pick<RoleSynchronizedMutationService, 'execute'>,
+    private readonly terminalizer?: Pick<OfferDeliveryService, 'terminalizeOffer'>,
   ) {}
 
   public async acceptOffer(input: AcceptOfferInput): Promise<OfferAcceptanceResult> {
@@ -148,6 +149,12 @@ export class OfferAcceptanceService {
     }
     if (outcome.kind === 'expired') {
       throw new OfferExpiredError(`offer ${input.offerId} expired before acceptance`);
+    }
+    const terminalizer = this.terminalizer;
+    if (terminalizer !== undefined) {
+      await Promise.allSettled(
+        outcome.voidedOffers.map((offer) => terminalizer.terminalizeOffer(offer, 'VOIDED')),
+      );
     }
     return outcome.result;
   }
@@ -305,7 +312,7 @@ export class OfferAcceptanceService {
         transactionType,
       },
     });
-    await voidCompetingOffersForSigning(transactionClient, {
+    const voidedOffers = await voidCompetingOffersForSigning(transactionClient, {
       guildId: pendingOffer.guildId,
       playerUserId: player.id,
       acceptedOfferId: acceptedOffer.id,
@@ -326,6 +333,7 @@ export class OfferAcceptanceService {
         : await repositories.users.getById(teamManagerMembership.userId);
     return {
       kind: 'accepted',
+      voidedOffers,
       result: {
         offer: acceptedOffer,
         player,
@@ -391,7 +399,7 @@ export class OfferAcceptanceService {
     repositories: OfferAcceptanceRepositories,
     pendingOffer: Offer,
     expiredAt: Date,
-  ): Promise<void> {
+  ): Promise<Offer> {
     const expiredOffer = await repositories.offers.expirePendingAtOrBefore(
       pendingOffer.id,
       expiredAt,
@@ -408,5 +416,6 @@ export class OfferAcceptanceService {
         discordMessageId: expiredOffer.discordMessageId,
       },
     });
+    return expiredOffer;
   }
 }

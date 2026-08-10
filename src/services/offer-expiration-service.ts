@@ -8,12 +8,14 @@ import { GuildRepository } from '../repositories/guild-repository.js';
 import { OfferRepository } from '../repositories/offer-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
 import type { AuditAnnouncementPublisher } from './audit-announcement-service.js';
+import type { OfferDeliveryService } from './offer-delivery-service.js';
 import { offerExpiredAuditEventType } from './offer-decline-service.js';
 
 export class OfferExpirationService {
   public constructor(
     private readonly database: PrismaClient,
     private readonly auditAnnouncements?: AuditAnnouncementPublisher,
+    private readonly terminalizer?: Pick<OfferDeliveryService, 'terminalizeOffer'>,
   ) {}
 
   public async expire(now = new Date()): Promise<Offer[]> {
@@ -71,6 +73,7 @@ export class OfferExpirationService {
       }
       if (result !== null) {
         expired.push(result);
+        await this.terminalizer?.terminalizeOffer(result, 'EXPIRED');
         if (auditPlan !== null && this.auditAnnouncements !== undefined) {
           await this.auditAnnouncements.publish(auditPlan).catch(() => false);
         }

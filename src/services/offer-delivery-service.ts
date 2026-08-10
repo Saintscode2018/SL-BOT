@@ -39,6 +39,7 @@ export interface TerminalOfferPresentationPayload {
 }
 
 export type AcceptedOfferPresentationData = TerminalOfferPresentationPayload;
+export type TerminalOfferState = 'ACCEPTED' | 'DECLINED' | 'EXPIRED' | 'VOIDED' | 'CANCELLED';
 
 export interface OfferMessageAdapter {
   sendOffer(
@@ -47,7 +48,7 @@ export interface OfferMessageAdapter {
   ): Promise<OfferMessageReference>;
   setTerminalState(
     reference: OfferMessageReference,
-    state: 'ACCEPTED' | 'DECLINED' | 'EXPIRED' | 'VOIDED' | 'CANCELLED',
+    state: TerminalOfferState,
     detail?: string | TerminalOfferPresentationPayload,
   ): Promise<void>;
   cleanupOrphan(reference: OfferMessageReference): Promise<void>;
@@ -62,11 +63,47 @@ export class OfferDeliveryService {
     private readonly auditAnnouncements?: AuditAnnouncementPublisher,
   ) {}
 
+  /**
+   * Best-effort UI cleanup for an offer whose terminal database transition has
+   * already committed. Discord is deliberately never part of that transition.
+   */
+  public async terminalizeOffer(
+    offer: Offer,
+    state: TerminalOfferState,
+    detail?: string | TerminalOfferPresentationPayload,
+  ): Promise<void> {
+    if (offer.discordChannelId === null || offer.discordMessageId === null) {
+      this.logger.debug('offer terminal message update skipped without message reference', {
+        offerId: offer.id,
+        state,
+      });
+      return;
+    }
+
+    const reference = {
+      channelId: offer.discordChannelId,
+      messageId: offer.discordMessageId,
+    };
+    try {
+      await this.messages.setTerminalState(reference, state, detail);
+    } catch (error: unknown) {
+      const context = { offerId: offer.id, state, ...reference };
+      if (isMissingDiscordMessageError(error)) {
+        this.logger.warn('offer terminal message is no longer available', context);
+        return;
+      }
+      this.logger.error('offer terminal message update failed', error, context);
+    }
+  }
+
   public async createAndDeliver(
     input: CreateOfferWorkflowInput,
     presentation: OfferPresentationMetadata = {},
   ): Promise<OfferCreationResult> {
     const result = await this.creation.createOffer(input);
+    if (result.expiredOffer !== undefined) {
+      await this.terminalizeOffer(result.expiredOffer, 'EXPIRED');
+    }
     let expiredAuditAnnouncementDelivered: boolean | null = null;
     if (result.expiredAuditAnnouncement && this.auditAnnouncements) {
       expiredAuditAnnouncementDelivered = await this.auditAnnouncements
@@ -177,4 +214,14 @@ export class OfferDeliveryService {
       });
     });
   }
+}
+
+function isMissingDiscordMessageError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const candidate = error as { code?: unknown; message?: unknown };
+  return (
+    candidate.code === 10_003 ||
+    candidate.code === 10_008 ||
+    (typeof candidate.message === 'string' && /unknown (channel|message)/iu.test(candidate.message))
+  );
 }

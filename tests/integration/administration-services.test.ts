@@ -134,6 +134,7 @@ describe('administration services', () => {
   }
 
   async function createDeliveredOffer(destination: Club, offeredPlayerDiscordId = playerId) {
+    const setTerminalState = vi.fn(() => Promise.resolve());
     const adapter: OfferMessageAdapter = {
       sendOffer: vi.fn(() =>
         Promise.resolve({
@@ -141,7 +142,7 @@ describe('administration services', () => {
           messageId: '940000000000000001',
         }),
       ),
-      setTerminalState: vi.fn(() => Promise.resolve()),
+      setTerminalState,
       cleanupOrphan: vi.fn(() => Promise.resolve()),
     };
     return new OfferDeliveryService(database.client, adapter, new MemoryLogger()).createAndDeliver({
@@ -1357,9 +1358,10 @@ describe('administration services', () => {
       void plan;
       return Promise.resolve(true);
     });
+    const terminalizeOffer = vi.fn(() => Promise.resolve());
 
     await expect(
-      new OfferExpirationService(database.client, { publish }).expire(
+      new OfferExpirationService(database.client, { publish }, { terminalizeOffer }).expire(
         new Date(expiresAt.getTime() + 1),
       ),
     ).resolves.toMatchObject([{ id: created.offer.id, status: 'EXPIRED' }]);
@@ -1374,6 +1376,10 @@ describe('administration services', () => {
       playerDiscordUserId: playerId,
     });
     expect(plan).not.toHaveProperty('actorDiscordUserId');
+    expect(terminalizeOffer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: created.offer.id, status: 'EXPIRED' }),
+      'EXPIRED',
+    );
   });
 
   it('publishes stale expiration and replacement creation audit announcements outside creation', async () => {
@@ -1386,15 +1392,21 @@ describe('administration services', () => {
       expiresAt: new Date(Date.now() + 60_000),
     });
     const now = new Date(initial.offer.expiresAt.getTime() + 1);
+    await new OfferRepository(database.client).setMessageReference(
+      initial.offer.id,
+      '910000000000000009',
+      '940000000000000009',
+    );
     const publish = vi.fn((plan: unknown) => {
       void plan;
       return Promise.resolve(true);
     });
+    const setTerminalState = vi.fn(() => Promise.resolve());
     const adapter: OfferMessageAdapter = {
       sendOffer: vi.fn(() =>
         Promise.resolve({ channelId: '910000000000000001', messageId: '940000000000000001' }),
       ),
-      setTerminalState: vi.fn(() => Promise.resolve()),
+      setTerminalState,
       cleanupOrphan: vi.fn(() => Promise.resolve()),
     };
 
@@ -1427,6 +1439,11 @@ describe('administration services', () => {
       expiredAuditAnnouncementDelivered: true,
       auditAnnouncementDelivered: true,
     });
+    expect(setTerminalState).toHaveBeenCalledWith(
+      { channelId: '910000000000000009', messageId: '940000000000000009' },
+      'EXPIRED',
+      undefined,
+    );
   });
 
   it('saves offer message references after delivery', async () => {
@@ -1452,6 +1469,94 @@ describe('administration services', () => {
       discordChannelId: '910000000000000001',
       discordMessageId: '940000000000000001',
     });
+  });
+
+  it('best-effort terminalizes a referenced offer without affecting its committed terminal state', async () => {
+    const destination = await createClub();
+    const created = await new OfferCreationService(database.client).createOffer({
+      authorization: authorization(),
+      destinationClubId: destination.id,
+      playerDiscordUserId: playerId,
+      playerIsBot: false,
+    });
+    const offer = await new OfferRepository(database.client).setMessageReference(
+      created.offer.id,
+      '910000000000000001',
+      '940000000000000001',
+    );
+    const expiredOffer = await new OfferRepository(database.client).transition(offer.id, 'EXPIRED');
+    const setTerminalState = vi.fn(() => Promise.reject(new Error('network failure')));
+    const logger = new MemoryLogger();
+    const delivery = new OfferDeliveryService(
+      database.client,
+      {
+        sendOffer: vi.fn(),
+        setTerminalState,
+        cleanupOrphan: vi.fn(),
+      },
+      logger,
+    );
+
+    await expect(delivery.terminalizeOffer(expiredOffer, 'EXPIRED')).resolves.toBeUndefined();
+    expect(setTerminalState).toHaveBeenCalledWith(
+      { channelId: '910000000000000001', messageId: '940000000000000001' },
+      'EXPIRED',
+      undefined,
+    );
+    await expect(
+      database.client.offer.findUniqueOrThrow({ where: { id: offer.id } }),
+    ).resolves.toMatchObject({ status: 'EXPIRED' });
+    expect(logger.entries).toContainEqual(
+      expect.objectContaining({ level: 'error', message: 'offer terminal message update failed' }),
+    );
+  });
+
+  it('skips missing references and treats deleted Discord messages as non-fatal', async () => {
+    const destination = await createClub();
+    const created = await new OfferCreationService(database.client).createOffer({
+      authorization: authorization(),
+      destinationClubId: destination.id,
+      playerDiscordUserId: playerId,
+      playerIsBot: false,
+    });
+    const logger = new MemoryLogger();
+    const missingMessageError = Object.assign(new Error('Unknown Message'), { code: 10008 });
+    const setTerminalState = vi.fn(() => Promise.reject(missingMessageError));
+    const delivery = new OfferDeliveryService(
+      database.client,
+      {
+        sendOffer: vi.fn(),
+        setTerminalState,
+        cleanupOrphan: vi.fn(),
+      },
+      logger,
+    );
+
+    const voidedWithoutReference = await new OfferRepository(database.client).transition(
+      created.offer.id,
+      'VOIDED',
+    );
+    await delivery.terminalizeOffer(voidedWithoutReference, 'VOIDED');
+    expect(setTerminalState).not.toHaveBeenCalled();
+    const replacement = await new OfferCreationService(database.client).createOffer({
+      authorization: authorization(),
+      destinationClubId: destination.id,
+      playerDiscordUserId: playerId,
+      playerIsBot: false,
+    });
+    const referencedOffer = await new OfferRepository(database.client).setMessageReference(
+      replacement.offer.id,
+      '910000000000000001',
+      '940000000000000001',
+    );
+    const voidedOffer = await new OfferRepository(database.client).transition(
+      referencedOffer.id,
+      'VOIDED',
+    );
+    await delivery.terminalizeOffer(voidedOffer, 'VOIDED');
+    expect(logger.entries).toContainEqual(
+      expect.objectContaining({ level: 'warn', message: 'offer terminal message is no longer available' }),
+    );
   });
 
   it('accepts only from the saved offer channel and message', async () => {

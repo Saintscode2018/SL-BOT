@@ -1,5 +1,7 @@
 import {
   Client,
+  ChannelType,
+  ComponentType,
   GatewayIntentBits,
   MessageFlags,
   SlashCommandBuilder,
@@ -693,6 +695,37 @@ describe('stage three command registry and deployment', () => {
       expect(createDM).toHaveBeenCalledOnce();
       expect(send).toHaveBeenCalledOnce();
       expect(channelFetch).not.toHaveBeenCalled();
+    } finally {
+      await client.destroy();
+    }
+  });
+
+  it('disables both persistent offer controls when an expired offer is terminalized', async () => {
+    const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+    const edit = vi.fn((payload: unknown) => {
+      void payload;
+      return Promise.resolve();
+    });
+    const payload = JSON.parse(JSON.stringify(createOfferMessagePayload(offerCreationResult()))) as {
+      components: unknown[];
+    };
+    const message = { components: payload.components, edit };
+    vi.spyOn(client.channels, 'fetch').mockResolvedValue({
+      type: ChannelType.DM,
+      messages: { fetch: vi.fn(() => Promise.resolve(message)) },
+    } as never);
+    try {
+      await new DiscordOfferMessageAdapter(client).setTerminalState(
+        { channelId: '100000000000000005', messageId: '100000000000000006' },
+        'EXPIRED',
+      );
+      const edited = JSON.parse(JSON.stringify(edit.mock.calls[0]?.[0])) as {
+        components: Array<{ components: Array<{ disabled: boolean; type: number }> }>;
+      };
+      expect(edited.components[0]?.components).toEqual([
+        expect.objectContaining({ type: ComponentType.Button, disabled: true }),
+        expect.objectContaining({ type: ComponentType.Button, disabled: true }),
+      ]);
     } finally {
       await client.destroy();
     }

@@ -255,6 +255,68 @@ describe('offer acceptance service', () => {
     ]);
   });
 
+  it('terminalizes every voided competing offer after commit and isolates delivery failures', async () => {
+    const data = await seed();
+    const firstCompetingOffer = await offers.createPending({
+      guildId: data.guild.id,
+      clubId: data.source.id,
+      playerUserId: data.player.id,
+      offeredByUserId: data.manager.id,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const secondClub = await clubs.create({
+      guildId: data.guild.id,
+      discordRoleId: '820000000000000007',
+      emoji: 'ðŸŸ¡',
+    });
+    const secondCompetingOffer = await offers.createPending({
+      guildId: data.guild.id,
+      clubId: secondClub.id,
+      playerUserId: data.player.id,
+      offeredByUserId: data.manager.id,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const terminalizeOffer = vi.fn((offer: Offer) =>
+      offer.id === firstCompetingOffer.id
+        ? Promise.reject(new Error('Discord edit failed'))
+        : Promise.resolve(),
+    );
+    const terminalizingService = new OfferAcceptanceService(
+      database.client,
+      undefined,
+      undefined,
+      { terminalizeOffer },
+    );
+
+    await expect(
+      terminalizingService.acceptOffer({
+        offerId: data.offer.id,
+        acceptingDiscordUserId: data.player.discordUserId,
+      }),
+    ).resolves.toMatchObject({ offer: { status: 'ACCEPTED' } });
+
+    expect(terminalizeOffer).toHaveBeenCalledTimes(2);
+    expect(terminalizeOffer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: firstCompetingOffer.id, status: 'VOIDED' }),
+      'VOIDED',
+    );
+    expect(terminalizeOffer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: secondCompetingOffer.id, status: 'VOIDED' }),
+      'VOIDED',
+    );
+    await expect(
+      database.client.offer.findMany({
+        where: { id: { in: [firstCompetingOffer.id, secondCompetingOffer.id] } },
+        orderBy: { id: 'asc' },
+      }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: firstCompetingOffer.id, status: 'VOIDED' }),
+        expect.objectContaining({ id: secondCompetingOffer.id, status: 'VOIDED' }),
+      ]),
+    );
+  });
+
   it('voids every other pending offer, preserves terminal offers, and isolates other guilds', async () => {
     const data = await seed();
     const pendingClub = await clubs.create({

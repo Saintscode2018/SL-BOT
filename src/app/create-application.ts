@@ -153,12 +153,6 @@ export function createApplication(
     new TeamSwapService(prisma, synchronizedMutations),
     confirmations,
   );
-  const offerAcceptanceService = new OfferAcceptanceService(
-    prisma,
-    undefined,
-    synchronizedMutations,
-  );
-  const offerDeclineService = new OfferDeclineService(prisma, auditAnnouncements);
   const offerMessages = new DiscordOfferMessageAdapter(discord);
   const setupAuditService = new SetupAuditService(
     new DiscordSetupAuditMessageAdapter(discord),
@@ -171,6 +165,13 @@ export function createApplication(
     new OfferCreationService(prisma),
     auditAnnouncements,
   );
+  const offerAcceptanceService = new OfferAcceptanceService(
+    prisma,
+    undefined,
+    synchronizedMutations,
+    offerDeliveryService,
+  );
+  const offerDeclineService = new OfferDeclineService(prisma, auditAnnouncements);
   const offerButtonHandler = new OfferButtonHandler(
     new OfferResponseService(
       prisma,

@@ -51,6 +51,7 @@ export interface OfferCreationResult {
   auditAnnouncementDelivered?: boolean | null;
   expiredAuditAnnouncement?: OfferExpiredAuditAnnouncementPlan | null;
   expiredAuditAnnouncementDelivered?: boolean | null;
+  expiredOffer?: Offer;
 }
 
 export class OfferCreationService {
@@ -114,11 +115,13 @@ export class OfferCreationService {
         player.id,
       );
       let expiredAuditAnnouncement: OfferExpiredAuditAnnouncementPlan | null = null;
+      let expiredOffer: Offer | undefined;
       if (existingPending !== null) {
         if (existingPending.expiresAt.getTime() > now.getTime()) {
           throw new DuplicateOfferError('a pending offer already exists for this player and team');
         }
         const expired = await offers.transition(existingPending.id, 'EXPIRED', now);
+        expiredOffer = expired;
         await new AuditEventRepository(transaction).create({
           guildId: existingPending.guildId,
           eventType: offerExpiredAuditEventType,
@@ -194,6 +197,7 @@ export class OfferCreationService {
         effectiveSquadLimit,
         auditAnnouncement,
         expiredAuditAnnouncement,
+        ...(expiredOffer === undefined ? {} : { expiredOffer }),
       };
     });
     return transactionResult.catch((error: unknown) => {
