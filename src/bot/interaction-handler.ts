@@ -418,14 +418,15 @@ export async function handleInteractionCreate(
     };
 
     if (classification.level === 'warn') {
-      logger.warn('command interaction expired before acknowledgement', {
-        ...logContext,
-        discordErrorCode: 10_062,
-      });
-      return;
-    }
-
-    if (classification.level === 'info') {
+      if (isUnknownInteractionError(error)) {
+        logger.warn('command interaction expired before acknowledgement', {
+          ...logContext,
+          discordErrorCode: 10_062,
+        });
+        return;
+      }
+      logger.warn('command rejected', logContext);
+    } else if (classification.level === 'info') {
       logger.info('command rejected', logContext);
     } else {
       logger.error('command execution failed', error, {

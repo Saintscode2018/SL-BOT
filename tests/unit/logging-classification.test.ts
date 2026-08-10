@@ -10,6 +10,7 @@ import type { CommandContext, CommandInteraction } from '../../src/bot/types.js'
 import {
   AdministrativePermissionDeniedError,
   ConfigurationError,
+  ConfirmationAlreadyHandledError,
   DiscordRoleCompensationFailedError,
   MemberAlreadySignedError,
   ModerationCaseAlreadyActiveError,
@@ -177,7 +178,7 @@ const classificationCases: ClassificationCase[] = [
     cmdName: 'tc-stale-confirm',
     makeError: () => new StaleConfirmationError(),
     level: 'warn',
-    message: 'command interaction expired before acknowledgement',
+    message: 'command rejected',
     contextSubset: { commandName: 'tc-stale-confirm', reason: 'STALE_CONFIRMATION' },
   },
   {
@@ -185,8 +186,19 @@ const classificationCases: ClassificationCase[] = [
     cmdName: 'tc-stale-mutation',
     makeError: () => new StaleMutationStateError(),
     level: 'warn',
-    message: 'command interaction expired before acknowledgement',
+    message: 'command rejected',
     contextSubset: { commandName: 'tc-stale-mutation', reason: 'STALE_MUTATION_STATE' },
+  },
+  {
+    label: '7c. ConfirmationAlreadyHandledError',
+    cmdName: 'tc-confirmation-handled',
+    makeError: () => new ConfirmationAlreadyHandledError(),
+    level: 'warn',
+    message: 'command rejected',
+    contextSubset: {
+      commandName: 'tc-confirmation-handled',
+      reason: 'CONFIRMATION_ALREADY_HANDLED',
+    },
   },
   {
     label: '8. Discord error code 10062',
@@ -351,6 +363,41 @@ describe('Logging Classification & Global Error Handling', () => {
 
     expect(replies).toHaveLength(1);
     expect(replies[0]?.flags).toBe(64); // MessageFlags.Ephemeral
+  });
+
+  it('maps WARN business errors and does not label them as expired interactions', async () => {
+    const logger = new MemoryLogger();
+    const error = new StaleConfirmationError();
+    const isolatedRegistry = new CommandRegistry();
+
+    isolatedRegistry.register({
+      data: new SlashCommandBuilder().setName('test-stale-response').setDescription('test'),
+      execute: () => {
+        throw error;
+      },
+    });
+
+    const { interaction, replies } = createMockCommandInteraction('test-stale-response');
+    await handleInteractionCreate(
+      interaction,
+      isolatedRegistry,
+      {} as CommandContext,
+      logger,
+    );
+
+    const warning = logger.entries.find((entry) => entry.message === 'command rejected');
+    expect(warning?.level).toBe('warn');
+    expect(warning?.context?.['reason']).toBe('STALE_CONFIRMATION');
+    expect(
+      logger.entries.some(
+        (entry) =>
+          entry.message === 'command interaction expired before acknowledgement' &&
+          entry.context?.['discordErrorCode'] === 10_062,
+      ),
+    ).toBe(false);
+    expect(replies).toHaveLength(1);
+    expect(replies[0]?.embeds?.[0]).toBeDefined();
+    expect(JSON.stringify(replies[0]?.embeds)).toContain(error.message);
   });
 
   it('19. no duplicate logging of the same failure', async () => {
