@@ -15,6 +15,7 @@ import {
   SquadFullError,
   UnauthorizedOfferAcceptanceError,
 } from '../../src/domain/errors.js';
+import type { MembershipType } from '../../src/domain/enums.js';
 import { ClubRepository } from '../../src/repositories/club-repository.js';
 import { MembershipRepository } from '../../src/repositories/membership-repository.js';
 import { OfferRepository } from '../../src/repositories/offer-repository.js';
@@ -29,6 +30,7 @@ import {
 import {
   guildConfiguredAuditEventType,
   GuildSetupService,
+  type SetupRolesInput,
 } from '../../src/services/guild-setup-service.js';
 import {
   offerCreatedAuditEventType,
@@ -68,6 +70,7 @@ const ownerId = '900000000000000002';
 const administratorId = '900000000000000003';
 const outsiderId = '900000000000000004';
 const playerId = '900000000000000005';
+type StaffMembershipType = Exclude<MembershipType, 'PLAYER'>;
 
 function authorization(
   discordUserId = ownerId,
@@ -147,6 +150,49 @@ describe('administration services', () => {
       playerDiscordUserId: offeredPlayerDiscordId,
       playerIsBot: false,
     });
+  }
+
+  function setupRoles(
+    overrides: Partial<Omit<SetupRolesInput, 'authorization' | 'guildName'>> = {},
+  ) {
+    return new GuildSetupService(database.client).setupRoles({
+      authorization: authorization(ownerId),
+      guildName: 'Renamed League',
+      botPermissionsRoleId: '920000000000000001',
+      teamManagerRoleId: '920000000000000002',
+      assistantManagerRoleId: '920000000000000003',
+      playerManagerRoleId: '920000000000000004',
+      ...overrides,
+    });
+  }
+
+  async function seedActiveStaffMemberships(...staffTypes: StaffMembershipType[]): Promise<void> {
+    const club = await createClub();
+    const memberships = new MembershipRepository(database.client);
+    const users = new UserRepository(database.client);
+    for (const [index, membershipType] of staffTypes.entries()) {
+      const user = await users.getOrCreateByDiscordUserId(`95000000000000000${index + 1}`);
+      await memberships.createActive({
+        guildId: settings.guildId,
+        clubId: club.id,
+        userId: user.id,
+        membershipType,
+      });
+    }
+  }
+
+  function replacementFor(
+    staffType: StaffMembershipType,
+    roleId: string,
+  ): Partial<Omit<SetupRolesInput, 'authorization' | 'guildName'>> {
+    switch (staffType) {
+      case 'TEAM_MANAGER':
+        return { teamManagerRoleId: roleId };
+      case 'ASSISTANT_MANAGER':
+        return { assistantManagerRoleId: roleId };
+      case 'PLAYER_MANAGER':
+        return { playerManagerRoleId: roleId };
+    }
   }
 
   it('allows database Bot Permissions to configure while rejecting Discord administrators and other users', async () => {
@@ -234,6 +280,124 @@ describe('administration services', () => {
     await expect(
       database.client.guild.findUniqueOrThrow({ where: { id: settings.guildId } }),
     ).resolves.toEqual(beforeGuild);
+  });
+
+  it.each([
+    ['TEAM_MANAGER', 'teamManagerRoleId', 'Team Manager', '920000000000000012'],
+    ['ASSISTANT_MANAGER', 'assistantManagerRoleId', 'Assistant Team Manager', '920000000000000013'],
+    ['PLAYER_MANAGER', 'playerManagerRoleId', 'Player Manager', '920000000000000014'],
+  ] as const)(
+    'rejects replacing an in-use %s role without changing settings or auditing success',
+    async (staffType, roleSetting, positionName, replacementRoleId) => {
+      await seedActiveStaffMemberships(staffType);
+
+      await expect(setupRoles(replacementFor(staffType, replacementRoleId))).rejects.toThrow(
+        `${positionName} role cannot be replaced`,
+      );
+
+      const persisted = await database.client.guildSettings.findUniqueOrThrow({
+        where: { guildId: settings.guildId },
+      });
+      expect(persisted[roleSetting]).toBe(settings[roleSetting]);
+      await expect(
+        database.client.auditEvent.count({ where: { eventType: 'guild.roles_configured' } }),
+      ).resolves.toBe(0);
+    },
+  );
+
+  it.each([
+    ['TEAM_MANAGER', 'teamManagerRoleId', '920000000000000012'],
+    ['ASSISTANT_MANAGER', 'assistantManagerRoleId', '920000000000000013'],
+    ['PLAYER_MANAGER', 'playerManagerRoleId', '920000000000000014'],
+  ] as const)('allows replacing a %s role with no active membership', async (staffType, roleSetting, roleId) => {
+    await expect(setupRoles(replacementFor(staffType, roleId))).resolves.toMatchObject({
+      settings: { [roleSetting]: roleId },
+    });
+  });
+
+  it('allows initial role configuration despite historical active staff memberships', async () => {
+    await clearDatabase(database.client);
+    const setupService = new GuildSetupService(database.client);
+    const initial = await setupService.setupGuildOnly({
+      authorization: authorization(administratorId),
+      guildName: 'Development League',
+    });
+    await grantBotPermission(database.client, guildId, ownerId);
+    const club = await database.client.club.create({
+      data: {
+        guildId: initial.guild.id,
+        discordRoleId: '930000000000000001',
+        emoji: 'ðŸ¦',
+      },
+    });
+    const user = await new UserRepository(database.client).getOrCreateByDiscordUserId(outsiderId);
+    await new MembershipRepository(database.client).createActive({
+      guildId: initial.guild.id,
+      clubId: club.id,
+      userId: user.id,
+      membershipType: 'TEAM_MANAGER',
+    });
+
+    await expect(setupRoles()).resolves.toMatchObject({
+      settings: { teamManagerRoleId: '920000000000000002' },
+    });
+  });
+
+  it.each(['TEAM_MANAGER', 'ASSISTANT_MANAGER', 'PLAYER_MANAGER'] as const)(
+    'allows unchanged %s role configuration while that position is active',
+    async (staffType) => {
+      await seedActiveStaffMemberships(staffType);
+      await expect(setupRoles()).resolves.toMatchObject({
+        settings: {
+          teamManagerRoleId: settings.teamManagerRoleId,
+          assistantManagerRoleId: settings.assistantManagerRoleId,
+          playerManagerRoleId: settings.playerManagerRoleId,
+        },
+      });
+    },
+  );
+
+  it.each([
+    ['TEAM_MANAGER', ['ASSISTANT_MANAGER', 'PLAYER_MANAGER'], '920000000000000012'],
+    ['ASSISTANT_MANAGER', ['TEAM_MANAGER', 'PLAYER_MANAGER'], '920000000000000013'],
+    ['PLAYER_MANAGER', ['TEAM_MANAGER', 'ASSISTANT_MANAGER'], '920000000000000014'],
+  ] as const)(
+    'allows replacing %s while only other management positions are active',
+    async (changedStaffType, activeStaffTypes, replacementRoleId) => {
+      await seedActiveStaffMemberships(...activeStaffTypes);
+      await expect(
+        setupRoles(replacementFor(changedStaffType, replacementRoleId)),
+      ).resolves.toMatchObject({ settings: replacementFor(changedStaffType, replacementRoleId) });
+    },
+  );
+
+  it('keeps all proposed role and guild metadata changes atomic when one replacement is in use', async () => {
+    await seedActiveStaffMemberships('PLAYER_MANAGER');
+    const beforeSettings = await database.client.guildSettings.findUniqueOrThrow({
+      where: { guildId: settings.guildId },
+    });
+    const beforeGuild = await database.client.guild.findUniqueOrThrow({
+      where: { id: settings.guildId },
+    });
+
+    await expect(
+      setupRoles({
+        botPermissionsRoleId: '920000000000000010',
+        teamManagerRoleId: '920000000000000012',
+        assistantManagerRoleId: '920000000000000013',
+        playerManagerRoleId: '920000000000000014',
+      }),
+    ).rejects.toThrow('Player Manager role cannot be replaced');
+
+    await expect(
+      database.client.guildSettings.findUniqueOrThrow({ where: { guildId: settings.guildId } }),
+    ).resolves.toEqual(beforeSettings);
+    await expect(
+      database.client.guild.findUniqueOrThrow({ where: { id: settings.guildId } }),
+    ).resolves.toEqual(beforeGuild);
+    await expect(
+      database.client.auditEvent.count({ where: { eventType: 'guild.roles_configured' } }),
+    ).resolves.toBe(0);
   });
 
   it.each([

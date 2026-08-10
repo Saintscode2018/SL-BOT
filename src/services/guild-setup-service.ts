@@ -6,6 +6,7 @@ import { AuditEventRepository } from '../repositories/audit-event-repository.js'
 import { assertNoManagementTeamRoleCollision } from '../domain/management-role-collision.js';
 import { ClubRepository } from '../repositories/club-repository.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
+import { MembershipRepository } from '../repositories/membership-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
 import { ConfigurationError } from '../domain/errors.js';
 
@@ -82,6 +83,46 @@ function assertDistinctManagementRoles(input: SetupRolesInput): void {
     throw new ConfigurationError(
       'Team Manager, Assistant Team Manager, and Player Manager roles must be distinct.',
     );
+  }
+}
+
+async function assertNoActiveManagementRoleReplacement(
+  memberships: MembershipRepository,
+  guildId: string,
+  previousSettings: GuildSettings | null,
+  input: SetupRolesInput,
+): Promise<void> {
+  const replacements = [
+    {
+      previousRoleId: previousSettings?.teamManagerRoleId ?? null,
+      proposedRoleId: input.teamManagerRoleId,
+      membershipType: 'TEAM_MANAGER' as const,
+      positionName: 'Team Manager',
+    },
+    {
+      previousRoleId: previousSettings?.assistantManagerRoleId ?? null,
+      proposedRoleId: input.assistantManagerRoleId,
+      membershipType: 'ASSISTANT_MANAGER' as const,
+      positionName: 'Assistant Team Manager',
+    },
+    {
+      previousRoleId: previousSettings?.playerManagerRoleId ?? null,
+      proposedRoleId: input.playerManagerRoleId,
+      membershipType: 'PLAYER_MANAGER' as const,
+      positionName: 'Player Manager',
+    },
+  ];
+
+  for (const replacement of replacements) {
+    if (
+      replacement.previousRoleId !== null &&
+      replacement.previousRoleId !== replacement.proposedRoleId &&
+      (await memberships.hasActiveMembershipOfTypeInGuild(guildId, replacement.membershipType))
+    ) {
+      throw new ConfigurationError(
+        `${replacement.positionName} role cannot be replaced while active ${replacement.positionName} memberships exist.`,
+      );
+    }
   }
 }
 
@@ -195,8 +236,15 @@ export class GuildSetupService {
       if (existing === null) {
         throw new ConfigurationError('league has not been setup yet');
       }
+      const previousSettings = await guilds.getSettings(existing.id);
       const activeTeams = await new ClubRepository(transaction).listActive(existing.id);
       assertNoManagementTeamRoleCollision(input, activeTeams.map((team) => team.discordRoleId));
+      await assertNoActiveManagementRoleReplacement(
+        new MembershipRepository(transaction),
+        existing.id,
+        previousSettings,
+        input,
+      );
       const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
         input.authorization.discordUserId,
       );
@@ -204,7 +252,6 @@ export class GuildSetupService {
         discordGuildId: input.authorization.discordGuildId,
         name: input.guildName,
       });
-      const previousSettings = await guilds.getSettings(guild.id);
       const settings = await guilds.upsertSettings(guild.id, {
         botPermissionsRoleId: input.botPermissionsRoleId,
         teamManagerRoleId: input.teamManagerRoleId,

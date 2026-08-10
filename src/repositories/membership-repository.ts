@@ -238,6 +238,17 @@ export class MembershipRepository {
     });
   }
 
+  public async hasActiveMembershipOfTypeInGuild(
+    guildId: string,
+    membershipType: Exclude<MembershipType, 'PLAYER'>,
+  ): Promise<boolean> {
+    const membership = await this.db.clubMembership.findFirst({
+      where: { guildId, membershipType, status: 'ACTIVE' },
+      select: { id: true },
+    });
+    return membership !== null;
+  }
+
   public async countActivePlayers(clubId: string): Promise<number> {
     return this.db.clubMembership.count({
       where: { clubId, membershipType: 'PLAYER', status: 'ACTIVE' },
