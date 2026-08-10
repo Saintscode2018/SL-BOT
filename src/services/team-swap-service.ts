@@ -223,18 +223,32 @@ export class TeamSwapService {
           input.authorization.discordUserId,
         );
 
+        const expectedMembershipIds = [...expectedTeam1Ids, ...expectedTeam2Ids];
+
+        // SQLite enforces the active staff-slot unique indexes at each statement boundary.
+        // Mark both rosters ended together before changing club IDs so every affected partial
+        // unique index is empty while the memberships cross teams. The intermediate ENDED
+        // state satisfies ClubMembership_status_timestamps_check and remains transaction-local.
+        if (expectedMembershipIds.length > 0) {
+          const staged = await transaction.clubMembership.updateMany({
+            where: { id: { in: expectedMembershipIds }, status: 'ACTIVE' },
+            data: { status: 'ENDED', leftAt: occurredAt },
+          });
+          if (staged.count !== expectedMembershipIds.length) throw new StaleMutationStateError();
+        }
+
         if (expectedTeam1Ids.length > 0) {
           const updated1 = await transaction.clubMembership.updateMany({
-            where: { id: { in: expectedTeam1Ids }, status: 'ACTIVE' },
-            data: { clubId: eligibility.team2.id },
+            where: { id: { in: expectedTeam1Ids }, status: 'ENDED' },
+            data: { clubId: eligibility.team2.id, status: 'ACTIVE', leftAt: null },
           });
           if (updated1.count !== expectedTeam1Ids.length) throw new StaleMutationStateError();
         }
 
         if (expectedTeam2Ids.length > 0) {
           const updated2 = await transaction.clubMembership.updateMany({
-            where: { id: { in: expectedTeam2Ids }, status: 'ACTIVE' },
-            data: { clubId: eligibility.team1.id },
+            where: { id: { in: expectedTeam2Ids }, status: 'ENDED' },
+            data: { clubId: eligibility.team1.id, status: 'ACTIVE', leftAt: null },
           });
           if (updated2.count !== expectedTeam2Ids.length) throw new StaleMutationStateError();
         }

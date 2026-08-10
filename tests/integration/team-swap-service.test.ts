@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -385,40 +385,61 @@ describe('TeamSwapService Integration Tests', () => {
       });
     }
 
-    async function expectAtomicStaffCollision(
-      membershipIds: readonly string[],
-      originalClubs: readonly { id: string; active: boolean; discordRoleId: string }[],
+    async function expectSuccessfulStaffSwap(
+      team1MembershipIds: readonly string[],
+      team2MembershipIds: readonly string[],
     ) {
-      const originalAssignments = await membershipAssignments(membershipIds);
+      const membershipIds = [...team1MembershipIds, ...team2MembershipIds];
+      const originalMemberships = await client.clubMembership.findMany({
+        where: { id: { in: membershipIds } },
+        select: { id: true, membershipType: true },
+      });
+      const originalTypeById = new Map(
+        originalMemberships.map(({ id, membershipType }) => [id, membershipType]),
+      );
 
-      let thrown: unknown;
-      try {
-        await service.swap({ authorization: authInput(), team1Id, team2Id });
-      } catch (error: unknown) {
-        thrown = error;
+      await expect(service.swap({ authorization: authInput(), team1Id, team2Id })).resolves.toMatchObject({
+        team1MovedCount: team1MembershipIds.length,
+        team2MovedCount: team2MembershipIds.length,
+      });
+      await expect(membershipAssignments(team1MembershipIds)).resolves.toEqual(
+        team1MembershipIds.map((id) => ({ id, clubId: team2Id })),
+      );
+      await expect(membershipAssignments(team2MembershipIds)).resolves.toEqual(
+        team2MembershipIds.map((id) => ({ id, clubId: team1Id })),
+      );
+
+      const swappedMemberships = await client.clubMembership.findMany({
+        where: { id: { in: membershipIds } },
+        select: { id: true, membershipType: true, status: true, leftAt: true },
+      });
+      expect(swappedMemberships).toHaveLength(membershipIds.length);
+      for (const membership of swappedMemberships) {
+        expect(membership.membershipType).toBe(originalTypeById.get(membership.id));
+        expect(membership.status).toBe('ACTIVE');
+        expect(membership.leftAt).toBeNull();
       }
 
-      expect(thrown).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
-      if (!(thrown instanceof Prisma.PrismaClientKnownRequestError)) {
-        throw new Error('Expected a PrismaClientKnownRequestError');
+      for (const [clubId, membershipType] of [
+        [team1Id, 'TEAM_MANAGER'],
+        [team1Id, 'ASSISTANT_MANAGER'],
+        [team1Id, 'PLAYER_MANAGER'],
+        [team2Id, 'TEAM_MANAGER'],
+        [team2Id, 'ASSISTANT_MANAGER'],
+        [team2Id, 'PLAYER_MANAGER'],
+      ] as const) {
+        await expect(
+          client.clubMembership.count({
+            where: { clubId, membershipType, status: 'ACTIVE' },
+          }),
+        ).resolves.toBeLessThanOrEqual(1);
       }
-      expect(thrown.code).toBe('P2002');
-      expect(thrown.meta).toMatchObject({ modelName: 'ClubMembership', target: ['clubId'] });
-
-      expect(await membershipAssignments(membershipIds)).toEqual(originalAssignments);
       await expect(
         client.leagueTransaction.count({ where: { transactionType: 'TEAM_SWAP' } }),
-      ).resolves.toBe(0);
+      ).resolves.toBe(membershipIds.length);
       await expect(client.auditEvent.count({ where: { eventType: teamSwappedAuditEventType } })).resolves.toBe(
-        0,
+        1,
       );
-      await expect(
-        client.club.findMany({
-          where: { id: { in: [team1Id, team2Id] } },
-          select: { id: true, active: true, discordRoleId: true },
-          orderBy: { id: 'asc' },
-        }),
-      ).resolves.toEqual([...originalClubs].sort((a, b) => a.id.localeCompare(b.id)));
     }
 
     it('CASE 1: swaps PLAYER-only teams successfully', async () => {
@@ -453,7 +474,7 @@ describe('TeamSwapService Integration Tests', () => {
     for (const membershipType of ['TEAM_MANAGER', 'ASSISTANT_MANAGER', 'PLAYER_MANAGER'] as const) {
       it(`CASE ${
         membershipType === 'TEAM_MANAGER' ? 3 : membershipType === 'ASSISTANT_MANAGER' ? 4 : 5
-      }: fully rolls back when both teams have an active ${membershipType}`, async () => {
+      }: swaps when both teams have an active ${membershipType}`, async () => {
         const team1Membership = await createMembership(
           team1Id,
           membershipType,
@@ -464,14 +485,9 @@ describe('TeamSwapService Integration Tests', () => {
           membershipType,
           `case-${membershipType}-team-2`,
         );
-        const originalClubs = await client.club.findMany({
-          where: { id: { in: [team1Id, team2Id] } },
-          select: { id: true, active: true, discordRoleId: true },
-        });
-
-        await expectAtomicStaffCollision(
-          [team1Membership.id, team2Membership.id],
-          originalClubs,
+        await expectSuccessfulStaffSwap(
+          [team1Membership.id],
+          [team2Membership.id],
         );
       });
     }
@@ -495,7 +511,7 @@ describe('TeamSwapService Integration Tests', () => {
       ]);
     });
 
-    it('CASE 7: fully rolls back when all matching staff slots are occupied', async () => {
+    it('CASE 7: swaps when all matching staff slots are occupied', async () => {
       const memberships = await Promise.all(
         (['TEAM_MANAGER', 'ASSISTANT_MANAGER', 'PLAYER_MANAGER'] as const).flatMap(
           (membershipType) => [
@@ -504,14 +520,9 @@ describe('TeamSwapService Integration Tests', () => {
           ],
         ),
       );
-      const originalClubs = await client.club.findMany({
-        where: { id: { in: [team1Id, team2Id] } },
-        select: { id: true, active: true, discordRoleId: true },
-      });
-
-      await expectAtomicStaffCollision(
-        memberships.map(({ id }) => id),
-        originalClubs,
+      await expectSuccessfulStaffSwap(
+        memberships.filter((_, index) => index % 2 === 0).map(({ id }) => id),
+        memberships.filter((_, index) => index % 2 === 1).map(({ id }) => id),
       );
     });
 
