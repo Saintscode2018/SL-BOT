@@ -9,6 +9,7 @@ import {
   ConflictError,
   DomainError,
   DuplicateOfferError,
+  GuildChannelCollisionError,
   InvalidOfferMessageError,
   MemberAlreadySignedError,
   OfferDeliveryError,
@@ -30,6 +31,7 @@ import {
 import {
   guildConfiguredAuditEventType,
   GuildSetupService,
+  type SetupChannelsInput,
   type SetupRolesInput,
 } from '../../src/services/guild-setup-service.js';
 import {
@@ -164,6 +166,21 @@ describe('administration services', () => {
       teamManagerRoleId: '920000000000000002',
       assistantManagerRoleId: '920000000000000003',
       playerManagerRoleId: '920000000000000004',
+      ...overrides,
+    });
+  }
+
+  function setupChannels(
+    overrides: Partial<Omit<SetupChannelsInput, 'authorization' | 'guildName'>> = {},
+  ) {
+    return new GuildSetupService(database.client).setupChannels({
+      authorization: authorization(ownerId),
+      guildName: 'Development League',
+      botCommandsChannelId: '910000000000000020',
+      staffChannelId: '910000000000000021',
+      transferChannelId: '910000000000000022',
+      auditChannelId: '910000000000000023',
+      caseFilesChannelId: '910000000000000024',
       ...overrides,
     });
   }
@@ -496,15 +513,7 @@ describe('administration services', () => {
   });
 
   it('persists and presents the Case Files channel through the existing channels setup flow', async () => {
-    const result = await new GuildSetupService(database.client).setupChannels({
-      authorization: authorization(ownerId),
-      guildName: 'Development League',
-      botCommandsChannelId: '910000000000000020',
-      staffChannelId: '910000000000000021',
-      transferChannelId: '910000000000000022',
-      auditChannelId: '910000000000000023',
-      caseFilesChannelId: '910000000000000024',
-    });
+    const result = await setupChannels();
     expect(result.settings.caseFilesChannelId).toBe('910000000000000024');
     await expect(
       database.client.guildSettings.findUnique({ where: { guildId: result.guild.id } }),
@@ -512,6 +521,128 @@ describe('administration services', () => {
     const view = await new GuildSetupService(database.client).getView(guildId);
     expect(view.channels.caseFilesChannelId).toBe('910000000000000024');
     expect(view.missingConfigurations).not.toContain('Case Files Channel');
+  });
+
+  it.each([
+    ['Bot Commands', { auditChannelId: '910000000000000020' }],
+    ['Bot Commands', { caseFilesChannelId: '910000000000000020' }],
+    ['Staff Commands', { transferChannelId: '910000000000000021' }],
+    ['Staff Commands', { auditChannelId: '910000000000000021' }],
+    ['Staff Commands', { caseFilesChannelId: '910000000000000021' }],
+    ['Transfer Market', { auditChannelId: '910000000000000022' }],
+    ['Transfer Market', { caseFilesChannelId: '910000000000000022' }],
+  ] as const)('rejects the incompatible %s channel collision atomically', async (_, collision) => {
+    const beforeSettings = await database.client.guildSettings.findUniqueOrThrow({
+      where: { guildId: settings.guildId },
+    });
+    const beforeGuild = await database.client.guild.findUniqueOrThrow({
+      where: { id: settings.guildId },
+    });
+
+    await expect(setupChannels(collision)).rejects.toBeInstanceOf(GuildChannelCollisionError);
+
+    await expect(
+      database.client.guildSettings.findUniqueOrThrow({ where: { guildId: settings.guildId } }),
+    ).resolves.toEqual(beforeSettings);
+    await expect(
+      database.client.guild.findUniqueOrThrow({ where: { id: settings.guildId } }),
+    ).resolves.toEqual(beforeGuild);
+    await expect(
+      database.client.auditEvent.count({ where: { eventType: 'guild.channels_configured' } }),
+    ).resolves.toBe(0);
+  });
+
+  it.each([
+    ['Bot Commands + Staff Commands', { staffChannelId: '910000000000000020' }],
+    ['Bot Commands + Transfer Market', { transferChannelId: '910000000000000020' }],
+    ['Audit + Case Files', { caseFilesChannelId: '910000000000000023' }],
+  ] as const)('allows the intentionally compatible %s channel sharing', async (_, shared) => {
+    await expect(setupChannels(shared)).resolves.toMatchObject({ settings: shared });
+  });
+
+  it('rejects a partial replacement that collides with an unchanged channel', async () => {
+    const beforeSettings = await database.client.guildSettings.findUniqueOrThrow({
+      where: { guildId: settings.guildId },
+    });
+    const beforeGuild = await database.client.guild.findUniqueOrThrow({
+      where: { id: settings.guildId },
+    });
+
+    await expect(
+      new GuildSetupService(database.client).setup({
+        authorization: authorization(ownerId),
+        guildName: 'Renamed League',
+        transferChannelId: '910000000000000030',
+        auditChannelId: '910000000000000030',
+        botPermissionsRoleId: '920000000000000010',
+      }),
+    ).rejects.toBeInstanceOf(GuildChannelCollisionError);
+
+    await expect(
+      database.client.guildSettings.findUniqueOrThrow({ where: { guildId: settings.guildId } }),
+    ).resolves.toEqual(beforeSettings);
+    await expect(
+      database.client.guild.findUniqueOrThrow({ where: { id: settings.guildId } }),
+    ).resolves.toEqual(beforeGuild);
+    await expect(
+      database.client.auditEvent.count({ where: { eventType: guildConfiguredAuditEventType } }),
+    ).resolves.toBe(2);
+  });
+
+  it('uses the same collision policy for initial channel setup', async () => {
+    await clearDatabase(database.client);
+
+    await expect(
+      new GuildSetupService(database.client).setupChannels({
+        authorization: authorization(administratorId),
+        guildName: 'Development League',
+        botCommandsChannelId: '910000000000000020',
+        staffChannelId: '910000000000000021',
+        transferChannelId: '910000000000000020',
+        auditChannelId: '910000000000000020',
+        caseFilesChannelId: '910000000000000024',
+      }),
+    ).rejects.toBeInstanceOf(GuildChannelCollisionError);
+
+    await expect(database.client.guild.count()).resolves.toBe(0);
+    await expect(database.client.guildSettings.count()).resolves.toBe(0);
+    await expect(database.client.auditEvent.count()).resolves.toBe(0);
+  });
+
+  it('allows unchanged valid channel values to be submitted again', async () => {
+    await expect(setupChannels()).resolves.toMatchObject({
+      settings: {
+        botCommandsChannelId: '910000000000000020',
+        staffChannelId: '910000000000000021',
+        transferChannelId: '910000000000000022',
+        auditChannelId: '910000000000000023',
+        caseFilesChannelId: '910000000000000024',
+      },
+    });
+    await expect(setupChannels()).resolves.toMatchObject({
+      settings: {
+        botCommandsChannelId: '910000000000000020',
+        staffChannelId: '910000000000000021',
+        transferChannelId: '910000000000000022',
+        auditChannelId: '910000000000000023',
+        caseFilesChannelId: '910000000000000024',
+      },
+    });
+  });
+
+  it('does not validate historical channel collisions on unrelated league setup updates', async () => {
+    await database.client.guildSettings.update({
+      where: { guildId: settings.guildId },
+      data: { auditChannelId: settings.transferChannelId },
+    });
+
+    await expect(
+      new GuildSetupService(database.client).setupGuildOnly({
+        authorization: authorization(ownerId),
+        guildName: 'Renamed League',
+        offerTimeoutSeconds: 7200,
+      }),
+    ).resolves.toMatchObject({ settings: { offerTimeoutSeconds: 7200 } });
   });
 
   it('creates teams and rejects a duplicate Discord role', async () => {

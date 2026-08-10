@@ -17,6 +17,19 @@ export class ValidationError extends DomainError {}
 
 export class ConfigurationError extends DomainError {}
 
+export class GuildChannelCollisionError extends ConfigurationError {
+  public readonly code = 'GUILD_CHANNEL_COLLISION';
+
+  public constructor(
+    public readonly firstChannel: string,
+    public readonly secondChannel: string,
+  ) {
+    super(
+      `${firstChannel} and ${secondChannel} channels must be different because they serve incompatible purposes.`,
+    );
+  }
+}
+
 export class ApplicationStartupError extends DomainError {}
 
 export class GuildConfigurationNotFoundError extends DomainError {

@@ -9,6 +9,10 @@ import { GuildRepository } from '../repositories/guild-repository.js';
 import { MembershipRepository } from '../repositories/membership-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
 import { ConfigurationError } from '../domain/errors.js';
+import {
+  validateGuildChannelConfiguration,
+  type GuildChannelConfiguration,
+} from '../domain/guild-channel-collision.js';
 
 export const guildConfiguredAuditEventType = 'guild.configured';
 
@@ -84,6 +88,47 @@ function assertDistinctManagementRoles(input: SetupRolesInput): void {
       'Team Manager, Assistant Team Manager, and Player Manager roles must be distinct.',
     );
   }
+}
+
+function proposedGuildChannels(
+  previousSettings: GuildSettings | null,
+  input: Pick<
+    SetupGuildInput,
+    | 'botCommandsChannelId'
+    | 'staffChannelId'
+    | 'transferChannelId'
+    | 'auditChannelId'
+    | 'caseFilesChannelId'
+  >,
+): GuildChannelConfiguration {
+  return {
+    botCommandsChannelId:
+      input.botCommandsChannelId ?? previousSettings?.botCommandsChannelId ?? null,
+    staffChannelId: input.staffChannelId ?? previousSettings?.staffChannelId ?? null,
+    transferChannelId: input.transferChannelId ?? previousSettings?.transferChannelId ?? null,
+    auditChannelId: input.auditChannelId ?? previousSettings?.auditChannelId ?? null,
+    caseFilesChannelId:
+      input.caseFilesChannelId ?? previousSettings?.caseFilesChannelId ?? null,
+  };
+}
+
+function channelSetupWasRequested(
+  input: Pick<
+    SetupGuildInput,
+    | 'botCommandsChannelId'
+    | 'staffChannelId'
+    | 'transferChannelId'
+    | 'auditChannelId'
+    | 'caseFilesChannelId'
+  >,
+): boolean {
+  return (
+    input.botCommandsChannelId !== undefined ||
+    input.staffChannelId !== undefined ||
+    input.transferChannelId !== undefined ||
+    input.auditChannelId !== undefined ||
+    input.caseFilesChannelId !== undefined
+  );
 }
 
 async function assertNoActiveManagementRoleReplacement(
@@ -183,6 +228,14 @@ export class GuildSetupService {
         allowDiscordAdministratorBootstrap: true,
       });
       const existing = await guilds.getByDiscordGuildId(input.authorization.discordGuildId);
+      const previousSettings = existing === null ? null : await guilds.getSettings(existing.id);
+      validateGuildChannelConfiguration({
+        botCommandsChannelId: input.botCommandsChannelId,
+        staffChannelId: input.staffChannelId,
+        transferChannelId: input.transferChannelId,
+        auditChannelId: input.auditChannelId,
+        caseFilesChannelId: input.caseFilesChannelId,
+      });
       const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
         input.authorization.discordUserId,
       );
@@ -190,7 +243,6 @@ export class GuildSetupService {
         discordGuildId: input.authorization.discordGuildId,
         name: input.guildName,
       });
-      const previousSettings = await guilds.getSettings(guild.id);
       const settings = await guilds.upsertSettings(guild.id, {
         botCommandsChannelId: input.botCommandsChannelId,
         staffChannelId: input.staffChannelId,
@@ -290,6 +342,10 @@ export class GuildSetupService {
       await guilds.acquireWriteLock(input.authorization.discordGuildId);
       await new AuthorizationService(transaction).assertCanSetup(input.authorization);
       const existing = await guilds.getByDiscordGuildId(input.authorization.discordGuildId);
+      const previousSettings = existing === null ? null : await guilds.getSettings(existing.id);
+      if (channelSetupWasRequested(input)) {
+        validateGuildChannelConfiguration(proposedGuildChannels(previousSettings, input));
+      }
       const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
         input.authorization.discordUserId,
       );
@@ -297,7 +353,7 @@ export class GuildSetupService {
         discordGuildId: input.authorization.discordGuildId,
         name: input.guildName,
       });
-      const previousSettings = await guilds.getSettings(guild.id);
+      const previousSettingsAfterGuildUpsert = await guilds.getSettings(guild.id);
       const settings = await guilds.upsertSettings(guild.id, {
         ...(input.botCommandsChannelId !== undefined
           ? { botCommandsChannelId: input.botCommandsChannelId }
@@ -333,13 +389,13 @@ export class GuildSetupService {
         entityType: 'guild_settings',
         entityId: settings.id,
         beforeState:
-          previousSettings === null
+          previousSettingsAfterGuildUpsert === null
             ? { configured: false }
             : {
-                transferChannelId: previousSettings.transferChannelId,
-                auditChannelId: previousSettings.auditChannelId,
-                caseFilesChannelId: previousSettings.caseFilesChannelId,
-                botPermissionsRoleId: previousSettings.botPermissionsRoleId,
+                transferChannelId: previousSettingsAfterGuildUpsert.transferChannelId,
+                auditChannelId: previousSettingsAfterGuildUpsert.auditChannelId,
+                caseFilesChannelId: previousSettingsAfterGuildUpsert.caseFilesChannelId,
+                botPermissionsRoleId: previousSettingsAfterGuildUpsert.botPermissionsRoleId,
               },
         afterState: {
           configured: true,
