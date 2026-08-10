@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { ConfigurationError } from './errors.js';
+
 const maxUnsigned64BitInteger = '18446744073709551615';
 
 /**
@@ -18,3 +20,24 @@ export const discordSnowflakeSchema = z
   );
 
 export const robloxUserIdSchema = z.string().regex(/^\d+$/, 'must contain decimal digits only');
+
+/** The configured offer lifetime is stored and consumed as whole seconds. */
+export const maxOfferTimeoutSeconds = 7 * 24 * 60 * 60;
+
+const offerTimeoutSecondsSchema = z
+  .number()
+  .finite()
+  .int()
+  .min(1)
+  .max(maxOfferTimeoutSeconds);
+
+export function parseOfferTimeoutSeconds(value: number): number {
+  const result = offerTimeoutSecondsSchema.safeParse(value);
+  if (!result.success) {
+    throw new ConfigurationError(
+      `invalid offer timeout configuration: ${z.prettifyError(result.error)}`,
+      { cause: result.error },
+    );
+  }
+  return result.data;
+}

@@ -965,6 +965,21 @@ describe('administration services', () => {
     ).rejects.toBeInstanceOf(SquadFullError);
   });
 
+  it('preserves exact configured offer expiry arithmetic', async () => {
+    const destination = await createClub();
+    const createdAt = new Date('2030-08-10T12:00:00.000Z');
+    const offer = await new OfferCreationService(database.client, () => createdAt).createOffer({
+      authorization: authorization(),
+      destinationClubId: destination.id,
+      playerDiscordUserId: playerId,
+      playerIsBot: false,
+    });
+
+    expect(offer.offer.expiresAt).toEqual(
+      new Date(createdAt.getTime() + settings.offerTimeoutSeconds * 1000),
+    );
+  });
+
   it.each([
     ['before the workflow time', 1],
     ['exactly at the workflow time', 0],

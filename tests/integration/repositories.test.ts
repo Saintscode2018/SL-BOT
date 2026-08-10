@@ -10,6 +10,7 @@ import { LeagueTransactionRepository } from '../../src/repositories/transaction-
 import { UserRepository } from '../../src/repositories/user-repository.js';
 import {
   ConflictError,
+  ConfigurationError,
   ConstraintViolationError,
   InvalidStateTransitionError,
 } from '../../src/domain/errors.js';
@@ -153,11 +154,31 @@ describe('repositories and database constraints', () => {
       ).resolves.toBe(1);
     });
 
-    it('enforces a positive offer timeout', async () => {
+    it('rejects invalid offer timeout configuration before persistence', async () => {
+      const guild = await guilds.create({ discordGuildId: '100000000000000001', name: 'guild' });
+      for (const offerTimeoutSeconds of [
+        0,
+        -1,
+        Number.NaN,
+        Number.POSITIVE_INFINITY,
+        Number.NEGATIVE_INFINITY,
+        1.5,
+        604_801,
+      ]) {
+        await expect(
+          guilds.upsertSettings(guild.id, { offerTimeoutSeconds }),
+        ).rejects.toBeInstanceOf(ConfigurationError);
+      }
+      await expect(
+        database.client.guildSettings.count({ where: { guildId: guild.id } }),
+      ).resolves.toBe(0);
+    });
+
+    it('accepts the supported seven-day offer timeout', async () => {
       const guild = await guilds.create({ discordGuildId: '100000000000000001', name: 'guild' });
       await expect(
-        guilds.upsertSettings(guild.id, { offerTimeoutSeconds: 0 }),
-      ).rejects.toBeInstanceOf(ConstraintViolationError);
+        guilds.upsertSettings(guild.id, { offerTimeoutSeconds: 604_800 }),
+      ).resolves.toMatchObject({ offerTimeoutSeconds: 604_800 });
     });
   });
 

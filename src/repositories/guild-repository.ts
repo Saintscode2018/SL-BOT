@@ -2,7 +2,10 @@ import { Prisma, type Guild, type GuildSettings } from '@prisma/client';
 
 import { EntityNotFoundError } from '../domain/errors.js';
 import type { DatabaseClient } from '../domain/types.js';
-import { discordSnowflakeSchema } from '../domain/validation.js';
+import {
+  discordSnowflakeSchema,
+  parseOfferTimeoutSeconds,
+} from '../domain/validation.js';
 import { translateDatabaseError } from './repository-errors.js';
 
 export interface CreateGuildInput {
@@ -49,7 +52,7 @@ function settingsData(
     data.defaultSquadLimit = input.defaultSquadLimit;
   }
   if (input.offerTimeoutSeconds !== undefined) {
-    data.offerTimeoutSeconds = input.offerTimeoutSeconds;
+    data.offerTimeoutSeconds = parseOfferTimeoutSeconds(input.offerTimeoutSeconds);
   }
   return data;
 }
@@ -124,7 +127,10 @@ export class GuildRepository {
   }
 
   public async getSettings(guildId: string): Promise<GuildSettings | null> {
-    return this.db.guildSettings.findUnique({ where: { guildId } });
+    const settings = await this.db.guildSettings.findUnique({ where: { guildId } });
+    if (settings === null) return null;
+    parseOfferTimeoutSeconds(settings.offerTimeoutSeconds);
+    return settings;
   }
 
   public async requireById(id: string): Promise<Guild> {
