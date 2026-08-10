@@ -126,6 +126,44 @@ export class OfferRepository {
     );
   }
 
+  public async voidPendingForSignedPlayer(
+    guildId: string,
+    playerUserId: string,
+    acceptedOfferId: string | null,
+    at = new Date(),
+  ): Promise<Offer[]> {
+    const pendingOffers = await this.db.offer.findMany({
+      where: {
+        guildId,
+        playerUserId,
+        status: 'PENDING',
+        ...(acceptedOfferId === null ? {} : { id: { not: acceptedOfferId } }),
+      },
+    });
+    const voidedOffers: Offer[] = [];
+
+    for (const pendingOffer of pendingOffers) {
+      const result = await this.db.offer.updateMany({
+        where: {
+          AND: [
+            { id: pendingOffer.id },
+            { guildId },
+            { playerUserId },
+            { status: 'PENDING' },
+            ...(acceptedOfferId === null ? [] : [{ id: { not: acceptedOfferId } }]),
+          ],
+        },
+        data: { status: 'VOIDED', respondedAt: at },
+      });
+      if (result.count !== 1) continue;
+
+      const voidedOffer = await this.getById(pendingOffer.id);
+      if (voidedOffer !== null) voidedOffers.push(voidedOffer);
+    }
+
+    return voidedOffers;
+  }
+
   public async expirePendingAtOrBefore(id: string, at: Date): Promise<Offer> {
     const result = await this.db.offer.updateMany({
       where: { id, status: 'PENDING', expiresAt: { lte: at } },

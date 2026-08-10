@@ -33,6 +33,7 @@ import type { RoleSynchronizedMutationService } from './role-synchronized-mutati
 
 import type { AcceptedOfferPresentationData } from './offer-delivery-service.js';
 import { offerExpiredAuditEventType } from './offer-decline-service.js';
+import { voidCompetingOffersForSigning } from './offer-signing-invalidation-service.js';
 
 export const offerAcceptedAuditEventType = 'offer.accepted';
 
@@ -303,6 +304,14 @@ export class OfferAcceptanceService {
         transactionId: transaction.id,
         transactionType,
       },
+    });
+    await voidCompetingOffersForSigning(transactionClient, {
+      guildId: pendingOffer.guildId,
+      playerUserId: player.id,
+      acceptedOfferId: acceptedOffer.id,
+      membershipId: newMembership.id,
+      destinationClubId: destinationClub.id,
+      occurredAt: acceptedAt,
     });
 
     const offeredByUser = await repositories.users.getById(pendingOffer.offeredByUserId);

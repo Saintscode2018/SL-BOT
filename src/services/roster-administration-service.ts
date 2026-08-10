@@ -37,6 +37,7 @@ import {
   rosterPlayerAddedAuditEventType,
   rosterPlayerRemovedAuditEventType,
 } from './roster-management-service.js';
+import { voidCompetingOffersForSigning } from './offer-signing-invalidation-service.js';
 import type {
   RoleSynchronizedMutationService,
   SynchronizedMutationResult,
@@ -168,6 +169,14 @@ export class RosterAdministrationService {
       entityId: membership.id,
       afterState: { status: membership.status, clubId: club.id, playerUserId: player.id },
       metadata: { transactionId: leagueTransaction.id },
+    });
+    await voidCompetingOffersForSigning(transaction, {
+      guildId,
+      playerUserId: player.id,
+      acceptedOfferId: null,
+      membershipId: membership.id,
+      destinationClubId: club.id,
+      occurredAt,
     });
     const guild = await this.requireGuild(transaction, guildId);
     const settings = await new GuildRepository(transaction).getSettings(guildId);

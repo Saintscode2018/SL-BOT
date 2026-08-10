@@ -22,6 +22,7 @@ import {
   type OfferAcceptanceRepositoryFactory,
 } from '../../src/services/offer-acceptance-service.js';
 import { offerExpiredAuditEventType } from '../../src/services/offer-decline-service.js';
+import { offerVoidedForSigningAuditEventType } from '../../src/services/offer-signing-invalidation-service.js';
 import { RoleSynchronizedMutationService } from '../../src/services/role-synchronized-mutation-service.js';
 import {
   clearDatabase,
@@ -204,7 +205,7 @@ describe('offer acceptance service', () => {
     await expect(database.client.clubMembership.count()).resolves.toBe(0);
   });
 
-  it('allows only one of two competing team offers to be accepted', async () => {
+  it('voids a competing pending offer when a player accepts a signing', async () => {
     const data = await seed();
     const competingClub = await clubs.create({
       guildId: data.guild.id,
@@ -218,19 +219,167 @@ describe('offer acceptance service', () => {
       offeredByUserId: data.manager.id,
       expiresAt: new Date(Date.now() + 60_000),
     });
-    await expect(accept(data)).resolves.toMatchObject({ offer: { status: 'ACCEPTED' } });
+    const accepted = await accept(data);
+    expect(accepted).toMatchObject({ offer: { status: 'ACCEPTED' } });
     await expect(
       service.acceptOffer({
         offerId: competingOffer.id,
         acceptingDiscordUserId: data.player.discordUserId,
       }),
-    ).rejects.toBeInstanceOf(MemberAlreadySignedError);
+    ).rejects.toBeInstanceOf(InvalidStateTransitionError);
     await expect(
       database.client.offer.findUniqueOrThrow({ where: { id: competingOffer.id } }),
-    ).resolves.toMatchObject({ status: 'PENDING' });
+    ).resolves.toMatchObject({ status: 'VOIDED' });
     await expect(
       database.client.clubMembership.count({ where: { status: 'ACTIVE' } }),
     ).resolves.toBe(1);
+    await expect(
+      database.client.leagueTransaction.findMany({ where: { userId: data.player.id } }),
+    ).resolves.toMatchObject([{ id: accepted.transaction.id, offerId: data.offer.id }]);
+    await expect(
+      database.client.auditEvent.findMany({
+        where: { eventType: offerVoidedForSigningAuditEventType, entityId: competingOffer.id },
+      }),
+    ).resolves.toMatchObject([
+      {
+        actorUserId: null,
+        beforeState: { status: 'PENDING' },
+        afterState: { status: 'VOIDED' },
+        metadata: {
+          reason: 'PLAYER_SIGNED_ELSEWHERE',
+          acceptedOfferId: data.offer.id,
+          membershipId: accepted.newMembership.id,
+          destinationClubId: data.destination.id,
+        },
+      },
+    ]);
+  });
+
+  it('voids every other pending offer, preserves terminal offers, and isolates other guilds', async () => {
+    const data = await seed();
+    const pendingClub = await clubs.create({
+      guildId: data.guild.id,
+      discordRoleId: '820000000000000003',
+      emoji: '🟢',
+    });
+    const declinedClub = await clubs.create({
+      guildId: data.guild.id,
+      discordRoleId: '820000000000000004',
+      emoji: '🟣',
+    });
+    const expiredClub = await clubs.create({
+      guildId: data.guild.id,
+      discordRoleId: '820000000000000005',
+      emoji: '🟠',
+    });
+    const voidedClub = await clubs.create({
+      guildId: data.guild.id,
+      discordRoleId: '820000000000000006',
+      emoji: '⚪',
+    });
+    const [firstPending, secondPending, declined, expired, alreadyVoided] = await Promise.all([
+      offers.createPending({
+        guildId: data.guild.id,
+        clubId: pendingClub.id,
+        playerUserId: data.player.id,
+        offeredByUserId: data.manager.id,
+        expiresAt: new Date(Date.now() + 60_000),
+      }),
+      offers.createPending({
+        guildId: data.guild.id,
+        clubId: data.source.id,
+        playerUserId: data.player.id,
+        offeredByUserId: data.manager.id,
+        expiresAt: new Date(Date.now() + 60_000),
+      }),
+      offers.createPending({
+        guildId: data.guild.id,
+        clubId: declinedClub.id,
+        playerUserId: data.player.id,
+        offeredByUserId: data.manager.id,
+        expiresAt: new Date(Date.now() + 60_000),
+      }),
+      offers.createPending({
+        guildId: data.guild.id,
+        clubId: expiredClub.id,
+        playerUserId: data.player.id,
+        offeredByUserId: data.manager.id,
+        expiresAt: new Date(Date.now() + 60_000),
+      }),
+      offers.createPending({
+        guildId: data.guild.id,
+        clubId: voidedClub.id,
+        playerUserId: data.player.id,
+        offeredByUserId: data.manager.id,
+        expiresAt: new Date(Date.now() + 60_000),
+      }),
+    ]);
+    await offers.transition(declined.id, 'DECLINED');
+    await offers.transition(expired.id, 'EXPIRED');
+    await offers.transition(alreadyVoided.id, 'VOIDED');
+    const otherGuild = await guilds.create({
+      discordGuildId: '810000000000000099',
+      name: 'other guild',
+    });
+    const otherClub = await clubs.create({
+      guildId: otherGuild.id,
+      discordRoleId: '820000000000000099',
+      emoji: '🔴',
+    });
+    const otherGuildOffer = await offers.createPending({
+      guildId: otherGuild.id,
+      clubId: otherClub.id,
+      playerUserId: data.player.id,
+      offeredByUserId: data.manager.id,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    await accept(data);
+
+    await expect(
+      database.client.offer.findUniqueOrThrow({ where: { id: firstPending.id } }),
+    ).resolves.toMatchObject({ status: 'VOIDED' });
+    await expect(
+      database.client.offer.findUniqueOrThrow({ where: { id: secondPending.id } }),
+    ).resolves.toMatchObject({ status: 'VOIDED' });
+    await expect(database.client.offer.findUniqueOrThrow({ where: { id: declined.id } })).resolves.toMatchObject({
+      status: 'DECLINED',
+    });
+    await expect(database.client.offer.findUniqueOrThrow({ where: { id: expired.id } })).resolves.toMatchObject({
+      status: 'EXPIRED',
+    });
+    await expect(
+      database.client.offer.findUniqueOrThrow({ where: { id: alreadyVoided.id } }),
+    ).resolves.toMatchObject({ status: 'VOIDED' });
+    await expect(
+      database.client.offer.findUniqueOrThrow({ where: { id: otherGuildOffer.id } }),
+    ).resolves.toMatchObject({ status: 'PENDING' });
+    await expect(
+      database.client.auditEvent.count({ where: { eventType: offerVoidedForSigningAuditEventType } }),
+    ).resolves.toBe(2);
+  });
+
+  it('keeps a voided competing offer terminal after the accepted membership ends', async () => {
+    const data = await seed();
+    const competingOffer = await offers.createPending({
+      guildId: data.guild.id,
+      clubId: data.source.id,
+      playerUserId: data.player.id,
+      offeredByUserId: data.manager.id,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const accepted = await accept(data);
+    await memberships.end(accepted.newMembership.id);
+
+    await expect(
+      service.acceptOffer({
+        offerId: competingOffer.id,
+        acceptingDiscordUserId: data.player.discordUserId,
+      }),
+    ).rejects.toBeInstanceOf(InvalidStateTransitionError);
+    await expect(
+      database.client.offer.findUniqueOrThrow({ where: { id: competingOffer.id } }),
+    ).resolves.toMatchObject({ status: 'VOIDED' });
   });
 
   it('rejects an old offer after the player signs elsewhere and preserves that membership', async () => {
@@ -256,6 +405,13 @@ describe('offer acceptance service', () => {
 
   it('rejects acceptance when the derived active roster is full', async () => {
     const data = await seed(1);
+    const competingOffer = await offers.createPending({
+      guildId: data.guild.id,
+      clubId: data.source.id,
+      playerUserId: data.player.id,
+      offeredByUserId: data.manager.id,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
     const occupant = await users.getOrCreateByDiscordUserId('830000000000000003');
     await memberships.createActive({
       guildId: data.guild.id,
@@ -269,6 +425,9 @@ describe('offer acceptance service', () => {
     ).resolves.toMatchObject({
       status: 'PENDING',
     });
+    await expect(
+      database.client.offer.findUniqueOrThrow({ where: { id: competingOffer.id } }),
+    ).resolves.toMatchObject({ status: 'PENDING' });
     await expect(database.client.leagueTransaction.count()).resolves.toBe(0);
   });
 
@@ -502,25 +661,49 @@ describe('offer acceptance service', () => {
     });
   });
 
-  it('allows exactly one concurrent acceptance without partial state', async () => {
+  it('allows exactly one concurrent competing acceptance without overwriting the winner', async () => {
     const data = await seed();
-    const results = await Promise.allSettled([accept(data), accept(data)]);
+    const competingOffer = await offers.createPending({
+      guildId: data.guild.id,
+      clubId: data.source.id,
+      playerUserId: data.player.id,
+      offeredByUserId: data.manager.id,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const results = await Promise.allSettled([
+      accept(data),
+      service.acceptOffer({
+        offerId: competingOffer.id,
+        acceptingDiscordUserId: data.player.discordUserId,
+      }),
+    ]);
     expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
     expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(1);
     await expect(
       database.client.clubMembership.count({
-        where: { clubId: data.destination.id, membershipType: 'PLAYER', status: 'ACTIVE' },
+        where: { guildId: data.guild.id, membershipType: 'PLAYER', status: 'ACTIVE' },
       }),
     ).resolves.toBe(1);
     await expect(database.client.leagueTransaction.count()).resolves.toBe(1);
     await expect(
       database.client.auditEvent.count({ where: { eventType: offerAcceptedAuditEventType } }),
     ).resolves.toBe(1);
-    await expect(
+    const [firstOffer, secondOffer] = await Promise.all([
       database.client.offer.findUniqueOrThrow({ where: { id: data.offer.id } }),
-    ).resolves.toMatchObject({
-      status: 'ACCEPTED',
-    });
+      database.client.offer.findUniqueOrThrow({ where: { id: competingOffer.id } }),
+    ]);
+    expect(['ACCEPTED', 'VOIDED']).toContain(firstOffer.status);
+    expect(['ACCEPTED', 'VOIDED']).toContain(secondOffer.status);
+    await expect(
+      database.client.offer.count({
+        where: { id: { in: [data.offer.id, competingOffer.id] }, status: 'ACCEPTED' },
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      database.client.offer.count({
+        where: { id: { in: [data.offer.id, competingOffer.id] }, status: 'VOIDED' },
+      }),
+    ).resolves.toBe(1);
   });
 
   it('expires a concurrently accepted stale offer exactly once', async () => {

@@ -17,6 +17,7 @@ import type {
 import { ClubRepository } from '../../src/repositories/club-repository.js';
 import { GuildRepository } from '../../src/repositories/guild-repository.js';
 import { MembershipRepository } from '../../src/repositories/membership-repository.js';
+import { OfferRepository } from '../../src/repositories/offer-repository.js';
 import { UserRepository } from '../../src/repositories/user-repository.js';
 import type { AuthorizationInput } from '../../src/services/authorization-service.js';
 import {
@@ -28,6 +29,7 @@ import { RosterManagementService } from '../../src/services/roster-management-se
 import { RosterMutationService } from '../../src/services/roster-mutation-service.js';
 import { RosterPromotionDemotionService } from '../../src/services/roster-promotion-demotion-service.js';
 import { RoleSynchronizedMutationService } from '../../src/services/role-synchronized-mutation-service.js';
+import { offerVoidedForSigningAuditEventType } from '../../src/services/offer-signing-invalidation-service.js';
 import {
   clearDatabase,
   createTestDatabase,
@@ -172,6 +174,49 @@ describe('administrative roster service', () => {
     await expect(
       database.client.auditEvent.count({ where: { entityId: added.membership.id } }),
     ).resolves.toBe(2);
+  });
+
+  it('voids pending competing offers when /roster add signs a player', async () => {
+    const users = new UserRepository(database.client);
+    const player = await users.getOrCreateByDiscordUserId(playerId);
+    const actor = await users.getOrCreateByDiscordUserId(ownerId);
+    const competingOffer = await new OfferRepository(database.client).createPending({
+      guildId: guild.id,
+      clubId: otherTeam.id,
+      playerUserId: player.id,
+      offeredByUserId: actor.id,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    const added = await service.add({
+      authorization: authorization(),
+      clubId: team.id,
+      playerDiscordUserId: playerId,
+      playerIsBot: false,
+    });
+
+    await expect(
+      database.client.offer.findUniqueOrThrow({ where: { id: competingOffer.id } }),
+    ).resolves.toMatchObject({ status: 'VOIDED' });
+    await expect(
+      database.client.auditEvent.findMany({
+        where: { eventType: offerVoidedForSigningAuditEventType, entityId: competingOffer.id },
+      }),
+    ).resolves.toMatchObject([
+      {
+        actorUserId: null,
+        beforeState: { status: 'PENDING' },
+        afterState: { status: 'VOIDED' },
+        metadata: {
+          reason: 'PLAYER_SIGNED_ELSEWHERE',
+          membershipId: added.membership.id,
+          destinationClubId: team.id,
+        },
+      },
+    ]);
+    await expect(
+      database.client.leagueTransaction.findMany({ where: { userId: player.id } }),
+    ).resolves.toMatchObject([{ transactionType: 'SIGNING', destinationClubId: team.id }]);
   });
 
   it('rejects same-team and other-team roster conflicts', async () => {
