@@ -254,7 +254,10 @@ export class TeamSwapService {
         }
 
         const txRepo = new LeagueTransactionRepository(transaction);
+        const team1HistoryUserIds = new Set<string>();
         for (const membership of currentTeam1Memberships) {
+          if (team1HistoryUserIds.has(membership.userId)) continue;
+          team1HistoryUserIds.add(membership.userId);
           await txRepo.create({
             guildId: authorization.guild.id,
             userId: membership.userId,
@@ -264,7 +267,10 @@ export class TeamSwapService {
             performedByUserId: actor.id,
           });
         }
+        const team2HistoryUserIds = new Set<string>();
         for (const membership of currentTeam2Memberships) {
+          if (team2HistoryUserIds.has(membership.userId)) continue;
+          team2HistoryUserIds.add(membership.userId);
           await txRepo.create({
             guildId: authorization.guild.id,
             userId: membership.userId,

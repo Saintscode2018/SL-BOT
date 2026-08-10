@@ -392,7 +392,7 @@ describe('TeamSwapService Integration Tests', () => {
       const membershipIds = [...team1MembershipIds, ...team2MembershipIds];
       const originalMemberships = await client.clubMembership.findMany({
         where: { id: { in: membershipIds } },
-        select: { id: true, membershipType: true },
+        select: { id: true, userId: true, membershipType: true },
       });
       const originalTypeById = new Map(
         originalMemberships.map(({ id, membershipType }) => [id, membershipType]),
@@ -436,7 +436,7 @@ describe('TeamSwapService Integration Tests', () => {
       }
       await expect(
         client.leagueTransaction.count({ where: { transactionType: 'TEAM_SWAP' } }),
-      ).resolves.toBe(membershipIds.length);
+      ).resolves.toBe(new Set(originalMemberships.map(({ userId }) => userId)).size);
       await expect(client.auditEvent.count({ where: { eventType: teamSwappedAuditEventType } })).resolves.toBe(
         1,
       );
@@ -526,7 +526,7 @@ describe('TeamSwapService Integration Tests', () => {
       );
     });
 
-    it('CASE 8: swaps PLAYER plus staff memberships for the same user without a separate defect', async () => {
+    it('deduplicates TEAM_SWAP history for PLAYER plus staff memberships of the same user', async () => {
       const sharedUser = await client.leagueUser.create({
         data: { discordUserId: 'case-8-player-and-staff' },
       });
@@ -548,8 +548,102 @@ describe('TeamSwapService Integration Tests', () => {
       ]);
       await expect(
         client.leagueTransaction.count({ where: { transactionType: 'TEAM_SWAP' } }),
-      ).resolves.toBe(3);
+      ).resolves.toBe(2);
+      const transactions = await client.leagueTransaction.findMany({
+        where: { transactionType: 'TEAM_SWAP' },
+        orderBy: [{ userId: 'asc' }],
+      });
+      const actor = await client.leagueUser.findUniqueOrThrow({ where: { discordUserId: ownerId } });
+      expect(transactions).toHaveLength(2);
+      expect(transactions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            userId: sharedUser.id,
+            sourceClubId: team1Id,
+            destinationClubId: team2Id,
+            transactionType: 'TEAM_SWAP',
+            performedByUserId: actor.id,
+          }),
+          expect.objectContaining({
+            userId: team2Player.userId,
+            sourceClubId: team2Id,
+            destinationClubId: team1Id,
+            transactionType: 'TEAM_SWAP',
+            performedByUserId: actor.id,
+          }),
+        ]),
+      );
       expect(capturedPlans.filter((plan) => plan.discordUserId === sharedUser.discordUserId)).toHaveLength(1);
+    });
+
+    it('counts unique users across mixed membership counts in both directions', async () => {
+      const team1SharedUser = await client.leagueUser.create({
+        data: { discordUserId: 'case-10-team-1-shared' },
+      });
+      const team2SharedUser = await client.leagueUser.create({
+        data: { discordUserId: 'case-10-team-2-shared' },
+      });
+      await client.clubMembership.createMany({
+        data: [
+          {
+            guildId,
+            clubId: team1Id,
+            userId: team1SharedUser.id,
+            membershipType: 'PLAYER',
+          },
+          {
+            guildId,
+            clubId: team1Id,
+            userId: team1SharedUser.id,
+            membershipType: 'TEAM_MANAGER',
+          },
+          {
+            guildId,
+            clubId: team2Id,
+            userId: team2SharedUser.id,
+            membershipType: 'PLAYER',
+          },
+          {
+            guildId,
+            clubId: team2Id,
+            userId: team2SharedUser.id,
+            membershipType: 'ASSISTANT_MANAGER',
+          },
+        ],
+      });
+      const team1Solo = await createMembership(team1Id, 'PLAYER', 'case-10-team-1-solo');
+      const team2Solo = await createMembership(team2Id, 'PLAYER', 'case-10-team-2-solo');
+
+      await service.swap({ authorization: authInput(), team1Id, team2Id });
+
+      const transactions = await client.leagueTransaction.findMany({
+        where: { transactionType: 'TEAM_SWAP' },
+      });
+      expect(transactions).toHaveLength(4);
+      expect(transactions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            userId: team1SharedUser.id,
+            sourceClubId: team1Id,
+            destinationClubId: team2Id,
+          }),
+          expect.objectContaining({
+            userId: team1Solo.userId,
+            sourceClubId: team1Id,
+            destinationClubId: team2Id,
+          }),
+          expect.objectContaining({
+            userId: team2SharedUser.id,
+            sourceClubId: team2Id,
+            destinationClubId: team1Id,
+          }),
+          expect.objectContaining({
+            userId: team2Solo.userId,
+            sourceClubId: team2Id,
+            destinationClubId: team1Id,
+          }),
+        ]),
+      );
     });
   });
 });
