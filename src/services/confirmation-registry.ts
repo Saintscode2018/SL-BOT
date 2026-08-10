@@ -45,6 +45,7 @@ interface ConfirmationRecord extends ConfirmationContext {
   expiresAt: Date;
   status: 'PENDING' | ConfirmationTerminalState;
   timer: NodeJS.Timeout;
+  cleanupTimer?: NodeJS.Timeout;
   onExpire?: () => Promise<void>;
   onCancel?: () => Promise<void>;
 }
@@ -97,8 +98,7 @@ export class ConfirmationRegistry {
 
   public consume(customId: string, discordUserId: string, now = new Date()): ConfirmationContext {
     const record = this.resolve(customId, discordUserId, now, ['confirm']);
-    record.status = 'CONSUMED';
-    clearTimeout(record.timer);
+    this.markTerminal(record, 'CONSUMED');
     return this.context(record);
   }
 
@@ -113,8 +113,7 @@ export class ConfirmationRegistry {
       throw new StaleConfirmationError();
     }
     const decision = customId.endsWith(':staff-only') ? 'staff-only' : 'confirm';
-    record.status = 'CONSUMED';
-    clearTimeout(record.timer);
+    this.markTerminal(record, 'CONSUMED');
     return { context: this.context(record), decision };
   }
 
@@ -138,8 +137,7 @@ export class ConfirmationRegistry {
     if (discordGuildId !== undefined && record.discordGuildId !== discordGuildId) {
       throw new StaleConfirmationError();
     }
-    record.status = 'CANCELLED';
-    clearTimeout(record.timer);
+    this.markTerminal(record, 'CANCELLED');
     if (record.onCancel !== undefined) {
       const onCancel = record.onCancel;
       queueMicrotask(() => {
@@ -158,8 +156,7 @@ export class ConfirmationRegistry {
     const record = this.records.get(id);
     if (record === undefined || record.status !== 'PENDING') return false;
     if (now.getTime() < record.expiresAt.getTime()) return false;
-    record.status = 'EXPIRED';
-    clearTimeout(record.timer);
+    this.markTerminal(record, 'EXPIRED');
     if (record.onExpire !== undefined) {
       void record.onExpire().catch((error: unknown) => {
         this.logger.warn('confirmation expiry response could not be updated', {
@@ -172,8 +169,21 @@ export class ConfirmationRegistry {
   }
 
   public clear(): void {
-    for (const record of this.records.values()) clearTimeout(record.timer);
+    for (const record of this.records.values()) {
+      clearTimeout(record.timer);
+      if (record.cleanupTimer !== undefined) clearTimeout(record.cleanupTimer);
+    }
     this.records.clear();
+  }
+
+  private markTerminal(record: ConfirmationRecord, status: ConfirmationTerminalState): void {
+    record.status = status;
+    clearTimeout(record.timer);
+    const cleanupTimer = setTimeout(() => {
+      if (this.records.get(record.id) === record) this.records.delete(record.id);
+    }, this.lifetimeMs);
+    cleanupTimer.unref();
+    record.cleanupTimer = cleanupTimer;
   }
 
   private resolve(

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ConfirmationAlreadyHandledError,
@@ -134,5 +134,108 @@ describe('confirmation registry', () => {
       registry.consume(confirmation.confirmCustomId, context.initiatorDiscordUserId, now),
     ).toThrow(ConfirmationAlreadyHandledError);
     registry.clear();
+  });
+});
+
+describe('confirmation registry terminal cleanup', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function recordCount(registry: ConfirmationRegistry): number {
+    return (registry as unknown as { records: Map<string, unknown> }).records.size;
+  }
+
+  it('keeps a consumed tombstone briefly, then removes it', () => {
+    const registry = new ConfirmationRegistry(new MemoryLogger());
+    const confirmation = registry.create(context, { now });
+
+    expect(registry.consume(confirmation.confirmCustomId, context.initiatorDiscordUserId, now)).toEqual(
+      context,
+    );
+    expect(recordCount(registry)).toBe(1);
+    expect(() =>
+      registry.consume(confirmation.confirmCustomId, context.initiatorDiscordUserId, now),
+    ).toThrow(ConfirmationAlreadyHandledError);
+
+    vi.advanceTimersByTime(confirmationLifetimeMs);
+
+    expect(recordCount(registry)).toBe(0);
+    expect(() =>
+      registry.consume(confirmation.confirmCustomId, context.initiatorDiscordUserId, now),
+    ).toThrow(StaleConfirmationError);
+  });
+
+  it('keeps a cancelled tombstone briefly, then removes it', async () => {
+    const registry = new ConfirmationRegistry(new MemoryLogger());
+    const onCancel = vi.fn(() => Promise.resolve());
+    const confirmation = registry.create(context, { now, onCancel });
+
+    expect(registry.cancel(confirmation.cancelCustomId, context.initiatorDiscordUserId, now)).toEqual(
+      context,
+    );
+    await Promise.resolve();
+    expect(onCancel).toHaveBeenCalledOnce();
+    expect(recordCount(registry)).toBe(1);
+    expect(() =>
+      registry.cancel(confirmation.cancelCustomId, context.initiatorDiscordUserId, now),
+    ).toThrow(ConfirmationAlreadyHandledError);
+
+    vi.advanceTimersByTime(confirmationLifetimeMs);
+
+    expect(recordCount(registry)).toBe(0);
+    expect(() =>
+      registry.cancel(confirmation.cancelCustomId, context.initiatorDiscordUserId, now),
+    ).toThrow(StaleConfirmationError);
+  });
+
+  it('keeps an expired tombstone briefly, then removes it', () => {
+    const registry = new ConfirmationRegistry(new MemoryLogger());
+    const confirmation = registry.create(context, { now });
+
+    vi.advanceTimersByTime(confirmationLifetimeMs);
+
+    expect(() =>
+      registry.consume(confirmation.confirmCustomId, context.initiatorDiscordUserId, now),
+    ).toThrow(ConfirmationAlreadyHandledError);
+    expect(recordCount(registry)).toBe(1);
+
+    vi.advanceTimersByTime(confirmationLifetimeMs);
+
+    expect(recordCount(registry)).toBe(0);
+    expect(() =>
+      registry.consume(confirmation.confirmCustomId, context.initiatorDiscordUserId, now),
+    ).toThrow(StaleConfirmationError);
+  });
+
+  it('keeps active confirmations available until terminalization or expiry', () => {
+    const registry = new ConfirmationRegistry(new MemoryLogger());
+    const confirmation = registry.create(context, { now });
+
+    expect(
+      registry.expire(confirmation.id, new Date(now.getTime() + confirmationLifetimeMs - 1)),
+    ).toBe(false);
+    expect(recordCount(registry)).toBe(1);
+    expect(registry.consume(confirmation.confirmCustomId, context.initiatorDiscordUserId, now)).toEqual(
+      context,
+    );
+  });
+
+  it('cleans up terminal records in bulk instead of retaining them forever', () => {
+    const registry = new ConfirmationRegistry(new MemoryLogger());
+    const confirmations = Array.from({ length: 100 }, () => registry.create(context, { now }));
+
+    for (const confirmation of confirmations) {
+      registry.consume(confirmation.confirmCustomId, context.initiatorDiscordUserId, now);
+    }
+    expect(recordCount(registry)).toBe(confirmations.length);
+
+    vi.advanceTimersByTime(confirmationLifetimeMs);
+
+    expect(recordCount(registry)).toBe(0);
   });
 });
