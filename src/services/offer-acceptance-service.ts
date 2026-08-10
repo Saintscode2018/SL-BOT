@@ -32,6 +32,7 @@ import { UserRepository } from '../repositories/user-repository.js';
 import type { RoleSynchronizedMutationService } from './role-synchronized-mutation-service.js';
 
 import type { AcceptedOfferPresentationData } from './offer-delivery-service.js';
+import { offerExpiredAuditEventType } from './offer-decline-service.js';
 
 export const offerAcceptedAuditEventType = 'offer.accepted';
 
@@ -55,7 +56,7 @@ export interface OfferAcceptanceResult extends MutationPlans {
 }
 
 export interface OfferAcceptanceRepositories {
-  offers: Pick<OfferRepository, 'getById' | 'transition'>;
+  offers: Pick<OfferRepository, 'getById' | 'transition' | 'expirePendingAtOrBefore'>;
   users: Pick<UserRepository, 'getById'>;
   clubs: Pick<ClubRepository, 'getById'>;
   guilds: Pick<GuildRepository, 'getSettings'>;
@@ -93,6 +94,10 @@ type AcceptanceTransactionOutcome =
   | { kind: 'accepted'; result: OfferAcceptanceResult }
   | { kind: 'expired' };
 
+type AcceptancePreparation =
+  | { kind: 'ready'; rolePlan: MemberRoleMutationPlan }
+  | { kind: 'expired' };
+
 export class OfferAcceptanceService {
   public constructor(
     private readonly database: PrismaClient,
@@ -101,11 +106,18 @@ export class OfferAcceptanceService {
   ) {}
 
   public async acceptOffer(input: AcceptOfferInput): Promise<OfferAcceptanceResult> {
+    const acceptedAt = input.acceptedAt ?? new Date();
+    const acceptanceInput = { ...input, acceptedAt };
     if (this.synchronization !== undefined) {
-      const rolePlan = await this.prepareAcceptance(input);
-      return this.synchronization.execute(rolePlan, () => this.acceptPersisted(input));
+      const preparation = await this.prepareAcceptance(acceptanceInput);
+      if (preparation.kind === 'expired') {
+        throw new OfferExpiredError(`offer ${input.offerId} expired before acceptance`);
+      }
+      return this.synchronization.execute(preparation.rolePlan, () =>
+        this.acceptPersisted(acceptanceInput),
+      );
     }
-    return this.acceptPersisted(input);
+    return this.acceptPersisted(acceptanceInput);
   }
 
   private async acceptPersisted(input: AcceptOfferInput): Promise<OfferAcceptanceResult> {
@@ -139,7 +151,7 @@ export class OfferAcceptanceService {
     return outcome.result;
   }
 
-  private async prepareAcceptance(input: AcceptOfferInput): Promise<MemberRoleMutationPlan> {
+  private async prepareAcceptance(input: AcceptOfferInput): Promise<AcceptancePreparation> {
     const acceptedAt = input.acceptedAt ?? new Date();
     const acceptingDiscordUserId = discordSnowflakeSchema.parse(input.acceptingDiscordUserId);
     return this.database.$transaction(async (transactionClient) => {
@@ -154,8 +166,10 @@ export class OfferAcceptanceService {
       if (player.discordUserId !== acceptingDiscordUserId) {
         throw new UnauthorizedOfferAcceptanceError('only the offered player may accept');
       }
-      if (offer.expiresAt.getTime() <= acceptedAt.getTime())
-        throw new OfferExpiredError('offer expired');
+      if (offer.expiresAt.getTime() <= acceptedAt.getTime()) {
+        await this.expirePendingOffer(repositories, offer, acceptedAt);
+        return { kind: 'expired' };
+      }
       const club = await repositories.clubs.getById(offer.clubId);
       if (club === null) throw new EntityNotFoundError('team was not found');
       if (!club.active) throw new InvalidStateTransitionError('team is inactive');
@@ -178,10 +192,13 @@ export class OfferAcceptanceService {
       }
       const guild = await new GuildRepository(transactionClient).requireById(offer.guildId);
       return {
-        discordGuildId: guild.discordGuildId,
-        discordUserId: player.discordUserId,
-        addRoles: [{ id: club.discordRoleId, purpose: 'TEAM' }],
-        removeRoles: [],
+        kind: 'ready',
+        rolePlan: {
+          discordGuildId: guild.discordGuildId,
+          discordUserId: player.discordUserId,
+          addRoles: [{ id: club.discordRoleId, purpose: 'TEAM' }],
+          removeRoles: [],
+        },
       };
     });
   }
@@ -214,7 +231,7 @@ export class OfferAcceptanceService {
     }
 
     if (pendingOffer.expiresAt.getTime() <= acceptedAt.getTime()) {
-      await repositories.offers.transition(offerId, 'EXPIRED', acceptedAt);
+      await this.expirePendingOffer(repositories, pendingOffer, acceptedAt);
       return { kind: 'expired' };
     }
 
@@ -359,5 +376,28 @@ export class OfferAcceptanceService {
               },
       },
     };
+  }
+
+  private async expirePendingOffer(
+    repositories: OfferAcceptanceRepositories,
+    pendingOffer: Offer,
+    expiredAt: Date,
+  ): Promise<void> {
+    const expiredOffer = await repositories.offers.expirePendingAtOrBefore(
+      pendingOffer.id,
+      expiredAt,
+    );
+    await repositories.auditEvents.create({
+      guildId: pendingOffer.guildId,
+      eventType: offerExpiredAuditEventType,
+      entityType: 'offer',
+      entityId: pendingOffer.id,
+      beforeState: { status: 'PENDING' },
+      afterState: { status: expiredOffer.status },
+      metadata: {
+        discordChannelId: expiredOffer.discordChannelId,
+        discordMessageId: expiredOffer.discordMessageId,
+      },
+    });
   }
 }

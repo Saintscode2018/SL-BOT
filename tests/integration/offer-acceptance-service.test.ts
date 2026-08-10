@@ -21,6 +21,7 @@ import {
   offerAcceptedAuditEventType,
   type OfferAcceptanceRepositoryFactory,
 } from '../../src/services/offer-acceptance-service.js';
+import { offerExpiredAuditEventType } from '../../src/services/offer-decline-service.js';
 import { RoleSynchronizedMutationService } from '../../src/services/role-synchronized-mutation-service.js';
 import {
   clearDatabase,
@@ -301,7 +302,7 @@ describe('offer acceptance service', () => {
     await expect(accept(data)).rejects.toBeInstanceOf(SquadFullError);
   });
 
-  it('expires a stale pending offer without membership or transaction writes', async () => {
+  it('expires a stale pending offer with one actorless audit and without acceptance writes', async () => {
     const data = await seed();
     const acceptedAt = new Date(data.offer.expiresAt.getTime() + 1);
     await expect(accept(data, acceptedAt)).rejects.toBeInstanceOf(OfferExpiredError);
@@ -313,6 +314,37 @@ describe('offer acceptance service', () => {
     });
     await expect(database.client.clubMembership.count()).resolves.toBe(0);
     await expect(database.client.leagueTransaction.count()).resolves.toBe(0);
+    await expect(
+      database.client.auditEvent.findMany({
+        where: { eventType: offerExpiredAuditEventType, entityId: data.offer.id },
+      }),
+    ).resolves.toMatchObject([
+      {
+        actorUserId: null,
+        beforeState: { status: 'PENDING' },
+        afterState: { status: 'EXPIRED' },
+      },
+    ]);
+    await expect(
+      database.client.auditEvent.count({
+        where: { eventType: offerAcceptedAuditEventType, entityId: data.offer.id },
+      }),
+    ).resolves.toBe(0);
+  });
+
+  it('expires a pending offer at the exact acceptance-time boundary', async () => {
+    const data = await seed();
+    await expect(accept(data, data.offer.expiresAt)).rejects.toBeInstanceOf(OfferExpiredError);
+    await expect(
+      database.client.offer.findUniqueOrThrow({ where: { id: data.offer.id } }),
+    ).resolves.toMatchObject({ status: 'EXPIRED', respondedAt: data.offer.expiresAt });
+    await expect(database.client.clubMembership.count()).resolves.toBe(0);
+    await expect(database.client.leagueTransaction.count()).resolves.toBe(0);
+    await expect(
+      database.client.auditEvent.count({
+        where: { eventType: offerExpiredAuditEventType, entityId: data.offer.id },
+      }),
+    ).resolves.toBe(1);
   });
 
   it('rejects the wrong discord user without changing the offer', async () => {
@@ -353,6 +385,48 @@ describe('offer acceptance service', () => {
     await offers.transition(data.offer.id, 'DECLINED');
     await expect(accept(data)).rejects.toBeInstanceOf(InvalidStateTransitionError);
   });
+
+  it('does not create a second expiry audit for an already expired offer', async () => {
+    const data = await seed();
+    await offers.expirePendingAtOrBefore(data.offer.id, data.offer.expiresAt);
+    await database.client.auditEvent.create({
+      data: {
+        guildId: data.guild.id,
+        eventType: offerExpiredAuditEventType,
+        entityType: 'offer',
+        entityId: data.offer.id,
+      },
+    });
+
+    await expect(accept(data, data.offer.expiresAt)).rejects.toBeInstanceOf(
+      InvalidStateTransitionError,
+    );
+    await expect(
+      database.client.auditEvent.count({
+        where: { eventType: offerExpiredAuditEventType, entityId: data.offer.id },
+      }),
+    ).resolves.toBe(1);
+  });
+
+  it.each(['ACCEPTED', 'DECLINED'] as const)(
+    'does not overwrite an already %s offer as expired',
+    async (status) => {
+      const data = await seed();
+      await offers.transition(data.offer.id, status);
+
+      await expect(accept(data, data.offer.expiresAt)).rejects.toBeInstanceOf(
+        InvalidStateTransitionError,
+      );
+      await expect(
+        database.client.offer.findUniqueOrThrow({ where: { id: data.offer.id } }),
+      ).resolves.toMatchObject({ status });
+      await expect(
+        database.client.auditEvent.count({
+          where: { eventType: offerExpiredAuditEventType, entityId: data.offer.id },
+        }),
+      ).resolves.toBe(0);
+    },
+  );
 
   it('rejects a missing offer', async () => {
     await expect(
@@ -447,6 +521,50 @@ describe('offer acceptance service', () => {
     ).resolves.toMatchObject({
       status: 'ACCEPTED',
     });
+  });
+
+  it('expires a concurrently accepted stale offer exactly once', async () => {
+    const data = await seed();
+    const acceptedAt = new Date(data.offer.expiresAt.getTime() + 1);
+    const results = await Promise.allSettled([
+      accept(data, acceptedAt),
+      accept(data, acceptedAt),
+    ]);
+
+    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(0);
+    await expect(
+      database.client.offer.findUniqueOrThrow({ where: { id: data.offer.id } }),
+    ).resolves.toMatchObject({ status: 'EXPIRED' });
+    await expect(
+      database.client.auditEvent.count({
+        where: { eventType: offerExpiredAuditEventType, entityId: data.offer.id },
+      }),
+    ).resolves.toBe(1);
+    await expect(database.client.clubMembership.count()).resolves.toBe(0);
+    await expect(database.client.leagueTransaction.count()).resolves.toBe(0);
+  });
+
+  it('expires before role synchronization is attempted', async () => {
+    const data = await seed();
+    const synchronization = { execute: vi.fn() };
+    const synchronizedService = new OfferAcceptanceService(
+      database.client,
+      undefined,
+      synchronization,
+    );
+
+    await expect(
+      synchronizedService.acceptOffer({
+        offerId: data.offer.id,
+        acceptingDiscordUserId: data.player.discordUserId,
+        acceptedAt: data.offer.expiresAt,
+      }),
+    ).rejects.toBeInstanceOf(OfferExpiredError);
+    expect(synchronization.execute).not.toHaveBeenCalled();
+    await expect(
+      database.client.offer.findUniqueOrThrow({ where: { id: data.offer.id } }),
+    ).resolves.toMatchObject({ status: 'EXPIRED' });
+    await expect(database.client.clubMembership.count()).resolves.toBe(0);
   });
 
   it('publishes audit announcement with correct player, team, and accepting-player actor semantics when audit channel is configured', async () => {

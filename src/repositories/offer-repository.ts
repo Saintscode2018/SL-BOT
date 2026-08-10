@@ -126,6 +126,22 @@ export class OfferRepository {
     );
   }
 
+  public async expirePendingAtOrBefore(id: string, at: Date): Promise<Offer> {
+    const result = await this.db.offer.updateMany({
+      where: { id, status: 'PENDING', expiresAt: { lte: at } },
+      data: { status: 'EXPIRED', respondedAt: at },
+    });
+    if (result.count === 1) {
+      const offer = await this.getById(id);
+      if (offer !== null) return offer;
+    }
+    const existing = await this.getById(id);
+    if (existing === null) throw new EntityNotFoundError(`offer ${id} was not found`);
+    throw new InvalidStateTransitionError(
+      `offer ${id} cannot expire from ${existing.status} at the operation time`,
+    );
+  }
+
   public async markExpiredPending(now = new Date()): Promise<number> {
     const result = await this.db.offer.updateMany({
       where: { status: 'PENDING', expiresAt: { lte: now } },
