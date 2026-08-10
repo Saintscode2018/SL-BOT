@@ -124,10 +124,12 @@ describe('offer expiration scheduler', () => {
     await settle();
     const scheduled = harness.scheduled[0]!;
     harness.scheduler.stop();
+    harness.scheduler.stop();
     scheduled.callback();
     await settle();
 
     expect(harness.cancel).toHaveBeenCalledWith(scheduled.timer);
+    expect(harness.cancel).toHaveBeenCalledOnce();
     expect(expire).toHaveBeenCalledOnce();
     expect(harness.scheduled).toHaveLength(1);
   });

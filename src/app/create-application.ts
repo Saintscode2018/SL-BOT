@@ -228,6 +228,7 @@ export function createApplication(
     discord,
     logger,
     background: offerExpirationScheduler,
+    clearConfirmations: () => confirmations.clear(),
     register: () => {
       registerEvents(discord, events, logger);
       logger.debug('application definitions registered', {

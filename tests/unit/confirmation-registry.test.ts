@@ -238,4 +238,21 @@ describe('confirmation registry terminal cleanup', () => {
 
     expect(recordCount(registry)).toBe(0);
   });
+
+  it('cancels pending expiry and terminal cleanup timers when cleared', () => {
+    const onExpire = vi.fn(() => Promise.resolve());
+    const registry = new ConfirmationRegistry(new MemoryLogger());
+    const pending = registry.create(context, { now, onExpire });
+    const terminal = registry.create(context, { now });
+
+    registry.consume(terminal.confirmCustomId, context.initiatorDiscordUserId, now);
+    registry.clear();
+    vi.advanceTimersByTime(confirmationLifetimeMs * 2);
+
+    expect(onExpire).not.toHaveBeenCalled();
+    expect(recordCount(registry)).toBe(0);
+    expect(() => registry.consume(pending.confirmCustomId, context.initiatorDiscordUserId, now)).toThrow(
+      StaleConfirmationError,
+    );
+  });
 });

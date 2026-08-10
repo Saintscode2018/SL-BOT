@@ -23,6 +23,7 @@ export interface ApplicationOptions {
   register(): void;
   logger: Logger;
   background?: BackgroundLifecycle;
+  clearConfirmations?: () => void;
 }
 
 export class Application {
@@ -76,6 +77,11 @@ export class Application {
     const errors: unknown[] = [];
     try {
       this.options.background?.stop();
+    } catch (error: unknown) {
+      errors.push(error);
+    }
+    try {
+      this.options.clearConfirmations?.();
     } catch (error: unknown) {
       errors.push(error);
     }

@@ -86,6 +86,7 @@ describe('application lifecycle', () => {
   it('cleans up both resources when discord login fails', async () => {
     const fakes = lifecycleFakes();
     const loginError = new Error('login failed');
+    const clearConfirmations = vi.fn();
     fakes.login.mockRejectedValueOnce(loginError);
     const application = new Application({
       discordToken: 'secret-token',
@@ -93,12 +94,14 @@ describe('application lifecycle', () => {
       discord: fakes.discord,
       register: vi.fn(),
       logger: new MemoryLogger(),
+      clearConfirmations,
     });
     const error = await application.start().catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(ApplicationStartupError);
     expect((error as ApplicationStartupError).cause).toBe(loginError);
     expect(fakes.destroy).toHaveBeenCalledOnce();
     expect(fakes.disconnect).toHaveBeenCalledOnce();
+    expect(clearConfirmations).toHaveBeenCalledOnce();
   });
 
   it('destroys discord and disconnects prisma on stop', async () => {
@@ -141,6 +144,31 @@ describe('application lifecycle', () => {
       'login',
       'background-start',
       'background-stop',
+      'destroy',
+      'disconnect',
+    ]);
+  });
+
+  it('clears application-owned confirmations before closing Discord and the database', async () => {
+    const order: string[] = [];
+    const fakes = lifecycleFakes(order);
+    const application = new Application({
+      discordToken: 'secret-token',
+      database: fakes.database,
+      discord: fakes.discord,
+      register: () => order.push('register'),
+      logger: new MemoryLogger(),
+      clearConfirmations: () => order.push('clear-confirmations'),
+    });
+
+    await application.start();
+    await application.stop();
+
+    expect(order).toEqual([
+      'connect',
+      'register',
+      'login',
+      'clear-confirmations',
       'destroy',
       'disconnect',
     ]);
