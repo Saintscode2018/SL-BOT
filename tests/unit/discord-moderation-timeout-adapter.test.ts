@@ -20,7 +20,14 @@ function discordFixture(options: { memberFetchError?: Error; applyError?: Error 
       : Promise.reject(options.applyError);
   });
   const timeout = vi.fn(() => Promise.resolve());
-  const target = {
+  const target: {
+    id: string;
+    user: { bot: boolean };
+    moderatable: boolean;
+    communicationDisabledUntil: Date | null;
+    disableCommunicationUntil: typeof disableCommunicationUntil;
+    timeout: typeof timeout;
+  } = {
     id: targetId,
     user: { bot: false },
     moderatable: true,
@@ -46,7 +53,7 @@ function discordFixture(options: { memberFetchError?: Error; applyError?: Error 
     user: { id: botId },
     guilds: { cache: new Map([[guildId, guild]]), fetch: vi.fn() },
   } as unknown as Client;
-  return { client, target, bot, fetch, disableCommunicationUntil, timeout };
+  return { client, guild, target, bot, fetch, disableCommunicationUntil, timeout };
 }
 
 describe('Discord moderation timeout adapter', () => {
@@ -66,14 +73,73 @@ describe('Discord moderation timeout adapter', () => {
     });
   });
 
-  it('uses absolute Discord.js timeout expiry and the canonical timeout removal API', async () => {
+  it('uses absolute Discord.js timeout expiry and removes a matching owned timeout', async () => {
     const fixture = discordFixture();
     const adapter = new DiscordModerationTimeoutAdapter(fixture.client);
-    const expiry = new Date('2026-08-09T19:00:00.000Z');
+    const expiry = new Date('2026-08-09T19:00:00.123Z');
+    const activeAt = new Date('2026-08-09T18:00:00.000Z');
     await adapter.applyTimeout(guildId, targetId, expiry, 'mute reason');
-    await adapter.removeTimeout(guildId, targetId, 'unmute reason');
+    fixture.target.communicationDisabledUntil = expiry;
+    await expect(
+      adapter.removeTimeoutIfExpiresAtMatches(
+        guildId,
+        targetId,
+        expiry,
+        activeAt,
+        'unmute reason',
+      ),
+    ).resolves.toBe('REMOVED');
     expect(fixture.disableCommunicationUntil).toHaveBeenCalledWith(expiry, 'mute reason');
     expect(fixture.timeout).toHaveBeenCalledWith(null, 'unmute reason');
+  });
+
+  it('force-fetches past stale cache and preserves an active one-millisecond mismatch', async () => {
+    const fixture = discordFixture();
+    const adapter = new DiscordModerationTimeoutAdapter(fixture.client);
+    const caseExpiry = new Date('2026-08-09T19:00:00.123Z');
+    const externalExpiry = new Date('2026-08-09T19:00:00.124Z');
+    const cachedTimeout = vi.fn(() => Promise.resolve());
+    fixture.guild.members.cache.set(targetId, {
+      ...fixture.target,
+      communicationDisabledUntil: caseExpiry,
+      timeout: cachedTimeout,
+    });
+    fixture.target.communicationDisabledUntil = externalExpiry;
+
+    await expect(
+      adapter.removeTimeoutIfExpiresAtMatches(
+        guildId,
+        targetId,
+        caseExpiry,
+        new Date('2026-08-09T18:00:00.000Z'),
+        'unmute reason',
+      ),
+    ).resolves.toBe('MISMATCH');
+
+    expect(fixture.fetch).toHaveBeenCalledWith({ user: targetId, force: true });
+    expect(fixture.timeout).not.toHaveBeenCalled();
+    expect(cachedTimeout).not.toHaveBeenCalled();
+    expect(fixture.target.communicationDisabledUntil).toEqual(externalExpiry);
+  });
+
+  it.each([
+    ['null', null],
+    ['expired', new Date('2026-08-09T17:59:59.999Z')],
+  ])('treats a %s Discord timeout as absent without calling timeout(null)', async (_label, until) => {
+    const fixture = discordFixture();
+    fixture.target.communicationDisabledUntil = until;
+
+    await expect(
+      new DiscordModerationTimeoutAdapter(fixture.client).removeTimeoutIfExpiresAtMatches(
+        guildId,
+        targetId,
+        new Date('2026-08-09T19:00:00.123Z'),
+        new Date('2026-08-09T18:00:00.000Z'),
+        'unmute reason',
+      ),
+    ).resolves.toBe('ABSENT');
+
+    expect(fixture.timeout).not.toHaveBeenCalled();
   });
 
   it('maps Discord unknown-member code 10007 to a clean business error', async () => {

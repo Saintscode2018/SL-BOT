@@ -8,6 +8,7 @@ import {
 } from '../domain/errors.js';
 import type {
   ModerationMemberSnapshot,
+  ModerationTimeoutRemovalResult,
   ModerationTimeoutGateway,
 } from '../services/moderation-mute-service.js';
 
@@ -52,17 +53,30 @@ export class DiscordModerationTimeoutAdapter implements ModerationTimeoutGateway
     }
   }
 
-  public async removeTimeout(
+  public async removeTimeoutIfExpiresAtMatches(
     discordGuildId: string,
     targetDiscordUserId: string,
+    expectedExpiresAt: Date,
+    activeAt: Date,
     reason: string,
-  ): Promise<void> {
+  ): Promise<ModerationTimeoutRemovalResult> {
     try {
       const member = await this.fetchMember(
         await this.fetchGuild(discordGuildId),
         targetDiscordUserId,
+        true,
       );
+      if (
+        member.communicationDisabledUntil === null ||
+        member.communicationDisabledUntil.getTime() <= activeAt.getTime()
+      ) {
+        return 'ABSENT';
+      }
+      if (member.communicationDisabledUntil?.getTime() !== expectedExpiresAt.getTime()) {
+        return 'MISMATCH';
+      }
       await member.timeout(null, reason);
+      return 'REMOVED';
     } catch (error: unknown) {
       if (error instanceof ModerationMemberNotFoundError) throw error;
       throw new ModerationTimeoutRemoveError({ cause: error });
@@ -90,9 +104,13 @@ export class DiscordModerationTimeoutAdapter implements ModerationTimeoutGateway
     });
   }
 
-  private async fetchMember(guild: Guild, discordUserId: string): Promise<GuildMember> {
+  private async fetchMember(
+    guild: Guild,
+    discordUserId: string,
+    force = false,
+  ): Promise<GuildMember> {
     const cached = guild.members.cache.get(discordUserId);
-    if (cached !== undefined) return cached;
+    if (!force && cached !== undefined) return cached;
     return guild.members.fetch({ user: discordUserId, force: true }).catch((error: unknown) => {
       if (discordErrorCode(error) === 10_007) throw new ModerationMemberNotFoundError();
       throw new ModerationMemberFetchError({ cause: error });

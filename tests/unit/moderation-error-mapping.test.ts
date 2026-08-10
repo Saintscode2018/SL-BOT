@@ -9,6 +9,7 @@ import {
   ModerationMemberNotFoundError,
   ModerationTargetNotModeratableError,
   ModerationTimeoutApplyError,
+  ModerationTimeoutChangedError,
 } from '../../src/domain/errors.js';
 
 describe('moderation command error mapping and classification', () => {
@@ -22,6 +23,7 @@ describe('moderation command error mapping and classification', () => {
     new InvalidModerationDurationError(),
     new ModerationMemberNotFoundError(),
     new ModerationTargetNotModeratableError(),
+    new ModerationTimeoutChangedError(),
   ])('classifies expected moderation rejection %s at info', (error) => {
     expect(classifyInteractionError(error)).toMatchObject({
       level: 'info',

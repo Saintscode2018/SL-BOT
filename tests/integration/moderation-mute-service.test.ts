@@ -14,6 +14,7 @@ import {
   ModerationSelfTargetError,
   ModerationTargetNotModeratableError,
   ModerationTimeoutApplyError,
+  ModerationTimeoutChangedError,
   ModerationTimeoutRemoveError,
   ModerationTimeoutTooLongError,
 } from '../../src/domain/errors.js';
@@ -96,11 +97,22 @@ class FakeTimeoutGateway implements ModerationTimeoutGateway {
     return Promise.resolve();
   });
 
-  public readonly removeTimeout = vi.fn(() => {
-    if (this.removeError !== null) return Promise.reject(this.removeError);
-    this.snapshot = { ...this.snapshot, timeoutUntil: null };
-    return Promise.resolve();
-  });
+  public readonly removeTimeoutIfExpiresAtMatches = vi.fn(
+    (_guild: string, _user: string, expectedExpiresAt: Date, activeAt: Date) => {
+      if (
+        this.snapshot.timeoutUntil === null ||
+        this.snapshot.timeoutUntil.getTime() <= activeAt.getTime()
+      ) {
+        return Promise.resolve('ABSENT' as const);
+      }
+      if (this.snapshot.timeoutUntil.getTime() !== expectedExpiresAt.getTime()) {
+        return Promise.resolve('MISMATCH' as const);
+      }
+      if (this.removeError !== null) return Promise.reject(this.removeError);
+      this.snapshot = { ...this.snapshot, timeoutUntil: null };
+      return Promise.resolve('REMOVED' as const);
+    },
+  );
 
   public readonly restoreTimeout = vi.fn(
     (_guild: string, _user: string, timeoutUntil: Date | null) => {
@@ -402,6 +414,35 @@ describe('moderation mute execution service', () => {
     expect(announcements.plans).toHaveLength(0);
   });
 
+  it('keeps an active mute case unchanged when Discord inspection fails during unmute', async () => {
+    const active = await cases.createCase({
+      authorization: authorization(),
+      targetDiscordUserId: targetId,
+      type: 'MUTE',
+      bail: 0,
+      durationSeconds: 600,
+      issuedAt,
+    });
+    const inspectionError = new ModerationMemberFetchError({
+      cause: new Error('Discord inspection failed'),
+    });
+    timeouts.inspectError = inspectionError;
+
+    await expect(
+      service.unmute({
+        authorization: authorization(secondModeratorId),
+        targetDiscordUserId: targetId,
+        resolvedAt: new Date(issuedAt.getTime() + 60_000),
+      }),
+    ).rejects.toBe(inspectionError);
+
+    expect(timeouts.removeTimeoutIfExpiresAtMatches).not.toHaveBeenCalled();
+    await expect(
+      database.client.moderationCase.findUnique({ where: { id: active.id } }),
+    ).resolves.toMatchObject({ status: 'ACTIVE', resolutionType: null });
+    expect(announcements.plans).toHaveLength(0);
+  });
+
   it('removes the timeout and manually resolves the original case without changing issue fields', async () => {
     const original = await cases.createCase({
       authorization: authorization(),
@@ -420,7 +461,14 @@ describe('moderation mute execution service', () => {
       reason: null,
       resolvedAt,
     });
-    expect(timeouts.removeTimeout).toHaveBeenCalledOnce();
+    expect(timeouts.removeTimeoutIfExpiresAtMatches).toHaveBeenCalledOnce();
+    expect(timeouts.removeTimeoutIfExpiresAtMatches).toHaveBeenCalledWith(
+      discordGuildId,
+      targetId,
+      original.expiresAt,
+      resolvedAt,
+      expect.stringContaining(String(original.caseNumber)),
+    );
     expect(result.moderationCase).toMatchObject({
       id: original.id,
       issuedByUserId: original.issuedByUserId,
@@ -442,6 +490,58 @@ describe('moderation mute execution service', () => {
       }),
     ]);
   });
+
+  it.each([
+    ['later', (caseExpiry: Date) => new Date(caseExpiry.getTime() + 1)],
+    ['earlier but still active', (_caseExpiry: Date, resolvedAt: Date) => new Date(resolvedAt.getTime() + 1)],
+  ])(
+    'rejects an active %s externally changed timeout without changing Discord or the case',
+    async (_label, externalExpiryFactory) => {
+      const active = await cases.createCase({
+        authorization: authorization(),
+        targetDiscordUserId: targetId,
+        type: 'MUTE',
+        bail: 0,
+        durationSeconds: 600,
+        issuedAt,
+      });
+      const resolvedAt = new Date(issuedAt.getTime() + 60_000);
+      const externalExpiry = externalExpiryFactory(active.expiresAt!, resolvedAt);
+      timeouts.snapshot = { ...timeouts.snapshot, timeoutUntil: externalExpiry };
+
+      const error = await service
+        .unmute({
+          authorization: authorization(secondModeratorId),
+          targetDiscordUserId: targetId,
+          resolvedAt,
+        })
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ModerationTimeoutChangedError);
+      expect(error).toMatchObject({
+        code: 'MODERATION_TIMEOUT_CHANGED',
+        message:
+          'The active Discord timeout has changed and cannot be safely removed automatically. The moderation case remains active.',
+      });
+      expect(timeouts.removeTimeoutIfExpiresAtMatches).toHaveBeenCalledWith(
+        discordGuildId,
+        targetId,
+        active.expiresAt,
+        resolvedAt,
+        expect.any(String),
+      );
+      expect(timeouts.snapshot.timeoutUntil).toEqual(externalExpiry);
+      expect(timeouts.restoreTimeout).not.toHaveBeenCalled();
+      await expect(
+        database.client.moderationCase.findUnique({ where: { id: active.id } }),
+      ).resolves.toMatchObject({
+        status: 'ACTIVE',
+        resolutionType: null,
+        resolvedAt: null,
+      });
+      expect(announcements.plans).toHaveLength(0);
+    },
+  );
 
   it.each(['mute', 'unmute'] as const)(
     'blocks /%s before Discord or case mutation when Case Files is missing',
@@ -478,7 +578,7 @@ describe('moderation mute execution service', () => {
       await expect(action).rejects.toBeInstanceOf(ModerationChannelNotConfiguredError);
       expect(timeouts.inspect).not.toHaveBeenCalled();
       expect(timeouts.applyTimeout).not.toHaveBeenCalled();
-      expect(timeouts.removeTimeout).not.toHaveBeenCalled();
+      expect(timeouts.removeTimeoutIfExpiresAtMatches).not.toHaveBeenCalled();
     },
   );
 
@@ -607,12 +707,45 @@ describe('moderation mute execution service', () => {
     });
 
     expect(timeouts.inspect).toHaveBeenCalledOnce();
-    expect(timeouts.removeTimeout).toHaveBeenCalledOnce();
+    expect(timeouts.removeTimeoutIfExpiresAtMatches).toHaveBeenCalledOnce();
+    expect(timeouts.snapshot.timeoutUntil).toBeNull();
+    expect(timeouts.restoreTimeout).not.toHaveBeenCalled();
     expect(result.moderationCase).toMatchObject({
       id: stale.id,
       status: 'RESOLVED',
       resolutionType: 'MANUAL',
       resolvedBy: { discordUserId: secondModeratorId },
+      resolvedAt,
+    });
+    expect(announcements.plans).toHaveLength(1);
+    expect(announcements.plans[0]).toMatchObject({ operation: 'UNMUTE' });
+  });
+
+  it('treats an expired Discord timeout as absent and manually resolves the case', async () => {
+    const active = await cases.createCase({
+      authorization: authorization(),
+      targetDiscordUserId: targetId,
+      type: 'MUTE',
+      bail: 0,
+      durationSeconds: 600,
+      issuedAt,
+    });
+    const expiredTimeout = new Date(issuedAt.getTime() + 30_000);
+    const resolvedAt = new Date(issuedAt.getTime() + 60_000);
+    timeouts.snapshot = { ...timeouts.snapshot, timeoutUntil: expiredTimeout };
+
+    const result = await service.unmute({
+      authorization: authorization(secondModeratorId),
+      targetDiscordUserId: targetId,
+      resolvedAt,
+    });
+
+    expect(timeouts.snapshot.timeoutUntil).toEqual(expiredTimeout);
+    expect(timeouts.restoreTimeout).not.toHaveBeenCalled();
+    expect(result.moderationCase).toMatchObject({
+      id: active.id,
+      status: 'RESOLVED',
+      resolutionType: 'MANUAL',
       resolvedAt,
     });
     expect(announcements.plans).toHaveLength(1);
@@ -862,6 +995,7 @@ describe('moderation mute execution service', () => {
       durationSeconds: 600,
       issuedAt,
     });
+    timeouts.snapshot = { ...timeouts.snapshot, timeoutUntil: active.expiresAt };
     timeouts.removeError = new ModerationTimeoutRemoveError();
     await expect(
       service.unmute({
@@ -887,6 +1021,7 @@ describe('moderation mute execution service', () => {
       durationSeconds: 600,
       issuedAt,
     });
+    timeouts.snapshot = { ...timeouts.snapshot, timeoutUntil: active.expiresAt };
     const databaseError = new Error('resolve failed');
     const failingCases = {
       getActiveCase: vi.fn(() => Promise.resolve(active)),
@@ -921,45 +1056,52 @@ describe('moderation mute execution service', () => {
     ).resolves.toMatchObject({ status: 'ACTIVE', resolutionType: null });
   });
 
-  it('explicitly skips impossible restoration after the active case expiry elapses', async () => {
-    const active = await cases.createCase({
-      authorization: authorization(),
-      targetDiscordUserId: targetId,
-      type: 'MUTE',
-      bail: 0,
-      durationSeconds: 60,
-      issuedAt,
-    });
-    const failingCases = {
-      getActiveCase: vi.fn(() => Promise.resolve(active)),
-      createCase: vi.fn(),
-      resolveCase: vi.fn(() => Promise.reject(new Error('resolve failed'))),
-      resolveExpiredMute: vi.fn(),
-    };
-    service = new ModerationMuteService(
-      database.client,
-      timeouts,
-      announcements,
-      logger,
-      failingCases,
-      undefined,
-      () => new Date('2026-08-09T12:02:00.000Z'),
-    );
-    await expect(
-      service.unmute({
+  it.each([
+    ['null', null],
+    ['expired', new Date('2026-08-09T12:00:30.000Z')],
+  ])(
+    'does not restore a %s Discord timeout when manual case resolution fails',
+    async (_label, discordTimeoutUntil) => {
+      const active = await cases.createCase({
         authorization: authorization(),
         targetDiscordUserId: targetId,
-        resolvedAt: new Date('2026-08-09T12:02:00.000Z'),
-      }),
-    ).rejects.toThrow('resolve failed');
-    expect(timeouts.restoreTimeout).not.toHaveBeenCalled();
-    expect(logger.entries).toContainEqual(
-      expect.objectContaining({
-        level: 'warn',
-        message: 'unmute database mutation failed after timeout expiry; restoration skipped',
-      }),
-    );
-  });
+        type: 'MUTE',
+        bail: 0,
+        durationSeconds: 600,
+        issuedAt,
+      });
+      timeouts.snapshot = { ...timeouts.snapshot, timeoutUntil: discordTimeoutUntil };
+      const databaseError = new Error('resolve failed');
+      const failingCases = {
+        getActiveCase: vi.fn(() => Promise.resolve(active)),
+        createCase: vi.fn(),
+        resolveCase: vi.fn(() => Promise.reject(databaseError)),
+        resolveExpiredMute: vi.fn(),
+      };
+      service = new ModerationMuteService(
+        database.client,
+        timeouts,
+        announcements,
+        logger,
+        failingCases,
+      );
+
+      await expect(
+        service.unmute({
+          authorization: authorization(),
+          targetDiscordUserId: targetId,
+          resolvedAt: new Date('2026-08-09T12:01:00.000Z'),
+        }),
+      ).rejects.toBe(databaseError);
+
+      expect(timeouts.restoreTimeout).not.toHaveBeenCalled();
+      expect(logger.entries).toHaveLength(0);
+      await expect(
+        database.client.moderationCase.findUnique({ where: { id: active.id } }),
+      ).resolves.toMatchObject({ status: 'ACTIVE', resolutionType: null });
+      expect(announcements.plans).toHaveLength(0);
+    },
+  );
 
   it('preserves successful moderation when one or both announcement deliveries fail', async () => {
     announcements.result = { caseFilesDelivered: false, auditDelivered: true };

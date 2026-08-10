@@ -177,6 +177,16 @@ export class ModerationExistingTimeoutLongerError extends ModerationCaseError {
   }
 }
 
+export class ModerationTimeoutChangedError extends ModerationCaseError {
+  public readonly code = 'MODERATION_TIMEOUT_CHANGED';
+
+  public constructor() {
+    super(
+      'The active Discord timeout has changed and cannot be safely removed automatically. The moderation case remains active.',
+    );
+  }
+}
+
 export class ModerationChannelNotConfiguredError extends ConfigurationError {
   public readonly code = 'MODERATION_CHANNEL_NOT_CONFIGURED';
 

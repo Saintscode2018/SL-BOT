@@ -11,6 +11,7 @@ import {
   ModerationExistingTimeoutLongerError,
   ModerationSelfTargetError,
   ModerationTargetNotModeratableError,
+  ModerationTimeoutChangedError,
   ModerationTimeoutTooLongError,
 } from '../domain/errors.js';
 import { maximumDiscordTimeoutSeconds } from '../domain/moderation-duration.js';
@@ -29,6 +30,8 @@ export interface ModerationMemberSnapshot {
   timeoutUntil: Date | null;
 }
 
+export type ModerationTimeoutRemovalResult = 'REMOVED' | 'ABSENT' | 'MISMATCH';
+
 export interface ModerationTimeoutGateway {
   inspect(discordGuildId: string, targetDiscordUserId: string): Promise<ModerationMemberSnapshot>;
   applyTimeout(
@@ -37,7 +40,13 @@ export interface ModerationTimeoutGateway {
     expiresAt: Date,
     reason: string,
   ): Promise<void>;
-  removeTimeout(discordGuildId: string, targetDiscordUserId: string, reason: string): Promise<void>;
+  removeTimeoutIfExpiresAtMatches(
+    discordGuildId: string,
+    targetDiscordUserId: string,
+    expectedExpiresAt: Date,
+    activeAt: Date,
+    reason: string,
+  ): Promise<ModerationTimeoutRemovalResult>;
   restoreTimeout(
     discordGuildId: string,
     targetDiscordUserId: string,
@@ -206,11 +215,19 @@ export class ModerationMuteService {
     );
     validateMember(member);
     const resolvedAt = input.resolvedAt ?? this.now();
-    await this.timeouts.removeTimeout(
-      input.authorization.discordGuildId,
-      input.targetDiscordUserId,
-      `SL Bot /unmute case ${active.caseNumber} by ${input.authorization.discordUserId}`,
-    );
+    const timeoutRemovalResult =
+      active.expiresAt === null
+        ? 'ABSENT'
+        : await this.timeouts.removeTimeoutIfExpiresAtMatches(
+            input.authorization.discordGuildId,
+            input.targetDiscordUserId,
+            active.expiresAt,
+            resolvedAt,
+            `SL Bot /unmute case ${active.caseNumber} by ${input.authorization.discordUserId}`,
+          );
+    if (timeoutRemovalResult === 'MISMATCH') {
+      throw new ModerationTimeoutChangedError();
+    }
 
     let moderationCase: ModerationCaseWithUsers;
     try {
@@ -222,7 +239,9 @@ export class ModerationMuteService {
         resolvedAt,
       });
     } catch (databaseError: unknown) {
-      await this.compensateUnmuteFailure(input, active, databaseError);
+      if (timeoutRemovalResult === 'REMOVED') {
+        await this.compensateUnmuteFailure(input, active, databaseError);
+      }
       throw databaseError;
     }
 
