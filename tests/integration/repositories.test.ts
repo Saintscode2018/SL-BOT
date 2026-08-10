@@ -88,6 +88,30 @@ describe('repositories and database constraints', () => {
     });
   }
 
+  async function pendingOfferInSecondGuild(data: SeedData): Promise<{
+    guild: Guild;
+    club: Club;
+    offer: Offer;
+  }> {
+    const guild = await guilds.create({
+      discordGuildId: '100000000000000002',
+      name: 'guild two',
+    });
+    const club = await clubs.create({
+      guildId: guild.id,
+      discordRoleId: data.clubA.discordRoleId,
+      emoji: data.clubA.emoji,
+    });
+    const offer = await offers.createPending({
+      guildId: guild.id,
+      clubId: club.id,
+      playerUserId: data.player.id,
+      offeredByUserId: data.manager.id,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    return { guild, club, offer };
+  }
+
   async function createOtherGuildClub(): Promise<{ guild: Guild; club: Club }> {
     const guild = await guilds.create({
       discordGuildId: '100000000000000099',
@@ -758,6 +782,86 @@ describe('repositories and database constraints', () => {
           entityId: 'entity-two',
         }),
       ).resolves.toMatchObject({ actorUserId: null });
+    });
+  });
+
+  describe('transaction offer guild integrity', () => {
+    it('allows a transaction to reference an offer from the same guild', async () => {
+      const data = await seed();
+      const offer = await pendingOffer(data);
+
+      await expect(
+        transactions.create({
+          guildId: data.guild.id,
+          userId: data.player.id,
+          transactionType: 'SIGNING',
+          destinationClubId: data.clubA.id,
+          performedByUserId: data.manager.id,
+          offerId: offer.id,
+        }),
+      ).resolves.toMatchObject({ guildId: data.guild.id, offerId: offer.id });
+    });
+
+    it('rejects a cross-guild offer reference at the database relation', async () => {
+      const data = await seed();
+      const other = await pendingOfferInSecondGuild(data);
+
+      await expect(
+        database.client.leagueTransaction.create({
+          data: {
+            guildId: data.guild.id,
+            userId: data.player.id,
+            transactionType: 'SIGNING',
+            destinationClubId: data.clubA.id,
+            performedByUserId: data.manager.id,
+            offerId: other.offer.id,
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'P2003' });
+      await expect(database.client.leagueTransaction.count()).resolves.toBe(0);
+    });
+
+    it('allows a non-offer transaction with a null offer id', async () => {
+      const data = await seed();
+
+      await expect(
+        transactions.create({
+          guildId: data.guild.id,
+          userId: data.player.id,
+          transactionType: 'RELEASE',
+          sourceClubId: data.clubA.id,
+          performedByUserId: data.manager.id,
+          offerId: null,
+        }),
+      ).resolves.toMatchObject({ guildId: data.guild.id, offerId: null });
+    });
+
+    it('allows matching transactions for shared users and equivalent club data across guilds', async () => {
+      const data = await seed();
+      const firstOffer = await pendingOffer(data);
+      const second = await pendingOfferInSecondGuild(data);
+
+      await expect(
+        transactions.create({
+          guildId: data.guild.id,
+          userId: data.player.id,
+          transactionType: 'SIGNING',
+          destinationClubId: data.clubA.id,
+          performedByUserId: data.manager.id,
+          offerId: firstOffer.id,
+        }),
+      ).resolves.toMatchObject({ guildId: data.guild.id, offerId: firstOffer.id });
+      await expect(
+        transactions.create({
+          guildId: second.guild.id,
+          userId: data.player.id,
+          transactionType: 'SIGNING',
+          destinationClubId: second.club.id,
+          performedByUserId: data.manager.id,
+          offerId: second.offer.id,
+        }),
+      ).resolves.toMatchObject({ guildId: second.guild.id, offerId: second.offer.id });
+      await expect(database.client.leagueTransaction.count()).resolves.toBe(2);
     });
   });
 

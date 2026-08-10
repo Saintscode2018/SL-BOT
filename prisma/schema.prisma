@@ -194,6 +194,7 @@ model Offer {
   offeredBy          LeagueUser          @relation("offerCreator", fields: [offeredByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   leagueTransactions LeagueTransaction[]
 
+  @@unique([id, guildId])
   @@index([guildId, playerUserId, status])
   @@index([clubId, status])
   @@index([status, expiresAt])
@@ -217,7 +218,7 @@ model LeagueTransaction {
   sourceClub        Club?       @relation("sourceClub", fields: [sourceClubId, guildId], references: [id, guildId], onDelete: Restrict, onUpdate: Cascade)
   destinationClub   Club?       @relation("destinationClub", fields: [destinationClubId, guildId], references: [id, guildId], onDelete: Restrict, onUpdate: Cascade)
   performedBy       LeagueUser  @relation("transactionPerformer", fields: [performedByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  offer             Offer?      @relation(fields: [offerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  offer             Offer?      @relation(fields: [offerId, guildId], references: [id, guildId], onDelete: Restrict, onUpdate: Cascade)
   reversedBy        LeagueUser? @relation("transactionReverser", fields: [reversedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   @@index([guildId, createdAt])

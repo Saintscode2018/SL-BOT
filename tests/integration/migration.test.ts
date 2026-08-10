@@ -108,7 +108,7 @@ describe('database migrations', () => {
     }
   });
 
-  it('contains composite club foreign keys and state consistency checks', () => {
+  it('contains composite club and offer foreign keys and state consistency checks', () => {
     const sqlite = new DatabaseSync(database.databasePath, { readOnly: true });
     try {
       const tables = sqlite
@@ -148,6 +148,20 @@ describe('database migrations', () => {
           .sort((left, right) => left.join().localeCompare(right.join()));
         expect(mappings).toEqual(expectedMappings);
       }
+
+      const transactionForeignKeys = sqlite
+        .prepare('PRAGMA foreign_key_list("LeagueTransaction")')
+        .all() as unknown as ForeignKeyRow[];
+      const offerForeignKey = transactionForeignKeys
+        .filter(({ table }) => table === 'Offer')
+        .map(({ from, to }) => `${from}->${to}`)
+        .sort();
+      expect(offerForeignKey).toEqual(['guildId->guildId', 'offerId->id']);
+
+      const offerIndexes = sqlite
+        .prepare('SELECT "name" FROM "sqlite_master" WHERE "type" = ? AND "tbl_name" = ?')
+        .all('index', 'Offer') as unknown as NameRow[];
+      expect(offerIndexes.map(({ name }) => name)).toContain('Offer_id_guildId_key');
     } finally {
       sqlite.close();
     }
@@ -392,6 +406,18 @@ describe('database migrations', () => {
           { encoding: 'utf8' },
         ),
       );
+      sqlite.exec(
+        readFileSync(
+          join(
+            process.cwd(),
+            'prisma',
+            'migrations',
+            '20260810211300_enforce_transaction_offer_guild_integrity',
+            'migration.sql',
+          ),
+          { encoding: 'utf8' },
+        ),
+      );
 
       const settings = sqlite
         .prepare(
@@ -465,6 +491,25 @@ describe('database migrations', () => {
       expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "Offer"').get()).toEqual({ count: 1 });
       expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "LeagueTransaction"').get()).toEqual({
         count: 1,
+      });
+      expect(
+        sqlite
+          .prepare(
+            'SELECT "id", "guildId", "userId", "transactionType", "sourceClubId", "destinationClubId", "performedByUserId", "offerId", "reason", "reversedAt", "reversedByUserId" FROM "LeagueTransaction" WHERE "id" = ?',
+          )
+          .get('transaction-1'),
+      ).toEqual({
+        id: 'transaction-1',
+        guildId: 'guild-1',
+        userId: 'user-1',
+        transactionType: 'SIGNING',
+        sourceClubId: null,
+        destinationClubId: 'club-1',
+        performedByUserId: 'user-2',
+        offerId: 'offer-1',
+        reason: null,
+        reversedAt: null,
+        reversedByUserId: null,
       });
       expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "AuditEvent"').get()).toEqual({
         count: 1,
