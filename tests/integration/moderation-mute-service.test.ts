@@ -16,6 +16,7 @@ import {
   ModerationTimeoutTooLongError,
 } from '../../src/domain/errors.js';
 import { maximumDiscordTimeoutSeconds } from '../../src/domain/moderation-duration.js';
+import { ModerationCaseRepository } from '../../src/repositories/moderation-case-repository.js';
 import type { AuthorizationInput } from '../../src/services/authorization-service.js';
 import type {
   ModerationAnnouncementPlan,
@@ -372,7 +373,7 @@ describe('moderation mute execution service', () => {
   });
 
   it('rejects an active duplicate before an additional timeout mutation', async () => {
-    await cases.createCase({
+    const original = await cases.createCase({
       authorization: authorization(),
       targetDiscordUserId: targetId,
       type: 'MUTE',
@@ -380,16 +381,128 @@ describe('moderation mute execution service', () => {
       durationSeconds: 600,
       issuedAt,
     });
+    const error = await service
+      .mute({
+        authorization: authorization(),
+        targetDiscordUserId: targetId,
+        durationSeconds: 600,
+        bail: 0,
+        issuedAt,
+      })
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ModerationCaseAlreadyActiveError);
+    expect(error).toMatchObject({
+      type: 'MUTE',
+      message: 'That user already has an active mute case.',
+    });
+    expect(timeouts.applyTimeout).not.toHaveBeenCalled();
+    expect(announcements.plans).toHaveLength(0);
+    await expect(database.client.moderationCase.count()).resolves.toBe(1);
+    await expect(database.client.moderationCase.findUnique({ where: { id: original.id } })).resolves.toMatchObject({
+      status: 'ACTIVE',
+      resolutionType: null,
+      resolvedByUserId: null,
+      resolvedAt: null,
+    });
+  });
+
+  it('rejects an expired ACTIVE mute as the same active duplicate and leaves all state unchanged', async () => {
+    const expiredAt = new Date('2026-08-09T12:00:00.000Z');
+    const stale = await cases.createCase({
+      authorization: authorization(),
+      targetDiscordUserId: targetId,
+      type: 'MUTE',
+      bail: 0,
+      durationSeconds: 60,
+      issuedAt: new Date(expiredAt.getTime() - 60_000),
+    });
+    timeouts.snapshot = { ...timeouts.snapshot, timeoutUntil: null };
+    const expiredResolver = vi.spyOn(ModerationCaseRepository.prototype, 'resolveExpiredMute');
+
+    try {
+      const error = await service
+        .mute({
+          authorization: authorization(secondModeratorId),
+          targetDiscordUserId: targetId,
+          durationSeconds: 600,
+          bail: 10,
+          issuedAt: expiredAt,
+        })
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ModerationCaseAlreadyActiveError);
+      expect(error).toMatchObject({ type: 'MUTE' });
+      expect((error as Error).message).toBe('That user already has an active mute case.');
+      expect(expiredResolver).not.toHaveBeenCalled();
+      expect(timeouts.inspect).not.toHaveBeenCalled();
+      expect(timeouts.applyTimeout).not.toHaveBeenCalled();
+      expect(announcements.plans).toHaveLength(0);
+      await expect(database.client.moderationCase.count()).resolves.toBe(1);
+      await expect(database.client.moderationCase.findUnique({ where: { id: stale.id } })).resolves.toMatchObject({
+        status: 'ACTIVE',
+        resolutionType: null,
+        resolvedByUserId: null,
+        resolvedAt: null,
+        expiresAt: stale.expiresAt,
+      });
+    } finally {
+      expiredResolver.mockRestore();
+    }
+  });
+
+  it('manually resolves a stale ACTIVE mute even when Discord already reports no timeout', async () => {
+    const stale = await cases.createCase({
+      authorization: authorization(),
+      targetDiscordUserId: targetId,
+      type: 'MUTE',
+      bail: 0,
+      durationSeconds: 60,
+      issuedAt: new Date('2026-08-09T11:59:00.000Z'),
+    });
+    timeouts.snapshot = { ...timeouts.snapshot, timeoutUntil: null };
+    const resolvedAt = new Date('2026-08-09T12:01:00.000Z');
+
+    const result = await service.unmute({
+      authorization: authorization(secondModeratorId),
+      targetDiscordUserId: targetId,
+      resolvedAt,
+    });
+
+    expect(timeouts.inspect).toHaveBeenCalledOnce();
+    expect(timeouts.removeTimeout).toHaveBeenCalledOnce();
+    expect(result.moderationCase).toMatchObject({
+      id: stale.id,
+      status: 'RESOLVED',
+      resolutionType: 'MANUAL',
+      resolvedBy: { discordUserId: secondModeratorId },
+      resolvedAt,
+    });
+    expect(announcements.plans).toHaveLength(1);
+    expect(announcements.plans[0]).toMatchObject({ operation: 'UNMUTE' });
+  });
+
+  it('treats an ACTIVE mute at the exact expiry boundary as an active duplicate', async () => {
+    const now = new Date('2026-08-09T12:00:00.000Z');
+    await cases.createCase({
+      authorization: authorization(),
+      targetDiscordUserId: targetId,
+      type: 'MUTE',
+      bail: 0,
+      durationSeconds: 60,
+      issuedAt: new Date(now.getTime() - 60_000),
+    });
+
     await expect(
       service.mute({
         authorization: authorization(),
         targetDiscordUserId: targetId,
         durationSeconds: 600,
         bail: 0,
-        issuedAt,
+        issuedAt: now,
       }),
     ).rejects.toBeInstanceOf(ModerationCaseAlreadyActiveError);
     expect(timeouts.applyTimeout).not.toHaveBeenCalled();
+    expect(announcements.plans).toHaveLength(0);
   });
 
   it('does not create a case when Discord timeout application fails', async () => {
