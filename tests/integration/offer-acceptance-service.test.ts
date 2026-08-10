@@ -454,7 +454,7 @@ describe('offer acceptance service', () => {
       createdByUserId: data.manager.id,
     });
     await expect(accept(data)).rejects.toBeInstanceOf(MemberAlreadySignedError);
-    const history = await memberships.listHistoryForUser(data.player.id);
+    const history = await memberships.listHistoryForUser(data.guild.id, data.player.id);
     expect(history).toHaveLength(1);
     expect(history.find(({ id }) => id === previous.id)).toMatchObject({
       status: 'ACTIVE',
