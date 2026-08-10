@@ -39,6 +39,12 @@ export interface ResolveModerationCaseInput {
   resolvedAt?: Date;
 }
 
+export interface ResolveExpiredMuteInput {
+  authorization: AuthorizationInput;
+  targetDiscordUserId: string;
+  resolvedAt: Date;
+}
+
 export interface FindModerationCaseInput {
   authorization: AuthorizationInput;
   targetDiscordUserId: string;
@@ -168,6 +174,31 @@ export class ModerationCaseService {
       });
       if (resolved === null) throw new ModerationCaseNotActiveError(type);
       return resolved;
+    });
+  }
+
+  public async resolveExpiredMute(
+    input: ResolveExpiredMuteInput,
+  ): Promise<ModerationCaseWithUsers | null> {
+    validateDate(input.resolvedAt, 'Resolution time');
+
+    return this.database.$transaction(async (transaction) => {
+      const guilds = new GuildRepository(transaction);
+      await guilds.acquireWriteLock(input.authorization.discordGuildId);
+      const authorization = await new AuthorizationService(transaction).authorizeModeration(
+        input.authorization,
+      );
+      const users = new UserRepository(transaction);
+      const target = await users.getByDiscordUserId(input.targetDiscordUserId);
+      if (target === null) return null;
+      const cases = new ModerationCaseRepository(transaction);
+      const active = await cases.getActiveForUserAndType(
+        authorization.guild.id,
+        target.id,
+        'MUTE',
+      );
+      if (active === null) return null;
+      return cases.resolveExpiredMute(active.id, input.resolvedAt);
     });
   }
 

@@ -406,7 +406,7 @@ describe('moderation mute execution service', () => {
     });
   });
 
-  it('rejects an expired ACTIVE mute as the same active duplicate and leaves all state unchanged', async () => {
+  it('lazily expires a stale ACTIVE mute from the service clock before creating a replacement', async () => {
     const expiredAt = new Date('2026-08-09T12:00:00.000Z');
     const stale = await cases.createCase({
       authorization: authorization(),
@@ -418,33 +418,42 @@ describe('moderation mute execution service', () => {
     });
     timeouts.snapshot = { ...timeouts.snapshot, timeoutUntil: null };
     const expiredResolver = vi.spyOn(ModerationCaseRepository.prototype, 'resolveExpiredMute');
+    service = new ModerationMuteService(
+      database.client,
+      timeouts,
+      announcements,
+      logger,
+      undefined,
+      undefined,
+      () => expiredAt,
+    );
 
     try {
-      const error = await service
-        .mute({
-          authorization: authorization(secondModeratorId),
-          targetDiscordUserId: targetId,
-          durationSeconds: 600,
-          bail: 10,
-          issuedAt: expiredAt,
-        })
-        .catch((caught: unknown) => caught);
+      const result = await service.mute({
+        authorization: authorization(secondModeratorId),
+        targetDiscordUserId: targetId,
+        durationSeconds: 600,
+        bail: 10,
+      });
 
-      expect(error).toBeInstanceOf(ModerationCaseAlreadyActiveError);
-      expect(error).toMatchObject({ type: 'MUTE' });
-      expect((error as Error).message).toBe('That user already has an active mute case.');
-      expect(expiredResolver).not.toHaveBeenCalled();
-      expect(timeouts.inspect).not.toHaveBeenCalled();
-      expect(timeouts.applyTimeout).not.toHaveBeenCalled();
-      expect(announcements.plans).toHaveLength(0);
-      await expect(database.client.moderationCase.count()).resolves.toBe(1);
+      expect(expiredResolver).toHaveBeenCalledWith(stale.id, expiredAt);
+      expect(timeouts.inspect).toHaveBeenCalledOnce();
+      expect(timeouts.applyTimeout).toHaveBeenCalledOnce();
+      expect(announcements.plans).toEqual([
+        expect.objectContaining({ operation: 'MUTE', caseNumber: result.moderationCase.caseNumber }),
+      ]);
+      await expect(database.client.moderationCase.count()).resolves.toBe(2);
       await expect(database.client.moderationCase.findUnique({ where: { id: stale.id } })).resolves.toMatchObject({
-        status: 'ACTIVE',
-        resolutionType: null,
+        status: 'RESOLVED',
+        resolutionType: 'EXPIRED',
         resolvedByUserId: null,
-        resolvedAt: null,
+        resolutionReason: null,
+        resolvedAt: expiredAt,
         expiresAt: stale.expiresAt,
       });
+      await expect(
+        database.client.moderationCase.findUnique({ where: { id: result.moderationCase.id } }),
+      ).resolves.toMatchObject({ type: 'MUTE', status: 'ACTIVE' });
     } finally {
       expiredResolver.mockRestore();
     }
@@ -481,9 +490,9 @@ describe('moderation mute execution service', () => {
     expect(announcements.plans[0]).toMatchObject({ operation: 'UNMUTE' });
   });
 
-  it('treats an ACTIVE mute at the exact expiry boundary as an active duplicate', async () => {
+  it('lazily expires an ACTIVE mute at the exact expiry boundary', async () => {
     const now = new Date('2026-08-09T12:00:00.000Z');
-    await cases.createCase({
+    const stale = await cases.createCase({
       authorization: authorization(),
       targetDiscordUserId: targetId,
       type: 'MUTE',
@@ -492,17 +501,103 @@ describe('moderation mute execution service', () => {
       issuedAt: new Date(now.getTime() - 60_000),
     });
 
+    const result = await service.mute({
+      authorization: authorization(),
+      targetDiscordUserId: targetId,
+      durationSeconds: 600,
+      bail: 0,
+      issuedAt: now,
+    });
+
+    await expect(database.client.moderationCase.findUnique({ where: { id: stale.id } })).resolves.toMatchObject({
+      status: 'RESOLVED',
+      resolutionType: 'EXPIRED',
+      resolvedAt: now,
+    });
+    expect(result.moderationCase).toMatchObject({ type: 'MUTE', status: 'ACTIVE' });
+    expect(timeouts.applyTimeout).toHaveBeenCalledOnce();
+  });
+
+  it('keeps stale-case expiration committed when replacement case creation fails', async () => {
+    const expiry = new Date('2026-08-09T12:00:00.000Z');
+    const stale = await cases.createCase({
+      authorization: authorization(),
+      targetDiscordUserId: targetId,
+      type: 'MUTE',
+      bail: 0,
+      durationSeconds: 60,
+      issuedAt: new Date(expiry.getTime() - 60_000),
+    });
+    const databaseError = new Error('replacement case create failed');
+    const createCase = vi
+      .spyOn(ModerationCaseService.prototype, 'createCase')
+      .mockRejectedValueOnce(databaseError);
+
+    try {
+      await expect(
+        service.mute({
+          authorization: authorization(),
+          targetDiscordUserId: targetId,
+          durationSeconds: 600,
+          bail: 0,
+          issuedAt: expiry,
+        }),
+      ).rejects.toBe(databaseError);
+
+      await expect(database.client.moderationCase.findUnique({ where: { id: stale.id } })).resolves.toMatchObject({
+        status: 'RESOLVED',
+        resolutionType: 'EXPIRED',
+        resolvedByUserId: null,
+        resolutionReason: null,
+        resolvedAt: expiry,
+      });
+      await expect(database.client.moderationCase.count()).resolves.toBe(1);
+      expect(timeouts.restoreTimeout).toHaveBeenCalledWith(
+        discordGuildId,
+        targetId,
+        null,
+        expect.stringContaining('compensation'),
+      );
+    } finally {
+      createCase.mockRestore();
+    }
+  });
+
+  it('serializes concurrent stale-case replacement attempts to one new ACTIVE mute', async () => {
+    const now = new Date('2026-08-09T12:00:00.000Z');
+    const stale = await cases.createCase({
+      authorization: authorization(),
+      targetDiscordUserId: targetId,
+      type: 'MUTE',
+      bail: 0,
+      durationSeconds: 60,
+      issuedAt: new Date(now.getTime() - 60_000),
+    });
+    const input = {
+      authorization: authorization(),
+      targetDiscordUserId: targetId,
+      durationSeconds: 600,
+      bail: 0,
+      issuedAt: now,
+    };
+
+    const results = await Promise.allSettled([service.mute(input), service.mute(input)]);
+    const rejected = results.find((result) => result.status === 'rejected');
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(rejected).toBeDefined();
+    if (rejected?.status === 'rejected') {
+      expect(rejected.reason).toBeInstanceOf(ModerationCaseAlreadyActiveError);
+    }
+    expect(timeouts.applyTimeout).toHaveBeenCalledOnce();
+    await expect(database.client.moderationCase.findUnique({ where: { id: stale.id } })).resolves.toMatchObject({
+      status: 'RESOLVED',
+      resolutionType: 'EXPIRED',
+    });
     await expect(
-      service.mute({
-        authorization: authorization(),
-        targetDiscordUserId: targetId,
-        durationSeconds: 600,
-        bail: 0,
-        issuedAt: now,
-      }),
-    ).rejects.toBeInstanceOf(ModerationCaseAlreadyActiveError);
-    expect(timeouts.applyTimeout).not.toHaveBeenCalled();
-    expect(announcements.plans).toHaveLength(0);
+      database.client.moderationCase.count({ where: { type: 'MUTE', status: 'ACTIVE' } }),
+    ).resolves.toBe(1);
   });
 
   it('does not create a case when Discord timeout application fails', async () => {
@@ -528,6 +623,7 @@ describe('moderation mute execution service', () => {
       getActiveCase: vi.fn(() => Promise.resolve(null)),
       createCase: vi.fn(() => Promise.reject(databaseError)),
       resolveCase: vi.fn(),
+      resolveExpiredMute: vi.fn(),
     };
     service = new ModerationMuteService(
       database.client,
@@ -559,6 +655,7 @@ describe('moderation mute execution service', () => {
       getActiveCase: vi.fn(() => Promise.resolve(null)),
       createCase: vi.fn(() => Promise.reject(new Error('case create failed'))),
       resolveCase: vi.fn(),
+      resolveExpiredMute: vi.fn(),
     };
     service = new ModerationMuteService(
       database.client,
@@ -629,6 +726,7 @@ describe('moderation mute execution service', () => {
       getActiveCase: vi.fn(() => Promise.resolve(active)),
       createCase: vi.fn(),
       resolveCase: vi.fn(() => Promise.reject(databaseError)),
+      resolveExpiredMute: vi.fn(),
     };
     service = new ModerationMuteService(
       database.client,
@@ -670,6 +768,7 @@ describe('moderation mute execution service', () => {
       getActiveCase: vi.fn(() => Promise.resolve(active)),
       createCase: vi.fn(),
       resolveCase: vi.fn(() => Promise.reject(new Error('resolve failed'))),
+      resolveExpiredMute: vi.fn(),
     };
     service = new ModerationMuteService(
       database.client,

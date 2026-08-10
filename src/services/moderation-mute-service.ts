@@ -48,6 +48,7 @@ export interface ModerationTimeoutGateway {
 interface ModerationCaseGateway {
   createCase: ModerationCaseService['createCase'];
   resolveCase: ModerationCaseService['resolveCase'];
+  resolveExpiredMute: ModerationCaseService['resolveExpiredMute'];
   getActiveCase: ModerationCaseService['getActiveCase'];
 }
 
@@ -121,19 +122,28 @@ export class ModerationMuteService {
       throw new ModerationTimeoutTooLongError(maximumDiscordTimeoutSeconds);
     }
     const channels = await this.requireLoggingChannels(input.authorization);
+    const issuedAt = input.issuedAt ?? this.now();
     const active = await this.cases.getActiveCase({
       authorization: input.authorization,
       targetDiscordUserId: input.targetDiscordUserId,
       type: 'MUTE',
     });
-    if (active !== null) throw new ModerationCaseAlreadyActiveError('MUTE');
+    if (active !== null) {
+      if (active.expiresAt === null || active.expiresAt.getTime() > issuedAt.getTime()) {
+        throw new ModerationCaseAlreadyActiveError('MUTE');
+      }
+      await this.cases.resolveExpiredMute({
+        authorization: input.authorization,
+        targetDiscordUserId: input.targetDiscordUserId,
+        resolvedAt: issuedAt,
+      });
+    }
 
     const member = await this.timeouts.inspect(
       input.authorization.discordGuildId,
       input.targetDiscordUserId,
     );
     validateMember(member);
-    const issuedAt = input.issuedAt ?? this.now();
     const expiresAt = new Date(issuedAt.getTime() + input.durationSeconds * 1000);
     const priorTimeout = previousActiveTimeout(member, issuedAt);
     await this.timeouts.applyTimeout(
