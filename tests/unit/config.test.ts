@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   loadRuntimeEnvironment,
+  parseCommandDeploymentEnvironment,
   parseEnvironment,
   parseRuntimeEnvironment,
 } from '../../src/config/env.js';
@@ -25,9 +26,47 @@ describe('environment configuration', () => {
     expect(() => parseEnvironment({ NODE_ENV: 'invalid' })).toThrow(ConfigurationError);
   });
 
-  it('validates snowflakes as decimal strings', () => {
-    expect(discordSnowflakeSchema.parse('1520900719799042088')).toBe('1520900719799042088');
-    expect(() => discordSnowflakeSchema.parse('12.5')).toThrow();
+  it('validates canonical snowflakes and preserves large IDs as strings', () => {
+    const validSnowflake = '1520900719799042088';
+    expect(discordSnowflakeSchema.parse(validSnowflake)).toBe(validSnowflake);
+    expect(discordSnowflakeSchema.parse('18446744073709551615')).toBe(
+      '18446744073709551615',
+    );
+    expect(typeof discordSnowflakeSchema.parse(validSnowflake)).toBe('string');
+  });
+
+  it.each([
+    'abc123',
+    '123abc',
+    '-123',
+    '12.5',
+    ' 1520900719799042088',
+    '1520900719799042088 ',
+    '',
+    '000000000000000001',
+    '18446744073709551616',
+    '100000000000000000000',
+  ])('rejects malformed snowflake %j', (value) => {
+    expect(() => discordSnowflakeSchema.parse(value)).toThrow();
+  });
+
+  it('rejects invalid deployment IDs during configuration parsing', () => {
+    expect(() =>
+      parseEnvironment({
+        NODE_ENV: 'test',
+        DISCORD_APPLICATION_ID: 'not-an-id',
+        DISCORD_DEVELOPMENT_GUILD_ID: '100000000000000001',
+      }),
+    ).toThrow(ConfigurationError);
+
+    expect(() =>
+      parseCommandDeploymentEnvironment({
+        NODE_ENV: 'test',
+        DISCORD_TOKEN: 'token',
+        DISCORD_APPLICATION_ID: '100000000000000001',
+        DISCORD_DEVELOPMENT_GUILD_ID: '100000000000000000000',
+      }),
+    ).toThrow(ConfigurationError);
   });
 
   it('requires a discord token for application startup', () => {

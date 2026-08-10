@@ -84,8 +84,9 @@ export class ClubRepository {
   }
 
   public async listActiveByDiscordGuildId(discordGuildId: string): Promise<Club[]> {
+    const validatedId = discordSnowflakeSchema.parse(discordGuildId);
     return this.db.club.findMany({
-      where: { active: true, guild: { discordGuildId } },
+      where: { active: true, guild: { discordGuildId: validatedId } },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
   }

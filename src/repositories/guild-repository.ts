@@ -82,11 +82,12 @@ export class GuildRepository {
   }
 
   public async upsertByDiscordGuildId(input: CreateGuildInput): Promise<Guild> {
+    const validatedId = discordSnowflakeSchema.parse(input.discordGuildId);
     try {
       return await this.db.guild.upsert({
-        where: { discordGuildId: discordSnowflakeSchema.parse(input.discordGuildId) },
+        where: { discordGuildId: validatedId },
         create: {
-          discordGuildId: input.discordGuildId,
+          discordGuildId: validatedId,
           name: input.name,
         },
         update: { name: input.name },

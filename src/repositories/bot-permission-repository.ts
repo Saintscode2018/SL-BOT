@@ -2,6 +2,7 @@ import { Prisma, type BotPermission, type LeagueUser } from '@prisma/client';
 
 import { botPermissionLevelSchema, type BotPermissionLevel } from '../domain/enums.js';
 import type { DatabaseClient } from '../domain/types.js';
+import { discordSnowflakeSchema } from '../domain/validation.js';
 import { translateDatabaseError } from './repository-errors.js';
 
 export type BotPermissionWithUser = BotPermission & { user: LeagueUser };
@@ -30,10 +31,12 @@ export class BotPermissionRepository {
     discordGuildId: string,
     discordUserId: string,
   ): Promise<BotPermission | null> {
+    const validatedGuildId = discordSnowflakeSchema.parse(discordGuildId);
+    const validatedUserId = discordSnowflakeSchema.parse(discordUserId);
     return this.db.botPermission.findFirst({
       where: {
-        guild: { discordGuildId },
-        user: { discordUserId },
+        guild: { discordGuildId: validatedGuildId },
+        user: { discordUserId: validatedUserId },
       },
     });
   }

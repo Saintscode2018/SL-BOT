@@ -10,6 +10,7 @@ import {
 } from 'discord.js';
 
 import { AuthorizationError, ConfigurationError } from '../domain/errors.js';
+import { discordSnowflakeSchema } from '../domain/validation.js';
 import {
   AuthorizationService,
   type AuthorizationInput,
@@ -219,9 +220,10 @@ export async function performGuildDebugReset(
   database: PrismaClient,
   discordGuildId: string,
 ): Promise<void> {
+  const validatedGuildId = discordSnowflakeSchema.parse(discordGuildId);
   await database.$transaction(async (tx) => {
     const guild = await tx.guild.findUnique({
-      where: { discordGuildId },
+      where: { discordGuildId: validatedGuildId },
     });
     if (!guild) return;
 

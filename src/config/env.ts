@@ -2,14 +2,15 @@ import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
 
 import { ConfigurationError } from '../domain/errors.js';
+import { discordSnowflakeSchema } from '../domain/validation.js';
 
 const environmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.string().min(1).default('file:./dev.db'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   DISCORD_TOKEN: z.string().min(1).optional(),
-  DISCORD_APPLICATION_ID: z.string().regex(/^\d+$/).optional(),
-  DISCORD_DEVELOPMENT_GUILD_ID: z.string().regex(/^\d+$/).optional(),
+  DISCORD_APPLICATION_ID: discordSnowflakeSchema.optional(),
+  DISCORD_DEVELOPMENT_GUILD_ID: discordSnowflakeSchema.optional(),
 });
 
 const runtimeEnvironmentSchema = environmentSchema.extend({
@@ -18,8 +19,8 @@ const runtimeEnvironmentSchema = environmentSchema.extend({
 
 const commandDeploymentEnvironmentSchema = environmentSchema.extend({
   DISCORD_TOKEN: z.string().min(1),
-  DISCORD_APPLICATION_ID: z.string().regex(/^\d+$/),
-  DISCORD_DEVELOPMENT_GUILD_ID: z.string().regex(/^\d+$/),
+  DISCORD_APPLICATION_ID: discordSnowflakeSchema,
+  DISCORD_DEVELOPMENT_GUILD_ID: discordSnowflakeSchema,
 });
 
 export type AppEnvironment = z.infer<typeof environmentSchema>;
