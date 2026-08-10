@@ -166,11 +166,11 @@ describe('administration services', () => {
     });
   }
 
-  async function seedActiveStaffMemberships(...staffTypes: StaffMembershipType[]): Promise<void> {
+  async function seedActiveMemberships(...membershipTypes: MembershipType[]): Promise<Club> {
     const club = await createClub();
     const memberships = new MembershipRepository(database.client);
     const users = new UserRepository(database.client);
-    for (const [index, membershipType] of staffTypes.entries()) {
+    for (const [index, membershipType] of membershipTypes.entries()) {
       const user = await users.getOrCreateByDiscordUserId(`95000000000000000${index + 1}`);
       await memberships.createActive({
         guildId: settings.guildId,
@@ -179,6 +179,11 @@ describe('administration services', () => {
         membershipType,
       });
     }
+    return club;
+  }
+
+  async function seedActiveStaffMemberships(...staffTypes: StaffMembershipType[]): Promise<void> {
+    await seedActiveMemberships(...staffTypes);
   }
 
   function replacementFor(
@@ -578,7 +583,7 @@ describe('administration services', () => {
     });
   });
 
-  it('allows a non-colliding team role change', async () => {
+  it('allows a non-colliding team role change with no active memberships', async () => {
     const club = await createClub();
 
     await expect(
@@ -588,6 +593,73 @@ describe('administration services', () => {
         discordRoleId: '930000000000000002',
       }),
     ).resolves.toMatchObject({ discordRoleId: '930000000000000002' });
+    await expect(
+      database.client.auditEvent.count({ where: { eventType: clubEditedAuditEventType } }),
+    ).resolves.toBe(1);
+  });
+
+  it.each(['PLAYER', 'TEAM_MANAGER', 'ASSISTANT_MANAGER', 'PLAYER_MANAGER'] as const)(
+    'rejects replacing a team role with an active %s membership without changing or auditing the team',
+    async (membershipType) => {
+      const club = await seedActiveMemberships(membershipType);
+
+      await expect(
+        new ClubManagementService(database.client).edit({
+          authorization: authorization(),
+          clubId: club.id,
+          discordRoleId: '930000000000000002',
+          emoji: 'ðŸ¯',
+        }),
+      ).rejects.toThrow('team Discord role cannot be changed while active memberships exist');
+
+      await expect(database.client.club.findUniqueOrThrow({ where: { id: club.id } })).resolves.toEqual(
+        club,
+      );
+      await expect(
+        database.client.auditEvent.count({ where: { eventType: clubEditedAuditEventType } }),
+      ).resolves.toBe(0);
+    },
+  );
+
+  it('rejects replacing a team role with mixed active memberships', async () => {
+    const club = await seedActiveMemberships(
+      'PLAYER',
+      'TEAM_MANAGER',
+      'ASSISTANT_MANAGER',
+      'PLAYER_MANAGER',
+    );
+
+    await expect(
+      new ClubManagementService(database.client).edit({
+        authorization: authorization(),
+        clubId: club.id,
+        discordRoleId: '930000000000000002',
+      }),
+    ).rejects.toThrow('team Discord role cannot be changed while active memberships exist');
+
+    await expect(database.client.club.findUniqueOrThrow({ where: { id: club.id } })).resolves.toEqual(
+      club,
+    );
+  });
+
+  it('allows an emoji edit and an explicitly unchanged team role with active memberships', async () => {
+    const club = await seedActiveMemberships('PLAYER');
+
+    await expect(
+      new ClubManagementService(database.client).edit({
+        authorization: authorization(),
+        clubId: club.id,
+        emoji: 'ðŸ¯',
+      }),
+    ).resolves.toMatchObject({ discordRoleId: club.discordRoleId, emoji: 'ðŸ¯' });
+
+    await expect(
+      new ClubManagementService(database.client).edit({
+        authorization: authorization(),
+        clubId: club.id,
+        discordRoleId: club.discordRoleId,
+      }),
+    ).resolves.toMatchObject({ discordRoleId: club.discordRoleId, emoji: 'ðŸ¯' });
   });
 
   it('deactivates clubs without deleting history and excludes them from autocomplete', async () => {

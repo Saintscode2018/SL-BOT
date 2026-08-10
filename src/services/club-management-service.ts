@@ -2,6 +2,7 @@ import type { Club, PrismaClient } from '@prisma/client';
 
 import {
   ClubInactiveError,
+  ConfigurationError,
   DuplicateTeamRoleError,
   EntityNotFoundError,
   InvalidTeamEmojiError,
@@ -13,6 +14,7 @@ import { formatTeamIdentity } from '../domain/team-label.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { ClubRepository } from '../repositories/club-repository.js';
 import { GuildRepository } from '../repositories/guild-repository.js';
+import { MembershipRepository } from '../repositories/membership-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
 import type { AuthorizationInput } from './authorization-service.js';
 import { AuthorizationService } from './authorization-service.js';
@@ -130,6 +132,11 @@ export class ClubManagementService {
           throw new DuplicateTeamRoleError(
             input.discordRoleId,
             formatTeamIdentity(existingRoleClub, 'message'),
+          );
+        }
+        if (await new MembershipRepository(transaction).hasActiveMembershipOnClub(club.id)) {
+          throw new ConfigurationError(
+            'The team Discord role cannot be changed while active memberships exist.',
           );
         }
       }

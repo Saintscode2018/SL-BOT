@@ -249,6 +249,14 @@ export class MembershipRepository {
     return membership !== null;
   }
 
+  public async hasActiveMembershipOnClub(clubId: string): Promise<boolean> {
+    const membership = await this.db.clubMembership.findFirst({
+      where: { clubId, status: 'ACTIVE' },
+      select: { id: true },
+    });
+    return membership !== null;
+  }
+
   public async countActivePlayers(clubId: string): Promise<number> {
     return this.db.clubMembership.count({
       where: { clubId, membershipType: 'PLAYER', status: 'ACTIVE' },
