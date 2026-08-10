@@ -9,10 +9,34 @@ tags:
 
 # Testing and Deployment Guide
 
+## Database migration workflow
+
+The repository uses tracked Prisma migrations as the schema authority. The complete schema-change policy is maintained in the [README Database and migrations section](../../../../../README.md#database-and-migrations).
+
+For local development, create a migration whenever `prisma/schema.prisma` changes intentionally:
+
+```bash
+npm run prisma:migrate:dev -- --name <name>
+```
+
+Inspect the generated SQL, commit the schema and migration directory together, and run `npm run prisma:generate` as needed. Do not use `prisma db push` as the normal workflow, and do not edit an already-applied migration; create a new one instead.
+
+For deployment/bootstrap, apply committed migrations before application startup:
+
+```bash
+npm run prisma:generate
+npm run prisma:migrate:deploy
+npm start
+```
+
+Deployment must not run `prisma db push`, `prisma migrate dev`, or an automatic reset. Never delete, reset, or overwrite production `prisma/dev.db` (including `/home/container/prisma/dev.db`); production database contents are persistent state. `prisma generate` only updates the generated client and does not modify the database.
+
 ## Automated verification
 
 ```bash
 npm run prisma:generate
+npm run prisma:validate
+npm run prisma:migrate:status
 npm run format
 npm run format:check
 npm run lint

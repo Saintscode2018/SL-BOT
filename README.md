@@ -138,12 +138,32 @@ Existing output is preserved while establishing single canonical meanings for em
 
 The Stage 4B.1 migration adds a partial unique index for one active staff appointment per guild/user. It complements the existing one-active-player-per-guild/user and one-holder-per-team/staff-slot indexes without changing or deleting historical rows. Prisma migrations remain the schema authority.
 
-Prisma migrations are the schema authority; do not substitute `prisma db push`.
+Tracked Prisma migrations are the authoritative database evolution mechanism. Any intentional change to `prisma/schema.prisma` must be accompanied by a new tracked migration:
+
+1. In local development, create the migration with `prisma migrate dev --name <name>` (or `npm run prisma:migrate:dev -- --name <name>`).
+2. Inspect the generated SQL under `prisma/migrations/<timestamp>_<name>/migration.sql`.
+3. Commit `prisma/schema.prisma` and the new migration directory together.
+4. Run `npm run prisma:generate` as needed. Generate updates the Prisma client; it does not modify the database and does not replace migration deployment.
+5. Run validation and tests before sharing or deploying the change.
+
+Never use `prisma db push` as the project's normal schema-evolution workflow. It can change a database without creating tracked migration history. Never edit a migration that has already been applied; create a new migration instead. `prisma migrate reset` is destructive and is only appropriate for a disposable local/test database, never production.
+
+Production and other persistent deployments must apply committed migrations before starting the application:
+
+```sh
+npm run prisma:generate
+npm run prisma:migrate:deploy
+npm start
+```
+
+The application startup code does not run schema management automatically, so deployment/bootstrap must keep this order. Do not use `prisma db push`, `prisma migrate dev`, or an automatic reset in deployment. Production database contents are persistent state: never delete, reset, or overwrite the production database (including `/home/container/prisma/dev.db`) to resolve migration drift. Investigate the migration state and create a corrective migration when needed.
 
 ## Quality commands
 
 ```sh
 npm run prisma:generate
+npm run prisma:validate
+npm run prisma:migrate:status
 npm run format
 npm run format:check
 npm run lint
