@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   Application,
+  type BackgroundLifecycle,
   type DatabaseLifecycle,
   type DiscordLifecycle,
 } from '../../src/app/application.js';
@@ -44,6 +45,27 @@ function lifecycleFakes(order: string[] = []): LifecycleFakes {
 }
 
 describe('application lifecycle', () => {
+  it('starts background maintenance only after database, registration, and Discord login succeed', async () => {
+    const order: string[] = [];
+    const fakes = lifecycleFakes(order);
+    const background: BackgroundLifecycle = {
+      start: () => order.push('background-start'),
+      stop: () => order.push('background-stop'),
+    };
+    const application = new Application({
+      discordToken: 'secret-token',
+      database: fakes.database,
+      discord: fakes.discord,
+      register: () => order.push('register'),
+      logger: new MemoryLogger(),
+      background,
+    });
+
+    await Promise.all([application.start(), application.start(), application.start()]);
+
+    expect(order).toEqual(['connect', 'register', 'login', 'background-start']);
+  });
+
   it('connects prisma then registers definitions then logs in', async () => {
     const order: string[] = [];
     const fakes = lifecycleFakes(order);
@@ -92,6 +114,36 @@ describe('application lifecycle', () => {
     await application.stop();
     expect(fakes.destroy).toHaveBeenCalledOnce();
     expect(fakes.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('stops background maintenance before closing Discord and the database', async () => {
+    const order: string[] = [];
+    const fakes = lifecycleFakes(order);
+    const background: BackgroundLifecycle = {
+      start: () => order.push('background-start'),
+      stop: () => order.push('background-stop'),
+    };
+    const application = new Application({
+      discordToken: 'secret-token',
+      database: fakes.database,
+      discord: fakes.discord,
+      register: () => order.push('register'),
+      logger: new MemoryLogger(),
+      background,
+    });
+
+    await application.start();
+    await application.stop();
+
+    expect(order).toEqual([
+      'connect',
+      'register',
+      'login',
+      'background-start',
+      'background-stop',
+      'destroy',
+      'disconnect',
+    ]);
   });
 
   it('is idempotent when stop is called concurrently', async () => {

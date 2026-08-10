@@ -42,6 +42,7 @@ import {
   OfferDeclineService,
 } from '../../src/services/offer-decline-service.js';
 import { OfferExpirationService } from '../../src/services/offer-expiration-service.js';
+import { OfferExpirationScheduler } from '../../src/services/offer-expiration-scheduler.js';
 import {
   offerDeliveryFailedAuditEventType,
   OfferDeliveryService,
@@ -1380,6 +1381,85 @@ describe('administration services', () => {
       expect.objectContaining({ id: created.offer.id, status: 'EXPIRED' }),
       'EXPIRED',
     );
+  });
+
+  it('uses the canonical expiry lifecycle for the initial scheduled sweep', async () => {
+    const destination = await createClub();
+    const sweepTime = new Date(Date.now() + 60_000);
+    const creation = new OfferCreationService(database.client);
+    const [stale, exact, future] = await Promise.all([
+      creation.createOffer({
+        authorization: authorization(),
+        destinationClubId: destination.id,
+        playerDiscordUserId: '900000000000000006',
+        playerIsBot: false,
+        expiresAt: new Date(sweepTime.getTime() - 1),
+      }),
+      creation.createOffer({
+        authorization: authorization(),
+        destinationClubId: destination.id,
+        playerDiscordUserId: '900000000000000007',
+        playerIsBot: false,
+        expiresAt: sweepTime,
+      }),
+      creation.createOffer({
+        authorization: authorization(),
+        destinationClubId: destination.id,
+        playerDiscordUserId: '900000000000000008',
+        playerIsBot: false,
+        expiresAt: new Date(sweepTime.getTime() + 1),
+      }),
+    ]);
+    const terminalizeOffer = vi.fn(() => Promise.resolve());
+    const expiration = new OfferExpirationService(database.client, undefined, { terminalizeOffer });
+    let complete!: () => void;
+    const completed = new Promise<void>((resolve) => {
+      complete = resolve;
+    });
+    const scheduler = new OfferExpirationScheduler(
+      {
+        expire: async (now) => {
+          try {
+            return await expiration.expire(now);
+          } finally {
+            complete();
+          }
+        },
+      },
+      new MemoryLogger(),
+      { now: () => sweepTime },
+    );
+
+    scheduler.start();
+    await completed;
+    scheduler.stop();
+
+    await expect(
+      database.client.offer.findMany({ orderBy: { expiresAt: 'asc' } }),
+    ).resolves.toMatchObject([
+      { id: stale.offer.id, status: 'EXPIRED', respondedAt: sweepTime },
+      { id: exact.offer.id, status: 'EXPIRED', respondedAt: sweepTime },
+      { id: future.offer.id, status: 'PENDING', respondedAt: null },
+    ]);
+    expect(terminalizeOffer).toHaveBeenCalledTimes(2);
+    expect(terminalizeOffer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: stale.offer.id, status: 'EXPIRED' }),
+      'EXPIRED',
+    );
+    expect(terminalizeOffer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: exact.offer.id, status: 'EXPIRED' }),
+      'EXPIRED',
+    );
+
+    await expiration.expire(sweepTime);
+    await expect(
+      database.client.auditEvent.count({
+        where: {
+          eventType: offerExpiredAuditEventType,
+          entityId: { in: [stale.offer.id, exact.offer.id] },
+        },
+      }),
+    ).resolves.toBe(2);
   });
 
   it('publishes stale expiration and replacement creation audit announcements outside creation', async () => {

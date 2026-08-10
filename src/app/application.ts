@@ -11,12 +11,18 @@ export interface DiscordLifecycle {
   destroy(): Promise<void> | void;
 }
 
+export interface BackgroundLifecycle {
+  start(): void;
+  stop(): void;
+}
+
 export interface ApplicationOptions {
   discordToken: string;
   database: DatabaseLifecycle;
   discord: DiscordLifecycle;
   register(): void;
   logger: Logger;
+  background?: BackgroundLifecycle;
 }
 
 export class Application {
@@ -45,6 +51,7 @@ export class Application {
       this.options.register();
       await this.options.discord.login(this.options.discordToken);
       this.options.logger.info('application started');
+      this.options.background?.start();
     } catch (error: unknown) {
       try {
         await this.closeResources();
@@ -67,6 +74,11 @@ export class Application {
     if (this.resourcesClosed) return;
     this.resourcesClosed = true;
     const errors: unknown[] = [];
+    try {
+      this.options.background?.stop();
+    } catch (error: unknown) {
+      errors.push(error);
+    }
     try {
       await this.options.discord.destroy();
     } catch (error: unknown) {

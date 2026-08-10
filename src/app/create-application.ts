@@ -52,6 +52,8 @@ import { OfferAcceptanceService } from '../services/offer-acceptance-service.js'
 import { OfferCreationService } from '../services/offer-creation-service.js';
 import { OfferDeclineService } from '../services/offer-decline-service.js';
 import { OfferDeliveryService } from '../services/offer-delivery-service.js';
+import { OfferExpirationService } from '../services/offer-expiration-service.js';
+import { OfferExpirationScheduler } from '../services/offer-expiration-scheduler.js';
 import { OfferResponseService } from '../services/offer-response-service.js';
 import { RosterManagementService } from '../services/roster-management-service.js';
 import { RosterAdministrationService } from '../services/roster-administration-service.js';
@@ -165,6 +167,10 @@ export function createApplication(
     new OfferCreationService(prisma),
     auditAnnouncements,
   );
+  const offerExpirationScheduler = new OfferExpirationScheduler(
+    new OfferExpirationService(prisma, auditAnnouncements, offerDeliveryService),
+    logger,
+  );
   const offerAcceptanceService = new OfferAcceptanceService(
     prisma,
     undefined,
@@ -221,6 +227,7 @@ export function createApplication(
     database,
     discord,
     logger,
+    background: offerExpirationScheduler,
     register: () => {
       registerEvents(discord, events, logger);
       logger.debug('application definitions registered', {
