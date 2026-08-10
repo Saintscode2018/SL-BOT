@@ -192,8 +192,10 @@ describe('repositories and database constraints', () => {
         performedByUserId: data.manager.id,
       });
       expect((await clubs.deactivate(data.clubA.id)).active).toBe(false);
-      await expect(memberships.listHistoryForUser(data.player.id)).resolves.toHaveLength(1);
-      await expect(transactions.listForClub(data.clubA.id)).resolves.toHaveLength(1);
+      await expect(
+        memberships.listHistoryForUser(data.guild.id, data.player.id),
+      ).resolves.toHaveLength(1);
+      await expect(transactions.listForClub(data.guild.id, data.clubA.id)).resolves.toHaveLength(1);
       await expect(clubs.listActive(data.guild.id)).resolves.toEqual([data.clubB]);
       await expect(
         clubs.getByDiscordRoleId(data.guild.id, data.clubA.discordRoleId),
@@ -342,6 +344,12 @@ describe('repositories and database constraints', () => {
           membershipType: 'PLAYER',
         }),
       ).resolves.toBeDefined();
+      await expect(
+        memberships.listHistoryForUser(data.guild.id, data.player.id),
+      ).resolves.toHaveLength(1);
+      await expect(
+        memberships.listHistoryForUser(otherGuild.id, data.player.id),
+      ).resolves.toHaveLength(1);
     });
 
     it('ends without deleting history and allows a new active membership', async () => {
@@ -357,7 +365,9 @@ describe('repositories and database constraints', () => {
       expect(ended).toMatchObject({ status: 'ENDED', endedByUserId: data.manager.id });
       expect(ended.leftAt).toBeInstanceOf(Date);
       await expect(memberships.countActivePlayers(data.clubA.id)).resolves.toBe(0);
-      await expect(memberships.listHistoryForUser(data.player.id)).resolves.toHaveLength(1);
+      await expect(
+        memberships.listHistoryForUser(data.guild.id, data.player.id),
+      ).resolves.toHaveLength(1);
       await expect(
         memberships.createActive({
           guildId: data.guild.id,
@@ -401,7 +411,34 @@ describe('repositories and database constraints', () => {
       await expect(offers.listPendingForPlayer(data.guild.id, data.player.id)).resolves.toEqual([
         offer,
       ]);
-      await expect(offers.listPendingForClub(data.clubA.id)).resolves.toEqual([offer]);
+      await expect(offers.listPendingForClub(data.guild.id, data.clubA.id)).resolves.toEqual([
+        offer,
+      ]);
+    });
+
+    it('does not return a pending offer for the same player and club from another guild', async () => {
+      const data = await seed();
+      const other = await createOtherGuildClub();
+      const otherOffer = await offers.createPending({
+        guildId: other.guild.id,
+        clubId: other.club.id,
+        playerUserId: data.player.id,
+        offeredByUserId: data.manager.id,
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+
+      await expect(
+        offers.listPendingForClub(data.guild.id, other.club.id),
+      ).resolves.toEqual([]);
+      await expect(
+        offers.listPendingForClub(other.guild.id, other.club.id),
+      ).resolves.toEqual([otherOffer]);
+      await expect(
+        offers.getPendingForClubAndPlayer(data.guild.id, other.club.id, data.player.id),
+      ).resolves.toBeNull();
+      await expect(
+        offers.getPendingForClubAndPlayer(other.guild.id, other.club.id, data.player.id),
+      ).resolves.toEqual(otherOffer);
     });
 
     it('rejects duplicate pending offers from the same club', async () => {
@@ -605,9 +642,68 @@ describe('repositories and database constraints', () => {
         sourceClubId: data.clubB.id,
         performedByUserId: data.manager.id,
       });
-      await expect(transactions.listForUser(data.player.id)).resolves.toHaveLength(3);
-      await expect(transactions.listForClub(data.clubA.id)).resolves.toHaveLength(2);
-      await expect(transactions.listForClub(data.clubB.id)).resolves.toHaveLength(2);
+      await expect(transactions.listForUser(data.guild.id, data.player.id)).resolves.toHaveLength(3);
+      await expect(transactions.listForClub(data.guild.id, data.clubA.id)).resolves.toHaveLength(2);
+      await expect(transactions.listForClub(data.guild.id, data.clubB.id)).resolves.toHaveLength(2);
+    });
+
+    it('scopes user and club history to the requested guild while preserving order', async () => {
+      const data = await seed();
+      const other = await createOtherGuildClub();
+      const emptyGuild = await guilds.create({
+        discordGuildId: '100000000000000098',
+        name: 'empty guild',
+      });
+      const firstAt = new Date('2026-08-10T10:00:00.000Z');
+      const secondAt = new Date('2026-08-10T10:01:00.000Z');
+      const otherAt = new Date('2026-08-10T10:02:00.000Z');
+
+      await database.client.leagueTransaction.create({
+        data: {
+          guildId: data.guild.id,
+          userId: data.player.id,
+          transactionType: 'SIGNING',
+          destinationClubId: data.clubA.id,
+          performedByUserId: data.manager.id,
+          createdAt: firstAt,
+        },
+      });
+      await database.client.leagueTransaction.create({
+        data: {
+          guildId: data.guild.id,
+          userId: data.player.id,
+          transactionType: 'TRANSFER',
+          sourceClubId: data.clubA.id,
+          destinationClubId: data.clubB.id,
+          performedByUserId: data.manager.id,
+          createdAt: secondAt,
+        },
+      });
+      await database.client.leagueTransaction.create({
+        data: {
+          guildId: other.guild.id,
+          userId: data.player.id,
+          transactionType: 'RELEASE',
+          sourceClubId: other.club.id,
+          performedByUserId: data.manager.id,
+          createdAt: otherAt,
+        },
+      });
+
+      await expect(transactions.listForUser(data.guild.id, data.player.id)).resolves.toEqual([
+        expect.objectContaining({ guildId: data.guild.id, transactionType: 'TRANSFER' }),
+        expect.objectContaining({ guildId: data.guild.id, transactionType: 'SIGNING' }),
+      ]);
+      await expect(transactions.listForUser(other.guild.id, data.player.id)).resolves.toEqual([
+        expect.objectContaining({ guildId: other.guild.id, transactionType: 'RELEASE' }),
+      ]);
+      await expect(
+        transactions.listForUser(emptyGuild.id, data.player.id),
+      ).resolves.toEqual([]);
+      await expect(transactions.listForClub(data.guild.id, other.club.id)).resolves.toEqual([]);
+      await expect(transactions.listForClub(other.guild.id, other.club.id)).resolves.toEqual([
+        expect.objectContaining({ guildId: other.guild.id, transactionType: 'RELEASE' }),
+      ]);
     });
 
     it('records one reversal and rejects a duplicate', async () => {

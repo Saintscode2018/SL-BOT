@@ -111,6 +111,7 @@ export class OfferCreationService {
       }
       const offers = new OfferRepository(transaction);
       const existingPending = await offers.getPendingForClubAndPlayer(
+        authorization.guild.id,
         destinationClub.id,
         player.id,
       );

@@ -231,9 +231,9 @@ export class MembershipRepository {
     }
   }
 
-  public async listHistoryForUser(userId: string): Promise<ClubMembership[]> {
+  public async listHistoryForUser(guildId: string, userId: string): Promise<ClubMembership[]> {
     return this.db.clubMembership.findMany({
-      where: { userId },
+      where: { guildId, userId },
       orderBy: [{ joinedAt: 'desc' }],
     });
   }

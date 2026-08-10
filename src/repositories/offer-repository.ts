@@ -55,19 +55,20 @@ export class OfferRepository {
     });
   }
 
-  public async listPendingForClub(clubId: string): Promise<Offer[]> {
+  public async listPendingForClub(guildId: string, clubId: string): Promise<Offer[]> {
     return this.db.offer.findMany({
-      where: { clubId, status: 'PENDING' },
+      where: { guildId, clubId, status: 'PENDING' },
       orderBy: [{ createdAt: 'asc' }],
     });
   }
 
   public async getPendingForClubAndPlayer(
+    guildId: string,
     clubId: string,
     playerUserId: string,
   ): Promise<Offer | null> {
     return this.db.offer.findFirst({
-      where: { clubId, playerUserId, status: 'PENDING' },
+      where: { guildId, clubId, playerUserId, status: 'PENDING' },
     });
   }
 

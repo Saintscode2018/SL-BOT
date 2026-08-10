@@ -38,16 +38,19 @@ export class LeagueTransactionRepository {
     }
   }
 
-  public async listForUser(userId: string): Promise<LeagueTransaction[]> {
+  public async listForUser(guildId: string, userId: string): Promise<LeagueTransaction[]> {
     return this.db.leagueTransaction.findMany({
-      where: { userId },
+      where: { guildId, userId },
       orderBy: [{ createdAt: 'desc' }],
     });
   }
 
-  public async listForClub(clubId: string): Promise<LeagueTransaction[]> {
+  public async listForClub(guildId: string, clubId: string): Promise<LeagueTransaction[]> {
     return this.db.leagueTransaction.findMany({
-      where: { OR: [{ sourceClubId: clubId }, { destinationClubId: clubId }] },
+      where: {
+        guildId,
+        OR: [{ sourceClubId: clubId }, { destinationClubId: clubId }],
+      },
       orderBy: [{ createdAt: 'desc' }],
     });
   }
