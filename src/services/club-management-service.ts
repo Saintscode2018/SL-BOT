@@ -49,20 +49,21 @@ export class ClubManagementService {
   public async create(input: CreateClubWorkflowInput): Promise<Club> {
     const emoji = input.emoji.trim();
     if (emoji.length === 0) throw new InvalidTeamEmojiError();
-    const authorization = await new AuthorizationService(
-      this.database,
-    ).authorizeLeagueAdministration(input.authorization);
+    await new AuthorizationService(this.database).authorizeLeagueAdministration(input.authorization);
 
     return this.database.$transaction(async (transaction) => {
       const clubs = new ClubRepository(transaction);
       const guilds = new GuildRepository(transaction);
       await guilds.acquireWriteLock(input.authorization.discordGuildId);
-      const settings = await guilds.getSettings(authorization.guild.id);
+      const lockedAuthorization = await new AuthorizationService(
+        transaction,
+      ).authorizeLeagueAdministration(input.authorization);
+      const settings = await guilds.getSettings(lockedAuthorization.guild.id);
       if (settings !== null) {
         assertNoManagementTeamRoleCollision(settings, [input.discordRoleId]);
       }
       const existingRoleClub = await clubs.getByDiscordRoleId(
-        authorization.guild.id,
+        lockedAuthorization.guild.id,
         input.discordRoleId,
       );
       if (existingRoleClub !== null) {
@@ -76,7 +77,7 @@ export class ClubManagementService {
         input.authorization.discordUserId,
       );
       const club = await clubs.create({
-        guildId: authorization.guild.id,
+        guildId: lockedAuthorization.guild.id,
         discordRoleId: input.discordRoleId,
         emoji,
         ...(input.squadLimitOverride === undefined
@@ -84,7 +85,7 @@ export class ClubManagementService {
           : { squadLimitOverride: input.squadLimitOverride }),
       });
       await new AuditEventRepository(transaction).create({
-        guildId: authorization.guild.id,
+        guildId: lockedAuthorization.guild.id,
         actorUserId: actor.id,
         eventType: clubCreatedAuditEventType,
         entityType: 'club',
@@ -103,9 +104,7 @@ export class ClubManagementService {
   public async edit(input: EditClubWorkflowInput): Promise<Club> {
     const emoji = input.emoji?.trim();
     if (emoji !== undefined && emoji.length === 0) throw new InvalidTeamEmojiError();
-    const authorization = await new AuthorizationService(
-      this.database,
-    ).authorizeLeagueAdministration(input.authorization);
+    await new AuthorizationService(this.database).authorizeLeagueAdministration(input.authorization);
 
     if (input.discordRoleId === undefined && input.emoji === undefined) {
       throw new NoTeamChangesProvidedError();
@@ -115,17 +114,20 @@ export class ClubManagementService {
       const clubs = new ClubRepository(transaction);
       const guilds = new GuildRepository(transaction);
       await guilds.acquireWriteLock(input.authorization.discordGuildId);
-      const club = await clubs.getByIdInGuild(input.clubId, authorization.guild.id);
+      const lockedAuthorization = await new AuthorizationService(
+        transaction,
+      ).authorizeLeagueAdministration(input.authorization);
+      const club = await clubs.getByIdInGuild(input.clubId, lockedAuthorization.guild.id);
       if (club === null) throw new EntityNotFoundError('team was not found');
       if (!club.active) throw new ClubInactiveError('team is inactive');
 
       if (input.discordRoleId !== undefined && input.discordRoleId !== club.discordRoleId) {
-        const settings = await guilds.getSettings(authorization.guild.id);
+        const settings = await guilds.getSettings(lockedAuthorization.guild.id);
         if (settings !== null) {
           assertNoManagementTeamRoleCollision(settings, [input.discordRoleId]);
         }
         const existingRoleClub = await clubs.getByDiscordRoleId(
-          authorization.guild.id,
+          lockedAuthorization.guild.id,
           input.discordRoleId,
         );
         if (existingRoleClub !== null && existingRoleClub.id !== club.id) {
@@ -150,7 +152,7 @@ export class ClubManagementService {
       });
 
       await new AuditEventRepository(transaction).create({
-        guildId: authorization.guild.id,
+        guildId: lockedAuthorization.guild.id,
         actorUserId: actor.id,
         eventType: clubEditedAuditEventType,
         entityType: 'club',
@@ -170,12 +172,15 @@ export class ClubManagementService {
   }
 
   public async deactivate(authorizationInput: AuthorizationInput, clubId: string): Promise<Club> {
-    const authorization = await new AuthorizationService(
-      this.database,
-    ).authorizeLeagueAdministration(authorizationInput);
+    await new AuthorizationService(this.database).authorizeLeagueAdministration(authorizationInput);
     return this.database.$transaction(async (transaction) => {
       const clubs = new ClubRepository(transaction);
-      const club = await clubs.getByIdInGuild(clubId, authorization.guild.id);
+      const guilds = new GuildRepository(transaction);
+      await guilds.acquireWriteLock(authorizationInput.discordGuildId);
+      const lockedAuthorization = await new AuthorizationService(
+        transaction,
+      ).authorizeLeagueAdministration(authorizationInput);
+      const club = await clubs.getByIdInGuild(clubId, lockedAuthorization.guild.id);
       if (club === null) throw new EntityNotFoundError('team was not found');
       if (!club.active) throw new ClubInactiveError('team is already inactive');
       const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
@@ -183,7 +188,7 @@ export class ClubManagementService {
       );
       const deactivated = await clubs.deactivate(club.id);
       await new AuditEventRepository(transaction).create({
-        guildId: authorization.guild.id,
+        guildId: lockedAuthorization.guild.id,
         actorUserId: actor.id,
         eventType: clubDeactivatedAuditEventType,
         entityType: 'club',

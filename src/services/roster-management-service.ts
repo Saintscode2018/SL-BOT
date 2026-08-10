@@ -49,11 +49,17 @@ export class RosterManagementService {
 
   public async add(input: AddRosterPlayerInput): Promise<RosterMutationResult> {
     if (input.playerIsBot) throw new BotUserNotAllowedError('bots cannot join a roster');
-    const authorization = await new AuthorizationService(this.database).authorizeClubAction(
+    await new AuthorizationService(this.database).authorizeClubAction(
       input.authorization,
       input.clubId,
     );
     return this.database.$transaction(async (transaction) => {
+      const guilds = new GuildRepository(transaction);
+      await guilds.acquireWriteLock(input.authorization.discordGuildId);
+      const authorization = await new AuthorizationService(transaction).authorizeClubAction(
+        input.authorization,
+        input.clubId,
+      );
       const club = await new ClubRepository(transaction).getByIdInGuild(
         input.clubId,
         authorization.guild.id,
@@ -128,11 +134,17 @@ export class RosterManagementService {
     reason?: string | null,
     removedAt = new Date(),
   ): Promise<RosterMutationResult> {
-    const authorization = await new AuthorizationService(this.database).authorizeClubAction(
+    await new AuthorizationService(this.database).authorizeClubAction(
       authorizationInput,
       clubId,
     );
     return this.database.$transaction(async (transaction) => {
+      const guilds = new GuildRepository(transaction);
+      await guilds.acquireWriteLock(authorizationInput.discordGuildId);
+      const authorization = await new AuthorizationService(transaction).authorizeClubAction(
+        authorizationInput,
+        clubId,
+      );
       const club = await new ClubRepository(transaction).getByIdInGuild(
         clubId,
         authorization.guild.id,

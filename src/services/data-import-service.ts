@@ -11,6 +11,7 @@ import type { MembershipType } from '../domain/enums.js';
 import {
   ConfigurationError,
   DataImportAuditRecordingError,
+  DomainError,
   ModerationChannelNotConfiguredError,
 } from '../domain/errors.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
@@ -445,6 +446,7 @@ export class DataImportService {
         authorization.guild,
         authorization.settings,
         actor,
+        input.authorization,
         candidate,
         occurredAt,
       );
@@ -500,31 +502,19 @@ export class DataImportService {
         left.code.localeCompare(right.code),
     );
     try {
-      await new AuditEventRepository(this.database).create({
-        guildId: authorization.guild.id,
-        actorUserId: actor.id,
-        eventType: dataImportAuditEventType,
-        entityType: 'guild',
-        entityId: authorization.guild.id,
-        afterState: {
-          imported: {
-            players: imported.players,
-            teamManagers: imported.teamManagers,
-            assistantManagers: imported.assistantManagers,
-            playerManagers: imported.playerManagers,
-          },
-          unchanged,
-          skipped: importIssues.length,
-        },
-        metadata: {
-          discordGuildId: authorization.guild.discordGuildId,
-          actorDiscordUserId: input.authorization.discordUserId,
-          scannedMembers: fetchedMembers.length,
-          ignoredBots: classified.ignoredBots,
-          issuesByCode: issuesByCode(importIssues),
-        },
+      await this.recordImportAudit({
+        authorization: input.authorization,
+        guild: authorization.guild,
+        actor,
+        imported,
+        unchanged,
+        issueCount: importIssues.length,
+        scannedMembers: fetchedMembers.length,
+        ignoredBots: classified.ignoredBots,
+        issuesByCode: issuesByCode(importIssues),
       });
     } catch (error: unknown) {
+      if (error instanceof DomainError) throw error;
       throw new DataImportAuditRecordingError({ cause: error });
     }
 
@@ -544,12 +534,17 @@ export class DataImportService {
     guild: Guild,
     settings: GuildSettings,
     actor: LeagueUser,
+    authorizationInput: AuthorizationInput,
     candidate: ImportCandidate,
     occurredAt: Date,
   ): Promise<PersistenceOutcome> {
     return this.database.$transaction(async (transaction) => {
       const guilds = new GuildRepository(transaction);
       await guilds.acquireWriteLock(guild.discordGuildId);
+      const lockedAuthorization = await new AuthorizationService(
+        transaction,
+      ).authorizeLeagueAdministration(authorizationInput);
+      if (lockedAuthorization.guild.id !== guild.id) return 'STALE_PLAN';
       const [currentSettings, currentClub] = await Promise.all([
         guilds.getSettings(guild.id),
         new ClubRepository(transaction).getByIdInGuild(candidate.club.id, guild.id),
@@ -606,6 +601,53 @@ export class DataImportService {
         createdByUserId: actor.id,
       });
       return 'IMPORTED';
+    });
+  }
+
+  private async recordImportAudit(input: {
+    authorization: AuthorizationInput;
+    guild: Guild;
+    actor: LeagueUser;
+    imported: DataImportCounts;
+    unchanged: number;
+    issueCount: number;
+    scannedMembers: number;
+    ignoredBots: number;
+    issuesByCode: Record<string, number>;
+  }): Promise<void> {
+    await this.database.$transaction(async (transaction) => {
+      const guilds = new GuildRepository(transaction);
+      await guilds.acquireWriteLock(input.guild.discordGuildId);
+      const authorization = await new AuthorizationService(
+        transaction,
+      ).authorizeLeagueAdministration(input.authorization);
+      if (authorization.guild.id !== input.guild.id) {
+        throw new ConfigurationError('guild configuration changed while the import was running');
+      }
+      await new AuditEventRepository(transaction).create({
+        guildId: authorization.guild.id,
+        actorUserId: input.actor.id,
+        eventType: dataImportAuditEventType,
+        entityType: 'guild',
+        entityId: authorization.guild.id,
+        afterState: {
+          imported: {
+            players: input.imported.players,
+            teamManagers: input.imported.teamManagers,
+            assistantManagers: input.imported.assistantManagers,
+            playerManagers: input.imported.playerManagers,
+          },
+          unchanged: input.unchanged,
+          skipped: input.issueCount,
+        },
+        metadata: {
+          discordGuildId: authorization.guild.discordGuildId,
+          actorDiscordUserId: input.authorization.discordUserId,
+          scannedMembers: input.scannedMembers,
+          ignoredBots: input.ignoredBots,
+          issuesByCode: input.issuesByCode,
+        },
+      });
     });
   }
 }

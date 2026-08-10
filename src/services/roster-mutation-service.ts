@@ -61,6 +61,7 @@ export interface MemberMutationInput {
   expectedStaffType?: StaffMembershipType | null;
   expectedActorStaffType?: StaffMembershipType | null;
   occurredAt?: Date;
+  authorizeInsideTransaction?: (transaction: Prisma.TransactionClient) => Promise<void>;
 }
 
 export interface StaffMutationInput extends MemberMutationInput {
@@ -172,6 +173,7 @@ export class RosterMutationService {
     const mutate = () =>
       this.database.$transaction(
         async (transaction) => {
+          await input.authorizeInsideTransaction?.(transaction);
           const context = await this.loadContext(
             transaction,
             input,

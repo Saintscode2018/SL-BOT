@@ -23,6 +23,7 @@ import type {
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { ClubRepository } from '../repositories/club-repository.js';
+import { GuildRepository } from '../repositories/guild-repository.js';
 import { LeagueTransactionRepository } from '../repositories/transaction-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
 import type { AuthorizationInput } from './authorization-service.js';
@@ -192,6 +193,8 @@ export class TeamSwapService {
 
     return this.synchronizedMutations.executeMany(rolePlans, () =>
       this.database.$transaction(async (transaction) => {
+        const guilds = new GuildRepository(transaction);
+        await guilds.acquireWriteLock(input.authorization.discordGuildId);
         const authorization = await new AuthorizationService(
           transaction,
         ).authorizeLeagueAdministration(input.authorization);

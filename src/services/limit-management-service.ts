@@ -59,10 +59,11 @@ export class LimitManagementService {
     );
     return this.database.$transaction(async (transaction) => {
       const guilds = new GuildRepository(transaction);
-      const guild = await guilds.getByDiscordGuildId(input.authorization.discordGuildId);
-      if (guild === null) {
-        throw new ValidationError('guild has not been setup yet');
-      }
+      await guilds.acquireWriteLock(input.authorization.discordGuildId);
+      const authorization = await new AuthorizationService(
+        transaction,
+      ).authorizeLeagueAdministration(input.authorization);
+      const guild = authorization.guild;
       const actor = await new UserRepository(transaction).getOrCreateByDiscordUserId(
         input.authorization.discordUserId,
       );
@@ -96,10 +97,11 @@ export class LimitManagementService {
     return this.database.$transaction(async (transaction) => {
       const guilds = new GuildRepository(transaction);
       const clubs = new ClubRepository(transaction);
-      const guild = await guilds.getByDiscordGuildId(input.authorization.discordGuildId);
-      if (guild === null) {
-        throw new ValidationError('guild has not been setup yet');
-      }
+      await guilds.acquireWriteLock(input.authorization.discordGuildId);
+      const authorization = await new AuthorizationService(
+        transaction,
+      ).authorizeLeagueAdministration(input.authorization);
+      const guild = authorization.guild;
       const club = await clubs.getByIdInGuild(input.clubId, guild.id);
       if (club === null || !club.active) {
         throw new ValidationError('team was not found or is inactive');
@@ -139,10 +141,11 @@ export class LimitManagementService {
     return this.database.$transaction(async (transaction) => {
       const guilds = new GuildRepository(transaction);
       const clubs = new ClubRepository(transaction);
-      const guild = await guilds.getByDiscordGuildId(input.authorization.discordGuildId);
-      if (guild === null) {
-        throw new ValidationError('guild has not been setup yet');
-      }
+      await guilds.acquireWriteLock(input.authorization.discordGuildId);
+      const authorization = await new AuthorizationService(
+        transaction,
+      ).authorizeLeagueAdministration(input.authorization);
+      const guild = authorization.guild;
       const club = await clubs.getByIdInGuild(input.clubId, guild.id);
       if (club === null || !club.active) {
         throw new ValidationError('team was not found or is inactive');

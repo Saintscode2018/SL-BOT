@@ -281,9 +281,9 @@ export class GuildSetupService {
   public async setupRoles(input: SetupRolesInput): Promise<GuildSetupResult> {
     return this.database.$transaction(async (transaction) => {
       const guilds = new GuildRepository(transaction);
+      await guilds.acquireWriteLock(input.authorization.discordGuildId);
       await new AuthorizationService(transaction).assertCanSetup(input.authorization);
       assertDistinctManagementRoles(input);
-      await guilds.acquireWriteLock(input.authorization.discordGuildId);
       const existing = await guilds.getByDiscordGuildId(input.authorization.discordGuildId);
       if (existing === null) {
         throw new ConfigurationError('league has not been setup yet');

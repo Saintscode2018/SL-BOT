@@ -92,9 +92,7 @@ export class RosterAdministrationService {
     );
 
     return this.synchronization.execute(planned.roleMutation, () =>
-      this.database.$transaction((transaction) =>
-        this.commitAdd(transaction, planned.guildId, input),
-      ),
+      this.database.$transaction((transaction) => this.commitAdd(transaction, input)),
     );
   }
 
@@ -110,7 +108,7 @@ export class RosterAdministrationService {
 
     return this.synchronization.execute(planned.roleMutation, () =>
       this.database.$transaction((transaction) =>
-        this.commitRemove(transaction, planned.guildId, planned.clubId, input),
+        this.commitRemove(transaction, planned.clubId, input),
       ),
     );
   }
@@ -136,9 +134,14 @@ export class RosterAdministrationService {
 
   private async commitAdd(
     transaction: Prisma.TransactionClient,
-    guildId: string,
     input: AdministrativeRosterAddInput,
   ): Promise<AdministrativeRosterMutationResult> {
+    const guilds = new GuildRepository(transaction);
+    await guilds.acquireWriteLock(input.authorization.discordGuildId);
+    const authorization = await new AuthorizationService(
+      transaction,
+    ).authorizeLeagueAdministration(input.authorization);
+    const guildId = authorization.guild.id;
     const club = await this.requireActiveClub(transaction, guildId, input.clubId);
     await this.assertFreeAgentAndCapacity(transaction, guildId, club, input.playerDiscordUserId);
     const users = new UserRepository(transaction);
@@ -254,10 +257,15 @@ export class RosterAdministrationService {
 
   private async commitRemove(
     transaction: Prisma.TransactionClient,
-    guildId: string,
     expectedClubId: string,
     input: AdministrativeRosterRemoveInput,
   ): Promise<AdministrativeRosterMutationResult> {
+    const guilds = new GuildRepository(transaction);
+    await guilds.acquireWriteLock(input.authorization.discordGuildId);
+    const authorization = await new AuthorizationService(
+      transaction,
+    ).authorizeLeagueAdministration(input.authorization);
+    const guildId = authorization.guild.id;
     const resolved = await this.requireOrdinaryPlayer(
       transaction,
       guildId,

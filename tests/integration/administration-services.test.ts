@@ -1,4 +1,4 @@
-import type { Club, GuildSettings } from '@prisma/client';
+import type { Club, GuildSettings, Prisma } from '@prisma/client';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -1984,5 +1984,92 @@ describe('administration services', () => {
     await expect(
       database.client.auditEvent.count({ where: { eventType: offerDeliveryFailedAuditEventType } }),
     ).resolves.toBe(1);
+  });
+
+  it('rejects an administrative write when BotPerm is revoked after preflight', async () => {
+    let revoked = false;
+    const trackedClient = new Proxy(database.client, {
+      get(target, property) {
+        if (property === '$transaction') {
+          return async (callback: (transaction: Prisma.TransactionClient) => Promise<unknown>) => {
+            if (!revoked) {
+              revoked = true;
+              await target.botPermission.deleteMany({});
+            }
+            return target.$transaction(callback);
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function'
+          ? (...args: unknown[]): unknown => Reflect.apply(value, target, args) as unknown
+          : value;
+      },
+    });
+
+    await expect(
+      new ClubManagementService(trackedClient).create({
+        authorization: authorization(),
+        discordRoleId: '930000000000000099',
+        emoji: 'ðŸ¦',
+      }),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(database.client.club.count()).resolves.toBe(0);
+    await expect(
+      database.client.auditEvent.count({ where: { eventType: clubCreatedAuditEventType } }),
+    ).resolves.toBe(0);
+  });
+
+  it('rejects a team-staff roster write when membership is revoked after preflight', async () => {
+    const club = await createClub();
+    await new StaffManagementService(database.client).appoint({
+      authorization: authorization(),
+      clubId: club.id,
+      staffDiscordUserId: outsiderId,
+      staffType: 'TEAM_MANAGER',
+      staffIsBot: false,
+    });
+    let revoked = false;
+    const trackedClient = new Proxy(database.client, {
+      get(target, property) {
+        if (property === '$transaction') {
+          return async (callback: (transaction: Prisma.TransactionClient) => Promise<unknown>) => {
+            if (!revoked) {
+              revoked = true;
+              await target.clubMembership.updateMany({
+                where: {
+                  clubId: club.id,
+                  membershipType: 'TEAM_MANAGER',
+                  user: { discordUserId: outsiderId },
+                  status: 'ACTIVE',
+                },
+                data: { status: 'ENDED', leftAt: new Date() },
+              });
+            }
+            return target.$transaction(callback);
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function'
+          ? (...args: unknown[]): unknown => Reflect.apply(value, target, args) as unknown
+          : value;
+      },
+    });
+
+    await expect(
+      new RosterManagementService(trackedClient).add({
+        authorization: authorization(outsiderId),
+        clubId: club.id,
+        playerDiscordUserId: playerId,
+        playerIsBot: false,
+      }),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(
+      database.client.clubMembership.count({
+        where: { clubId: club.id, membershipType: 'PLAYER', user: { discordUserId: playerId } },
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      database.client.auditEvent.count({ where: { eventType: rosterPlayerAddedAuditEventType } }),
+    ).resolves.toBe(0);
   });
 });

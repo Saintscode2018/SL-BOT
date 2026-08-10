@@ -1,4 +1,4 @@
-import type { Club, ClubMembership, LeagueUser, PrismaClient } from '@prisma/client';
+import type { Club, ClubMembership, LeagueUser, Prisma, PrismaClient } from '@prisma/client';
 
 import {
   BotUserNotAllowedError,
@@ -77,6 +77,8 @@ export class StaffManagementService {
       actorDiscordUserId: input.authorization.discordUserId,
       targetDiscordUserId: input.staffDiscordUserId,
       staffType: input.staffType,
+      authorizeInsideTransaction: (transaction) =>
+        this.reauthorizeInsideTransaction(transaction, input.authorization),
       ...(input.appointedAt === undefined ? {} : { occurredAt: input.appointedAt }),
     });
     if (result.staffMembership === null) throw new EntityNotFoundError('staff appointment missing');
@@ -116,6 +118,8 @@ export class StaffManagementService {
       targetDiscordUserId: user.discordUserId,
       staffType,
       occurredAt: removedAt,
+      authorizeInsideTransaction: (transaction) =>
+        this.reauthorizeInsideTransaction(transaction, authorizationInput),
     });
     if (result.staffMembership === null) throw new EntityNotFoundError('staff appointment missing');
     if (result.previousStaffType === null) {
@@ -165,5 +169,14 @@ export class StaffManagementService {
       }
       return staffMembership.club;
     });
+  }
+
+  private async reauthorizeInsideTransaction(
+    transaction: Prisma.TransactionClient,
+    authorization: AuthorizationInput,
+  ): Promise<void> {
+    const guilds = new GuildRepository(transaction);
+    await guilds.acquireWriteLock(authorization.discordGuildId);
+    await new AuthorizationService(transaction).authorizeLeagueAdministration(authorization);
   }
 }

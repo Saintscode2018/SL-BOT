@@ -14,6 +14,7 @@ import {
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { ClubRepository } from '../repositories/club-repository.js';
+import { GuildRepository } from '../repositories/guild-repository.js';
 import { MembershipRepository } from '../repositories/membership-repository.js';
 import { OfferRepository } from '../repositories/offer-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
@@ -62,12 +63,18 @@ export class OfferCreationService {
 
   public async createOffer(input: CreateOfferWorkflowInput): Promise<OfferCreationResult> {
     if (input.playerIsBot) throw new BotUserNotAllowedError('bots cannot receive offers');
-    const authorization = await new AuthorizationService(this.database).authorizeClubAction(
+    await new AuthorizationService(this.database).authorizeClubAction(
       input.authorization,
       input.destinationClubId,
     );
     const now = this.now();
     const transactionResult = this.database.$transaction(async (transaction) => {
+      const guilds = new GuildRepository(transaction);
+      await guilds.acquireWriteLock(input.authorization.discordGuildId);
+      const authorization = await new AuthorizationService(transaction).authorizeClubAction(
+        input.authorization,
+        input.destinationClubId,
+      );
       const clubs = new ClubRepository(transaction);
       const destinationClub = await clubs.getByIdInGuild(
         input.destinationClubId,
