@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AuthorizationError, ConfigurationError } from '../../src/domain/errors.js';
+import {
+  AuthorizationError,
+  ConfigurationError,
+  DataImportAuditRecordingError,
+} from '../../src/domain/errors.js';
 import type { AuthorizationInput } from '../../src/services/authorization-service.js';
 import {
   dataImportAuditEventType,
@@ -421,6 +425,19 @@ describe('DataImportService', () => {
     await expect(
       database.client.clubMembership.count({ where: { user: { discordUserId } } }),
     ).resolves.toBe(2);
+    await expect(
+      database.client.auditEvent.findMany({ where: { eventType: dataImportAuditEventType } }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          afterState: {
+            imported: { players: 0, teamManagers: 0, assistantManagers: 0, playerManagers: 0 },
+            unchanged: 1,
+            skipped: 0,
+          },
+        }),
+      ]),
+    );
   });
 
   it('is idempotent and reuses LeagueUser identity without transactions or duplicate memberships', async () => {
@@ -496,6 +513,80 @@ describe('DataImportService', () => {
       },
     });
     await expect(database.client.leagueTransaction.count()).resolves.toBe(0);
+  });
+
+  it('preserves committed candidate writes and reports a focused failure when final aggregate audit recording fails', async () => {
+    const discordUserId = '955000000000000003';
+    const failingAuditService = new DataImportService(
+      database.client.$extends({
+        query: {
+          auditEvent: {
+            create() {
+              return Promise.reject(new Error('audit storage unavailable'));
+            },
+          },
+        },
+      }) as never,
+    );
+    const fetchMembers = vi.fn(() => Promise.resolve([member(discordUserId, [teamRoleOne])]));
+
+    await expect(
+      failingAuditService.importGuild({
+        authorization: authorization(botPermissionId),
+        fetchMembers,
+      }),
+    ).rejects.toMatchObject({ code: 'DATA_IMPORT_AUDIT_RECORDING_FAILED' });
+    expect(fetchMembers).toHaveBeenCalledOnce();
+
+    await expect(
+      database.client.leagueUser.count({ where: { discordUserId } }),
+    ).resolves.toBe(1);
+    await expect(
+      database.client.clubMembership.count({ where: { user: { discordUserId } } }),
+    ).resolves.toBe(1);
+    await expect(
+      database.client.auditEvent.count({ where: { eventType: dataImportAuditEventType } }),
+    ).resolves.toBe(0);
+
+    const rerun = await run([member(discordUserId, [teamRoleOne])]);
+
+    expect(rerun.imported.players).toBe(0);
+    expect(rerun.unchanged).toBe(1);
+    await expect(
+      database.client.leagueUser.count({ where: { discordUserId } }),
+    ).resolves.toBe(1);
+    await expect(
+      database.client.clubMembership.count({ where: { user: { discordUserId } } }),
+    ).resolves.toBe(1);
+    await expect(
+      database.client.auditEvent.count({ where: { eventType: dataImportAuditEventType } }),
+    ).resolves.toBe(1);
+  });
+
+  it('keeps candidate transaction failures distinct from final aggregate audit failures', async () => {
+    const failingCandidateService = new DataImportService(
+      database.client.$extends({
+        query: {
+          clubMembership: {
+            create() {
+              return Promise.reject(new Error('candidate membership write unavailable'));
+            },
+          },
+        },
+      }) as never,
+    );
+
+    await expect(
+      failingCandidateService.importGuild({
+        authorization: authorization(botPermissionId),
+        fetchMembers: () => Promise.resolve([member('955000000000000004', [teamRoleOne])]),
+      }),
+    ).rejects.not.toBeInstanceOf(DataImportAuditRecordingError);
+
+    await expect(database.client.clubMembership.count()).resolves.toBe(0);
+    await expect(
+      database.client.auditEvent.count({ where: { eventType: dataImportAuditEventType } }),
+    ).resolves.toBe(0);
   });
 
   it('skips a team candidate that is deactivated after discovery and before its locked write', async () => {

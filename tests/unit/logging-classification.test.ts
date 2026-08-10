@@ -11,6 +11,7 @@ import {
   AdministrativePermissionDeniedError,
   ConfigurationError,
   ConfirmationAlreadyHandledError,
+  DataImportAuditRecordingError,
   DiscordRoleCompensationFailedError,
   MemberAlreadySignedError,
   ModerationCaseAlreadyActiveError,
@@ -423,6 +424,21 @@ describe('Logging Classification & Global Error Handling', () => {
 
     expect(classified.level).toBe('error');
     expect(classified.isInfrastructure).toBe(true);
+  });
+
+  it('classifies final data-import audit recording failure as infrastructure and preserves its truthful response', () => {
+    const error = new DataImportAuditRecordingError();
+
+    expect(classifyInteractionError(error)).toMatchObject({
+      level: 'error',
+      isInfrastructure: true,
+      reason: 'DATA_IMPORT_AUDIT_RECORDING_FAILED',
+    });
+    const mapped = mapDiscordError(error);
+    expect(mapped.title).toBe('❌ Data Import Audit Failed');
+    expect(mapped.description).toContain(
+      'Any membership and user changes already committed remain in place.',
+    );
   });
 
   it('classifies moderation-role business rejections as expected user errors', () => {

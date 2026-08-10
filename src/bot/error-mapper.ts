@@ -14,6 +14,7 @@ import {
   ConfigurationError,
   ConflictError,
   DemandRateLimitedError,
+  DataImportAuditRecordingError,
   DiscordManageRolesPermissionError,
   DiscordMemberMissingError,
   DiscordRoleCompensationFailedError,
@@ -93,6 +94,9 @@ export function mapDiscordError(error: unknown): MappedErrorResponse {
 
   if (error instanceof AdministrativePermissionDeniedError) {
     title = `${BOT_EMOJIS.error} Permission Denied`;
+    description = error.message;
+  } else if (error instanceof DataImportAuditRecordingError) {
+    title = `${BOT_EMOJIS.error} Data Import Audit Failed`;
     description = error.message;
   } else if (error instanceof BotPermissionManagementError) {
     title = `${BOT_EMOJIS.error} Bot Permission Not Changed`;

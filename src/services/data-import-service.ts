@@ -8,7 +8,7 @@ import type {
 } from '@prisma/client';
 
 import type { MembershipType } from '../domain/enums.js';
-import { ConfigurationError } from '../domain/errors.js';
+import { ConfigurationError, DataImportAuditRecordingError } from '../domain/errors.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { ClubRepository } from '../repositories/club-repository.js';
@@ -491,30 +491,34 @@ export class DataImportService {
         left.discordUserId.localeCompare(right.discordUserId) ||
         left.code.localeCompare(right.code),
     );
-    await new AuditEventRepository(this.database).create({
-      guildId: authorization.guild.id,
-      actorUserId: actor.id,
-      eventType: dataImportAuditEventType,
-      entityType: 'guild',
-      entityId: authorization.guild.id,
-      afterState: {
-        imported: {
-          players: imported.players,
-          teamManagers: imported.teamManagers,
-          assistantManagers: imported.assistantManagers,
-          playerManagers: imported.playerManagers,
+    try {
+      await new AuditEventRepository(this.database).create({
+        guildId: authorization.guild.id,
+        actorUserId: actor.id,
+        eventType: dataImportAuditEventType,
+        entityType: 'guild',
+        entityId: authorization.guild.id,
+        afterState: {
+          imported: {
+            players: imported.players,
+            teamManagers: imported.teamManagers,
+            assistantManagers: imported.assistantManagers,
+            playerManagers: imported.playerManagers,
+          },
+          unchanged,
+          skipped: importIssues.length,
         },
-        unchanged,
-        skipped: importIssues.length,
-      },
-      metadata: {
-        discordGuildId: authorization.guild.discordGuildId,
-        actorDiscordUserId: input.authorization.discordUserId,
-        scannedMembers: fetchedMembers.length,
-        ignoredBots: classified.ignoredBots,
-        issuesByCode: issuesByCode(importIssues),
-      },
-    });
+        metadata: {
+          discordGuildId: authorization.guild.discordGuildId,
+          actorDiscordUserId: input.authorization.discordUserId,
+          scannedMembers: fetchedMembers.length,
+          ignoredBots: classified.ignoredBots,
+          issuesByCode: issuesByCode(importIssues),
+        },
+      });
+    } catch (error: unknown) {
+      throw new DataImportAuditRecordingError({ cause: error });
+    }
 
     return {
       guild: authorization.guild,

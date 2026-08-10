@@ -17,6 +17,7 @@ import {
   ConfirmationAlreadyHandledError,
   ConfirmationOwnershipError,
   DemandRateLimitedError,
+  DataImportAuditRecordingError,
   DiscordMemberMissingError,
   DiscordRoleCompensationFailedError,
   DiscordRoleUpdateFailedError,
@@ -278,6 +279,7 @@ export function classifyInteractionError(error: unknown): ClassifiedInteractionE
     error instanceof ModerationMemberFetchError ||
     error instanceof ModerationTimeoutApplyError ||
     error instanceof ModerationTimeoutRemoveError ||
+    error instanceof DataImportAuditRecordingError ||
     isPrismaError(error) ||
     isDiscordAPIError(error) ||
     isNetworkError(error)

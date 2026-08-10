@@ -123,8 +123,12 @@ function result(issueCount = 0): DataImportResult {
   };
 }
 
-function context(importResult: DataImportResult, policy = vi.fn(() => Promise.resolve())) {
-  const publish = vi.fn(() => Promise.resolve(true));
+function context(
+  importResult: DataImportResult,
+  policy = vi.fn(() => Promise.resolve()),
+  auditPublished = true,
+) {
+  const publish = vi.fn(() => Promise.resolve(auditPublished));
   const importGuild = vi.fn(async (input: DataImportInput) => {
     await input.fetchMembers();
     return importResult;
@@ -236,6 +240,18 @@ describe('/data import command', () => {
       'Unchanged',
       'Skipped / Issues (300)',
     ]);
+  });
+
+  it('keeps the import successful when post-commit aggregate Audit message delivery fails', async () => {
+    const interaction = new DataCommandInteraction();
+    const setup = context(result(), undefined, false);
+
+    await dataCommand.execute(interaction, setup.commandContext);
+
+    expect(setup.publish).toHaveBeenCalledOnce();
+    const embed = interaction.editedResponses[0]?.embeds?.[0]?.toJSON();
+    expect(embed?.title).toBe('✅ Data Import Complete');
+    expect(embed?.description).toContain('aggregate Audit message could not be delivered');
   });
 
   it('defers before policy but does not fetch, import, or audit after authorization denial', async () => {

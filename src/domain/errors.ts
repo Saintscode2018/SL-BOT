@@ -694,3 +694,14 @@ export class AuditAnnouncementDeliveryError extends DomainError {
     super('The audit announcement could not be delivered.', options);
   }
 }
+
+export class DataImportAuditRecordingError extends DomainError {
+  public readonly code = 'DATA_IMPORT_AUDIT_RECORDING_FAILED';
+
+  public constructor(options?: ErrorOptions) {
+    super(
+      'Data import processing completed, but the final aggregate audit record could not be saved. Any membership and user changes already committed remain in place.',
+      options,
+    );
+  }
+}
