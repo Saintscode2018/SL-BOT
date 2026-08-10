@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -8,6 +8,7 @@ import {
   TeamNotFoundError,
   ValidationError,
 } from '../../src/domain/errors.js';
+import type { MembershipType } from '../../src/domain/enums.js';
 import type { MemberRoleMutationPlan } from '../../src/domain/roster-mutation.js';
 import type { AuthorizationInput } from '../../src/services/authorization-service.js';
 import {
@@ -356,6 +357,188 @@ describe('TeamSwapService Integration Tests', () => {
       // Global TM role should NOT be in remove/add roles
       expect(tm1Plan?.removeRoles.some((r) => r.id === tmRoleId)).toBe(false);
       expect(tm1Plan?.addRoles.some((r) => r.id === tmRoleId)).toBe(false);
+    });
+  });
+
+  describe('Active staff uniqueness collision characterization', () => {
+    async function createMembership(
+      clubId: string,
+      membershipType: MembershipType,
+      discordUserId: string,
+    ) {
+      const user = await client.leagueUser.create({ data: { discordUserId } });
+      return client.clubMembership.create({
+        data: { guildId, clubId, userId: user.id, membershipType },
+      });
+    }
+
+    async function membershipAssignments(ids: readonly string[]) {
+      const memberships = await client.clubMembership.findMany({
+        where: { id: { in: [...ids] } },
+        select: { id: true, clubId: true },
+      });
+      const clubIdByMembershipId = new Map(memberships.map(({ id, clubId }) => [id, clubId]));
+      return ids.map((id) => {
+        const clubId = clubIdByMembershipId.get(id);
+        if (clubId === undefined) throw new Error(`membership ${id} was not found`);
+        return { id, clubId };
+      });
+    }
+
+    async function expectAtomicStaffCollision(
+      membershipIds: readonly string[],
+      originalClubs: readonly { id: string; active: boolean; discordRoleId: string }[],
+    ) {
+      const originalAssignments = await membershipAssignments(membershipIds);
+
+      let thrown: unknown;
+      try {
+        await service.swap({ authorization: authInput(), team1Id, team2Id });
+      } catch (error: unknown) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+      if (!(thrown instanceof Prisma.PrismaClientKnownRequestError)) {
+        throw new Error('Expected a PrismaClientKnownRequestError');
+      }
+      expect(thrown.code).toBe('P2002');
+      expect(thrown.meta).toMatchObject({ modelName: 'ClubMembership', target: ['clubId'] });
+
+      expect(await membershipAssignments(membershipIds)).toEqual(originalAssignments);
+      await expect(
+        client.leagueTransaction.count({ where: { transactionType: 'TEAM_SWAP' } }),
+      ).resolves.toBe(0);
+      await expect(client.auditEvent.count({ where: { eventType: teamSwappedAuditEventType } })).resolves.toBe(
+        0,
+      );
+      await expect(
+        client.club.findMany({
+          where: { id: { in: [team1Id, team2Id] } },
+          select: { id: true, active: true, discordRoleId: true },
+          orderBy: { id: 'asc' },
+        }),
+      ).resolves.toEqual([...originalClubs].sort((a, b) => a.id.localeCompare(b.id)));
+    }
+
+    it('CASE 1: swaps PLAYER-only teams successfully', async () => {
+      const team1Player = await createMembership(team1Id, 'PLAYER', 'case-1-team-1-player');
+      const team2Player = await createMembership(team2Id, 'PLAYER', 'case-1-team-2-player');
+
+      await expect(service.swap({ authorization: authInput(), team1Id, team2Id })).resolves.toMatchObject({
+        team1MovedCount: 1,
+        team2MovedCount: 1,
+      });
+      await expect(membershipAssignments([team1Player.id, team2Player.id])).resolves.toEqual([
+        { id: team1Player.id, clubId: team2Id },
+        { id: team2Player.id, clubId: team1Id },
+      ]);
+    });
+
+    it('CASE 2: swaps a one-sided TEAM_MANAGER successfully', async () => {
+      const team1Manager = await createMembership(
+        team1Id,
+        'TEAM_MANAGER',
+        'case-2-team-1-manager',
+      );
+      const team2Player = await createMembership(team2Id, 'PLAYER', 'case-2-team-2-player');
+
+      await expect(service.swap({ authorization: authInput(), team1Id, team2Id })).resolves.toBeDefined();
+      await expect(membershipAssignments([team1Manager.id, team2Player.id])).resolves.toEqual([
+        { id: team1Manager.id, clubId: team2Id },
+        { id: team2Player.id, clubId: team1Id },
+      ]);
+    });
+
+    for (const membershipType of ['TEAM_MANAGER', 'ASSISTANT_MANAGER', 'PLAYER_MANAGER'] as const) {
+      it(`CASE ${
+        membershipType === 'TEAM_MANAGER' ? 3 : membershipType === 'ASSISTANT_MANAGER' ? 4 : 5
+      }: fully rolls back when both teams have an active ${membershipType}`, async () => {
+        const team1Membership = await createMembership(
+          team1Id,
+          membershipType,
+          `case-${membershipType}-team-1`,
+        );
+        const team2Membership = await createMembership(
+          team2Id,
+          membershipType,
+          `case-${membershipType}-team-2`,
+        );
+        const originalClubs = await client.club.findMany({
+          where: { id: { in: [team1Id, team2Id] } },
+          select: { id: true, active: true, discordRoleId: true },
+        });
+
+        await expectAtomicStaffCollision(
+          [team1Membership.id, team2Membership.id],
+          originalClubs,
+        );
+      });
+    }
+
+    it('CASE 6: swaps mixed staff types without a same-slot collision', async () => {
+      const team1Manager = await createMembership(
+        team1Id,
+        'TEAM_MANAGER',
+        'case-6-team-1-manager',
+      );
+      const team2Assistant = await createMembership(
+        team2Id,
+        'ASSISTANT_MANAGER',
+        'case-6-team-2-assistant',
+      );
+
+      await expect(service.swap({ authorization: authInput(), team1Id, team2Id })).resolves.toBeDefined();
+      await expect(membershipAssignments([team1Manager.id, team2Assistant.id])).resolves.toEqual([
+        { id: team1Manager.id, clubId: team2Id },
+        { id: team2Assistant.id, clubId: team1Id },
+      ]);
+    });
+
+    it('CASE 7: fully rolls back when all matching staff slots are occupied', async () => {
+      const memberships = await Promise.all(
+        (['TEAM_MANAGER', 'ASSISTANT_MANAGER', 'PLAYER_MANAGER'] as const).flatMap(
+          (membershipType) => [
+            createMembership(team1Id, membershipType, `case-7-team-1-${membershipType}`),
+            createMembership(team2Id, membershipType, `case-7-team-2-${membershipType}`),
+          ],
+        ),
+      );
+      const originalClubs = await client.club.findMany({
+        where: { id: { in: [team1Id, team2Id] } },
+        select: { id: true, active: true, discordRoleId: true },
+      });
+
+      await expectAtomicStaffCollision(
+        memberships.map(({ id }) => id),
+        originalClubs,
+      );
+    });
+
+    it('CASE 8: swaps PLAYER plus staff memberships for the same user without a separate defect', async () => {
+      const sharedUser = await client.leagueUser.create({
+        data: { discordUserId: 'case-8-player-and-staff' },
+      });
+      const team1Player = await client.clubMembership.create({
+        data: { guildId, clubId: team1Id, userId: sharedUser.id, membershipType: 'PLAYER' },
+      });
+      const team1Staff = await client.clubMembership.create({
+        data: { guildId, clubId: team1Id, userId: sharedUser.id, membershipType: 'TEAM_MANAGER' },
+      });
+      const team2Player = await createMembership(team2Id, 'PLAYER', 'case-8-team-2-player');
+
+      const result = await service.swap({ authorization: authInput(), team1Id, team2Id });
+
+      expect(result).toMatchObject({ team1MovedCount: 1, team2MovedCount: 1 });
+      await expect(membershipAssignments([team1Player.id, team1Staff.id, team2Player.id])).resolves.toEqual([
+        { id: team1Player.id, clubId: team2Id },
+        { id: team1Staff.id, clubId: team2Id },
+        { id: team2Player.id, clubId: team1Id },
+      ]);
+      await expect(
+        client.leagueTransaction.count({ where: { transactionType: 'TEAM_SWAP' } }),
+      ).resolves.toBe(3);
+      expect(capturedPlans.filter((plan) => plan.discordUserId === sharedUser.discordUserId)).toHaveLength(1);
     });
   });
 });
