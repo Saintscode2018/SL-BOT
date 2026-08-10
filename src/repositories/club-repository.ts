@@ -66,13 +66,19 @@ export class ClubRepository {
   }
 
   public async getByDiscordRoleId(guildId: string, discordRoleId: string): Promise<Club | null> {
-    return this.db.club.findUnique({
-      where: {
-        guildId_discordRoleId: {
-          guildId,
-          discordRoleId: discordSnowflakeSchema.parse(discordRoleId),
-        },
-      },
+    return this.db.club.findFirst({
+      where: { guildId, discordRoleId: discordSnowflakeSchema.parse(discordRoleId) },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+  }
+
+  public async getActiveByDiscordRoleId(
+    guildId: string,
+    discordRoleId: string,
+  ): Promise<Club | null> {
+    return this.db.club.findFirst({
+      where: { guildId, discordRoleId: discordSnowflakeSchema.parse(discordRoleId), active: true },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
   }
 

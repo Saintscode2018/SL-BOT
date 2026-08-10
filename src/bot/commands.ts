@@ -1022,6 +1022,17 @@ const teamCommand: CommandDefinition = {
     )
     .addSubcommand((subcommand) =>
       subcommand
+        .setName('repairdisband')
+        .setDescription('Bot Permission Admin: repair stale roles for one inactive team')
+        .addStringOption((option) =>
+          option
+            .setName('team')
+            .setDescription('Inactive team database ID')
+            .setRequired(true),
+        ),
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
         .setName('swap')
         .setDescription('Swap active populations between two teams')
         .addStringOption((option) =>
@@ -1046,6 +1057,33 @@ const teamCommand: CommandDefinition = {
         throw new ConfigurationError('team disbandment handler is unavailable');
       }
       await context.teamDisbandmentCommandHandler.begin(interaction);
+      return;
+    }
+
+    if (interaction.options?.getSubcommand() === 'repairdisband') {
+      if (context.teamDisbandmentRepairService === undefined) {
+        throw new ConfigurationError('team disbandment repair service is unavailable');
+      }
+      const execution = await enforceChannelPolicy(interaction, context);
+      const result = await context.teamDisbandmentRepairService.repair({
+        authorization: execution.authorization,
+        teamId: requireString(execution.options, 'team'),
+      });
+      await interaction.editReply({
+        embeds: [
+          createSuccessEmbed({
+            title: `${BOT_EMOJIS.success} Team Disband Repair Complete`,
+            description: [
+              'The selected inactive team was checked without deleting historical data.',
+              '',
+              `> Historical memberships checked: **${result.historicalMembershipCount}**`,
+              `> Former members checked: **${result.candidateUserCount}**`,
+              `> Inconsistent active memberships ended: **${result.endedMembershipCount}**`,
+              `> Stale Discord role mutations applied: **${result.discordRoleMutationsApplied}**`,
+            ].join('\n'),
+          }),
+        ],
+      });
       return;
     }
 

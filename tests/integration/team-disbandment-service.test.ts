@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -568,6 +569,50 @@ describe('TeamDisbandmentService', () => {
     expect(capturedPlans).toHaveLength(1);
     expect(capturedPlans[0]?.discordUserId).toBe(manager.discordUserId);
     expect(capturedPlans[0]?.removeRoles).toEqual([{ id: teamRoleId, purpose: 'TEAM' }]);
+  });
+
+  it('preserves G8 transactional authorization when BotPerm is revoked after role planning', async () => {
+    const player = await user('200000000000000098');
+    await membership(player.id, 'PLAYER');
+    let revoked = false;
+    const trackedClient = new Proxy(client, {
+      get(target, property) {
+        if (property === '$transaction') {
+          return async (callback: (transaction: Prisma.TransactionClient) => Promise<unknown>) => {
+            if (!revoked) {
+              revoked = true;
+              await target.botPermission.deleteMany({});
+            }
+            return target.$transaction(callback);
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function'
+          ? (...args: unknown[]): unknown => Reflect.apply(value, target, args) as unknown
+          : value;
+      },
+    });
+    const trackedService = new TeamDisbandmentService(trackedClient, {
+      executeMany: async <T>(plans: readonly MemberRoleMutationPlan[], mutate: () => Promise<T>) => {
+        capturedPlans = [...plans];
+        return {
+          ...(await mutate()),
+          announcementDelivered: null,
+          auditAnnouncementDelivered: null,
+        };
+      },
+    });
+
+    await expect(
+      trackedService.disband({ authorization: authorization(), teamId, teamName: 'T1' }),
+    ).rejects.toMatchObject({ name: 'AuthorizationError' });
+    expect(capturedPlans).toHaveLength(1);
+    await expect(client.club.findUniqueOrThrow({ where: { id: teamId } })).resolves.toMatchObject({
+      active: true,
+    });
+    await expect(
+      client.clubMembership.findFirstOrThrow({ where: { clubId: teamId, userId: player.id } }),
+    ).resolves.toMatchObject({ status: 'ACTIVE' });
   });
 
   it('allows only global administrators in Staff Commands', async () => {

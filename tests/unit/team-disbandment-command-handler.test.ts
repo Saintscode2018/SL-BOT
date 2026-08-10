@@ -189,12 +189,18 @@ describe('/team disband command and confirmation', () => {
     };
     const subcommands = json.options ?? [];
     const disband = subcommands.find(({ name }) => name === 'disband');
+    const repairDisband = subcommands.find(({ name }) => name === 'repairdisband');
     expect(disband).toBeDefined();
+    expect(repairDisband).toBeDefined();
     expect(subcommands.map(({ name }) => name)).not.toContain('remove');
     expect(disband?.options).toEqual([
       expect.objectContaining({ name: 'team', required: true, autocomplete: true }),
     ]);
     expect(disband?.options?.map(({ name }) => name)).not.toContain('reason');
+    expect(repairDisband?.options).toEqual([
+      expect.objectContaining({ name: 'team', required: true }),
+    ]);
+    expect(repairDisband?.options?.[0]?.autocomplete).not.toBe(true);
   });
 
   it('shows an ephemeral warning with confirm/cancel buttons and preservation details', async () => {

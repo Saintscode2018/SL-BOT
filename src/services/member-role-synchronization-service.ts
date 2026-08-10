@@ -62,17 +62,19 @@ export class MemberRoleSynchronizationService {
     const removeIds = new Set(removeRoles.map(({ id }) => id));
     if (addRoles.some(({ id }) => removeIds.has(id))) throw new StaleMutationStateError();
 
-    const affectedRoles = uniqueRoles([...removeRoles, ...addRoles]);
+    const requestedRoles = uniqueRoles([...removeRoles, ...addRoles]);
     const snapshot = await this.gateway.inspect(
       plan.discordGuildId,
       plan.discordUserId,
-      affectedRoles,
+      requestedRoles,
     );
-    this.validate(snapshot, affectedRoles);
 
     const currentRoleIds = new Set(snapshot.memberRoleIds);
     const pendingRemovals = removeRoles.filter(({ id }) => currentRoleIds.has(id));
     const pendingAdditions = addRoles.filter(({ id }) => !currentRoleIds.has(id));
+    const affectedRoles = uniqueRoles([...pendingRemovals, ...pendingAdditions]);
+    if (affectedRoles.length === 0) return { addedRoles: [], removedRoles: [] };
+    this.validate(snapshot, affectedRoles);
     const applied: AppliedMemberRoleMutation = { addedRoles: [], removedRoles: [] };
 
     try {

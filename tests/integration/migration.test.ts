@@ -100,6 +100,7 @@ describe('database migrations', () => {
         'ClubMembership_one_active_player_per_guild',
         'ClubMembership_one_active_staff_per_guild_user',
         'ClubMembership_one_active_team_manager_per_club',
+        'Club_active_guild_discord_role_key',
         'ModerationCase_one_active_type_per_target',
         'Offer_one_pending_per_club_player',
       ]);

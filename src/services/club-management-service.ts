@@ -62,7 +62,7 @@ export class ClubManagementService {
       if (settings !== null) {
         assertNoManagementTeamRoleCollision(settings, [input.discordRoleId]);
       }
-      const existingRoleClub = await clubs.getByDiscordRoleId(
+      const existingRoleClub = await clubs.getActiveByDiscordRoleId(
         lockedAuthorization.guild.id,
         input.discordRoleId,
       );
@@ -126,7 +126,7 @@ export class ClubManagementService {
         if (settings !== null) {
           assertNoManagementTeamRoleCollision(settings, [input.discordRoleId]);
         }
-        const existingRoleClub = await clubs.getByDiscordRoleId(
+        const existingRoleClub = await clubs.getActiveByDiscordRoleId(
           lockedAuthorization.guild.id,
           input.discordRoleId,
         );

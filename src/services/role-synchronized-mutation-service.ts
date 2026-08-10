@@ -15,6 +15,7 @@ export interface TransferAnnouncementPublisher {
 export type SynchronizedMutationResult<T> = T & {
   announcementDelivered: boolean | null;
   auditAnnouncementDelivered: boolean | null;
+  roleMutationsApplied?: number;
 };
 
 export class RoleSynchronizedMutationService {
@@ -48,7 +49,12 @@ export class RoleSynchronizedMutationService {
         ? null
         : await this.auditAnnouncements.publish(result.auditAnnouncement);
 
-    return { ...result, announcementDelivered, auditAnnouncementDelivered };
+    return {
+      ...result,
+      announcementDelivered,
+      auditAnnouncementDelivered,
+      roleMutationsApplied: (applied.addedRoles?.length ?? 0) + (applied.removedRoles?.length ?? 0),
+    };
   }
 
   public async executeMany<T>(
@@ -87,7 +93,16 @@ export class RoleSynchronizedMutationService {
         ? null
         : await this.auditAnnouncements.publish(payload.auditAnnouncement);
 
-    return { ...result, announcementDelivered, auditAnnouncementDelivered };
+    return {
+      ...result,
+      announcementDelivered,
+      auditAnnouncementDelivered,
+      roleMutationsApplied: applied.reduce(
+        (count, { mutation }) =>
+          count + (mutation.addedRoles?.length ?? 0) + (mutation.removedRoles?.length ?? 0),
+        0,
+      ),
+    };
   }
 
   private async compensateDatabaseFailure(

@@ -113,6 +113,15 @@ export class AuthorizationService {
     throw new AuthorizationError('A database Bot Permission is required to use this command.');
   }
 
+  public async authorizeBotPermissionAdmin(
+    input: AuthorizationInput,
+  ): Promise<AuthorizationResult> {
+    const configuration = await this.loadConfiguration(input.discordGuildId);
+    const kind = await this.getGlobalAuthorizationKind(input);
+    if (kind === 'BOTPERM_ADMIN') return { ...configuration, kind };
+    throw new AuthorizationError('A Bot Permission Admin is required to repair a disbanded team.');
+  }
+
   public async authorizeClubAction(
     input: AuthorizationInput,
     clubId: string,

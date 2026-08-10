@@ -654,6 +654,16 @@ describe('administration services', () => {
     ).resolves.toBe(1);
   });
 
+  it('allows a new active team to reuse an inactive historical team role', async () => {
+    const historical = await createClub('930000000000000001');
+    await database.client.club.update({ where: { id: historical.id }, data: { active: false } });
+
+    await expect(createClub('930000000000000001')).resolves.toMatchObject({
+      active: true,
+      discordRoleId: '930000000000000001',
+    });
+  });
+
   it.each([
     ['TM', '920000000000000002'],
     ['ATM', '920000000000000003'],
@@ -729,6 +739,20 @@ describe('administration services', () => {
     await expect(
       database.client.auditEvent.count({ where: { eventType: clubEditedAuditEventType } }),
     ).resolves.toBe(1);
+  });
+
+  it('allows an active team to switch to a role used only by an inactive historical team', async () => {
+    const historical = await createClub('930000000000000001');
+    const active = await createClub('930000000000000002');
+    await database.client.club.update({ where: { id: historical.id }, data: { active: false } });
+
+    await expect(
+      new ClubManagementService(database.client).edit({
+        authorization: authorization(),
+        clubId: active.id,
+        discordRoleId: historical.discordRoleId,
+      }),
+    ).resolves.toMatchObject({ discordRoleId: historical.discordRoleId, active: true });
   });
 
   it.each(['PLAYER', 'TEAM_MANAGER', 'ASSISTANT_MANAGER', 'PLAYER_MANAGER'] as const)(

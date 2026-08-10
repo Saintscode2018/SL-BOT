@@ -66,6 +66,7 @@ import { SetupAuditService } from '../services/setup-audit-service.js';
 import { TransferAnnouncementService } from '../services/transfer-announcement-service.js';
 import { TeamHealthService } from '../services/team-health-service.js';
 import { TeamDisbandmentService } from '../services/team-disbandment-service.js';
+import { TeamDisbandmentRepairService } from '../services/team-disbandment-repair-service.js';
 import { TeamSwapService } from '../services/team-swap-service.js';
 import { FranchiseOwnerListService } from '../services/franchise-owner-list-service.js';
 import { Application, type DatabaseLifecycle } from './application.js';
@@ -211,6 +212,7 @@ export function createApplication(
     departureCommandHandler,
     promotionDemotionCommandHandler,
     teamDisbandmentCommandHandler,
+    teamDisbandmentRepairService: new TeamDisbandmentRepairService(prisma, synchronizedMutations),
     teamSwapCommandHandler,
     setupAuditService,
     teamHealthService: new TeamHealthService(prisma),

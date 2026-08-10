@@ -87,6 +87,21 @@ describe('member role synchronization', () => {
     expect(removeRole).not.toHaveBeenCalled();
   });
 
+  it('treats an already-absent stale role as a successful no-op', async () => {
+    const { addRole, removeRole, service } = fixture({
+      memberRoleIds: [],
+      roles: [],
+    });
+    const removeOnlyPlan: MemberRoleMutationPlan = {
+      ...plan,
+      addRoles: [],
+    };
+
+    await expect(service.apply(removeOnlyPlan)).resolves.toEqual({ addedRoles: [], removedRoles: [] });
+    expect(addRole).not.toHaveBeenCalled();
+    expect(removeRole).not.toHaveBeenCalled();
+  });
+
   it.each([
     [{ memberExists: false }, DiscordMemberMissingError],
     [{ botHasManageRoles: false }, DiscordManageRolesPermissionError],

@@ -29,6 +29,7 @@ import type { OfferButtonHandler } from './offer-button-handler.js';
 import type { RosterDepartureCommandHandler } from './departure-command-handler.js';
 import type { RosterPromotionDemotionCommandHandler } from './promotion-demotion-command-handler.js';
 import type { TeamDisbandmentCommandHandler } from './team-disbandment-command-handler.js';
+import type { TeamDisbandmentRepairService } from '../services/team-disbandment-repair-service.js';
 import type { TeamSwapCommandHandler } from './team-swap-command-handler.js';
 import type { GuildEmoji } from './emoji-helper.js';
 
@@ -175,6 +176,7 @@ export interface CommandContext {
     TeamDisbandmentCommandHandler,
     'begin' | 'canHandle' | 'handleButton'
   >;
+  teamDisbandmentRepairService?: Pick<TeamDisbandmentRepairService, 'repair'>;
   teamSwapCommandHandler?: Pick<TeamSwapCommandHandler, 'begin' | 'canHandle' | 'handleButton'>;
   setupAuditService: Pick<SetupAuditService, 'publish'>;
   teamHealthService?: Pick<TeamHealthService, 'getOverview' | 'getDetail'>;

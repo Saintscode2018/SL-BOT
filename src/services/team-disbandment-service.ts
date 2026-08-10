@@ -10,15 +10,12 @@ import type {
 
 import {
   ClubInactiveError,
-  DiscordRoleMissingError,
   StaleMutationStateError,
   TeamNotFoundError,
 } from '../domain/errors.js';
 import type { MembershipType } from '../domain/enums.js';
 import type { DatabaseClient } from '../domain/types.js';
 import type {
-  MemberRoleMutationPlan,
-  PlannedDiscordRole,
   AuditAnnouncementPlan,
   TransferAnnouncementPlan,
 } from '../domain/roster-mutation.js';
@@ -29,6 +26,11 @@ import { OfferRepository } from '../repositories/offer-repository.js';
 import { UserRepository } from '../repositories/user-repository.js';
 import type { AuthorizationInput } from './authorization-service.js';
 import { AuthorizationService } from './authorization-service.js';
+import {
+  groupClubRoleCandidates,
+  planClubRoleRemovals,
+  sameIds,
+} from './club-role-entitlement-service.js';
 import type { RoleSynchronizedMutationService } from './role-synchronized-mutation-service.js';
 import type { OfferDeliveryService } from './offer-delivery-service.js';
 
@@ -97,7 +99,12 @@ export class TeamDisbandmentService {
       eligibility.team.id,
     );
     const affectedUsers = this.groupAffectedUsers(activeMemberships);
-    const rolePlans = this.buildRolePlans(eligibility, affectedUsers);
+    const rolePlanning = await planClubRoleRemovals(this.database, {
+      guild: eligibility.guild,
+      settings: eligibility.settings,
+      club: eligibility.team,
+      candidates: groupClubRoleCandidates(activeMemberships),
+    });
     const expectedMembershipIds = activeMemberships.map(({ id }) => id).sort();
 
     const announcement: TransferAnnouncementPlan | null = eligibility.settings.transferChannelId
@@ -113,7 +120,7 @@ export class TeamDisbandmentService {
         }
       : null;
 
-    const outcome = await this.synchronizedMutations.executeMany(rolePlans, () =>
+    const outcome = await this.synchronizedMutations.executeMany(rolePlanning.rolePlans, () =>
       this.database.$transaction(async (transaction) => {
         const guilds = new GuildRepository(transaction);
         await guilds.acquireWriteLock(input.authorization.discordGuildId);
@@ -133,9 +140,20 @@ export class TeamDisbandmentService {
           orderBy: [{ id: 'asc' }],
         });
         const currentIds = currentMemberships.map(({ id }) => id).sort();
+        if (!sameIds(currentIds, expectedMembershipIds)) {
+          throw new StaleMutationStateError();
+        }
+        const lockedRolePlanning = await planClubRoleRemovals(transaction, {
+          guild: authorization.guild,
+          settings: authorization.settings,
+          club: team,
+          candidates: groupClubRoleCandidates(activeMemberships),
+        });
         if (
-          currentIds.length !== expectedMembershipIds.length ||
-          currentIds.some((id, index) => id !== expectedMembershipIds[index])
+          !sameIds(
+            lockedRolePlanning.expectedCandidateActiveMembershipIds,
+            rolePlanning.expectedCandidateActiveMembershipIds,
+          ) || !sameRolePlans(lockedRolePlanning.rolePlans, rolePlanning.rolePlans)
         ) {
           throw new StaleMutationStateError();
         }
@@ -286,47 +304,11 @@ export class TeamDisbandmentService {
     }));
   }
 
-  private buildRolePlans(
-    eligibility: TeamDisbandmentEligibility,
-    affectedUsers: readonly TeamDisbandmentAffectedUser[],
-  ): MemberRoleMutationPlan[] {
-    return affectedUsers.map((affectedUser) => {
-      const roles = new Map<string, PlannedDiscordRole>();
-      roles.set(eligibility.team.discordRoleId, {
-        id: eligibility.team.discordRoleId,
-        purpose: 'TEAM',
-      });
-      for (const membershipType of affectedUser.membershipTypes) {
-        const role = this.staffRole(eligibility.settings, membershipType);
-        if (role !== null && !roles.has(role.id)) roles.set(role.id, role);
-      }
-      return {
-        discordGuildId: eligibility.guild.discordGuildId,
-        discordUserId: affectedUser.discordUserId,
-        addRoles: [],
-        removeRoles: [...roles.values()],
-      };
-    });
-  }
+}
 
-  private staffRole(
-    settings: GuildSettings,
-    membershipType: MembershipType,
-  ): PlannedDiscordRole | null {
-    if (membershipType === 'PLAYER') return null;
-    const purpose =
-      membershipType === 'TEAM_MANAGER'
-        ? 'TM'
-        : membershipType === 'ASSISTANT_MANAGER'
-          ? 'ATM'
-          : 'PM';
-    const id =
-      purpose === 'TM'
-        ? settings.teamManagerRoleId
-        : purpose === 'ATM'
-          ? settings.assistantManagerRoleId
-          : settings.playerManagerRoleId;
-    if (id === null) throw new DiscordRoleMissingError(purpose);
-    return { id, purpose };
-  }
+function sameRolePlans(
+  left: readonly { discordGuildId: string; discordUserId: string; addRoles: unknown; removeRoles: unknown }[],
+  right: readonly { discordGuildId: string; discordUserId: string; addRoles: unknown; removeRoles: unknown }[],
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }

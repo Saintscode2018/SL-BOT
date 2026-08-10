@@ -60,7 +60,10 @@ model Club {
   sourceTransactions      LeagueTransaction[] @relation("sourceClub")
   destinationTransactions LeagueTransaction[] @relation("destinationClub")
 
-  @@unique([guildId, discordRoleId])
+  // Active teams exclusively reserve their Discord role. The matching partial
+  // unique index is maintained in SQL because Prisma's SQLite schema language
+  // cannot express a partial unique index.
+  @@index([guildId, discordRoleId])
   @@unique([id, guildId])
   @@index([guildId, active])
 }
