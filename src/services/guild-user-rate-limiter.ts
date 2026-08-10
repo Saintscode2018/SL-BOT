@@ -19,6 +19,7 @@ export class GuildUserRateLimiter {
 
   public tryAcquire(discordGuildId: string, discordUserId: string): RateLimitResult {
     const now = this.clock();
+    this.pruneExpired(now);
     const key = `${discordGuildId}:${discordUserId}`;
     const expiry = this.expiresAt.get(key);
     if (expiry !== undefined && expiry > now) {
@@ -28,12 +29,24 @@ export class GuildUserRateLimiter {
       };
     }
 
+    if (expiry !== undefined) this.expiresAt.delete(key);
     this.expiresAt.set(key, now + this.windowMs);
     return { allowed: true, retryAfterSeconds: 0 };
   }
 
   public clear(): void {
     this.expiresAt.clear();
+  }
+
+  private pruneExpired(now: number): void {
+    const next = this.expiresAt.entries().next();
+    if (next.done) {
+      return;
+    }
+
+    const [key, expiry] = next.value;
+    this.expiresAt.delete(key);
+    if (expiry > now) this.expiresAt.set(key, expiry);
   }
 }
 
