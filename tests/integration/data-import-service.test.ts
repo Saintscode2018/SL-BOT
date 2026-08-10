@@ -149,7 +149,7 @@ describe('DataImportService', () => {
     expect(fetchMembers).not.toHaveBeenCalled();
   });
 
-  it('classifies team-only and management members without importing staff as players', async () => {
+  it('imports the canonical player and management membership sets', async () => {
     const playerId = '950000000000000001';
     const managerId = '950000000000000002';
     const assistantId = '950000000000000003';
@@ -169,7 +169,7 @@ describe('DataImportService', () => {
     ]);
 
     expect(result.imported).toEqual({
-      players: 1,
+      players: 4,
       teamManagers: 1,
       assistantManagers: 1,
       playerManagers: 1,
@@ -196,7 +196,7 @@ describe('DataImportService', () => {
           [managerId, assistantId, playerManagerId].includes(user.discordUserId) &&
           membershipType === 'PLAYER',
       ),
-    ).toHaveLength(0);
+    ).toHaveLength(3);
     await expect(
       database.client.leagueUser.count({
         where: { discordUserId: { in: [botId, inactiveId, unregisteredId] } },
@@ -262,12 +262,12 @@ describe('DataImportService', () => {
   });
 
   it.each([
-    ['TM', teamManagerRole, 'TEAM_MANAGER', '956000000000000001'],
-    ['ATM', assistantManagerRole, 'ASSISTANT_MANAGER', '956000000000000002'],
-    ['PM', playerManagerRole, 'PLAYER_MANAGER', '956000000000000003'],
+    ['TM', teamManagerRole, 'TEAM_MANAGER', 'teamManagers', '956000000000000001'],
+    ['ATM', assistantManagerRole, 'ASSISTANT_MANAGER', 'assistantManagers', '956000000000000002'],
+    ['PM', playerManagerRole, 'PLAYER_MANAGER', 'playerManagers', '956000000000000003'],
   ] as const)(
-    'treats an existing same-team PLAYER plus Discord %s as a conflict',
-    async (_rank, managementRoleId, inferredMembershipType, discordUserId) => {
+    'repairs a missing staff membership for Discord %s without conflict',
+    async (_rank, managementRoleId, inferredMembershipType, importedCountKey, discordUserId) => {
       const user = await database.client.leagueUser.create({ data: { discordUserId } });
       await database.client.clubMembership.create({
         data: {
@@ -280,23 +280,29 @@ describe('DataImportService', () => {
 
       const result = await run([member(discordUserId, [teamRoleOne, managementRoleId])]);
 
-      expect(result.unchanged).toBe(0);
-      expect(result.issues).toMatchObject([{ discordUserId, code: 'CONFLICTING_MEMBERSHIP' }]);
+      expect(result.imported[importedCountKey]).toBe(1);
+      expect(result.issues).toEqual([]);
       await expect(
         database.client.clubMembership.findMany({
           where: { userId: user.id },
           select: { membershipType: true, clubId: true },
+          orderBy: { membershipType: 'asc' },
         }),
-      ).resolves.toEqual([{ membershipType: 'PLAYER', clubId: clubOne.id }]);
+      ).resolves.toEqual(
+        [
+          { membershipType: 'PLAYER', clubId: clubOne.id },
+          { membershipType: inferredMembershipType, clubId: clubOne.id },
+        ].sort((left, right) => left.membershipType.localeCompare(right.membershipType)),
+      );
       await expect(
         database.client.clubMembership.count({
           where: { userId: user.id, membershipType: inferredMembershipType },
         }),
-      ).resolves.toBe(0);
+      ).resolves.toBe(1);
     },
   );
 
-  it('counts an exact staff-only membership as unchanged', async () => {
+  it('repairs a missing PLAYER row for an existing staff membership', async () => {
     const discordUserId = '957000000000000001';
     const user = await database.client.leagueUser.create({ data: { discordUserId } });
     await database.client.clubMembership.create({
@@ -310,18 +316,54 @@ describe('DataImportService', () => {
 
     const result = await run([member(discordUserId, [teamRoleOne, teamManagerRole])]);
 
-    expect(result.unchanged).toBe(1);
+    expect(result.imported.players).toBe(1);
+    expect(result.unchanged).toBe(0);
     expect(result.issues).toEqual([]);
     await expect(
       database.client.clubMembership.count({ where: { userId: user.id } }),
-    ).resolves.toBe(1);
+    ).resolves.toBe(2);
   });
 
   it.each([
+    ['TM', teamManagerRole, 'TEAM_MANAGER', '957000000000000005'],
+    ['ATM', assistantManagerRole, 'ASSISTANT_MANAGER', '957000000000000006'],
+    ['PM', playerManagerRole, 'PLAYER_MANAGER', '957000000000000007'],
+  ] as const)(
+    'recognizes an existing PLAYER plus %s as unchanged',
+    async (_rank, managementRoleId, membershipType, discordUserId) => {
+      const user = await database.client.leagueUser.create({ data: { discordUserId } });
+      await database.client.clubMembership.createMany({
+        data: [
+          {
+            guildId: guild.id,
+            clubId: clubOne.id,
+            userId: user.id,
+            membershipType: 'PLAYER',
+          },
+          {
+            guildId: guild.id,
+            clubId: clubOne.id,
+            userId: user.id,
+            membershipType,
+          },
+        ],
+      });
+
+      const result = await run([member(discordUserId, [teamRoleOne, managementRoleId])]);
+
+      expect(result.unchanged).toBe(1);
+      expect(result.issues).toEqual([]);
+      await expect(
+        database.client.clubMembership.count({ where: { userId: user.id } }),
+      ).resolves.toBe(2);
+    },
+  );
+
+  it.each([
     [
-      'same-team PLAYER',
+      'same-team unexpected staff membership',
       '957000000000000002',
-      'TEAM_MANAGER' as const,
+      'ASSISTANT_MANAGER' as const,
       'PLAYER' as const,
       'SAME_CLUB' as const,
     ],
@@ -364,7 +406,7 @@ describe('DataImportService', () => {
     },
   );
 
-  it('keeps a staff-only import idempotent on rerun', async () => {
+  it('keeps a complete staff import idempotent on rerun', async () => {
     const discordUserId = '957000000000000004';
     const snapshot = member(discordUserId, [teamRoleOne, playerManagerRole]);
 
@@ -372,12 +414,13 @@ describe('DataImportService', () => {
     const second = await run([snapshot]);
 
     expect(first.imported.playerManagers).toBe(1);
+    expect(first.imported.players).toBe(1);
     expect(second.imported.playerManagers).toBe(0);
     expect(second.unchanged).toBe(1);
     expect(second.issues).toEqual([]);
     await expect(
       database.client.clubMembership.count({ where: { user: { discordUserId } } }),
-    ).resolves.toBe(1);
+    ).resolves.toBe(2);
   });
 
   it('is idempotent and reuses LeagueUser identity without transactions or duplicate memberships', async () => {
@@ -397,7 +440,7 @@ describe('DataImportService', () => {
     await expect(database.client.leagueTransaction.count()).resolves.toBe(0);
   });
 
-  it('counts staff-only imports toward unique-member capacity', async () => {
+  it('counts canonical staff imports toward unique-member capacity', async () => {
     await database.client.guildSettings.update({
       where: { guildId: guild.id },
       data: { defaultSquadLimit: 1 },
@@ -412,7 +455,7 @@ describe('DataImportService', () => {
       member(overflowPlayerId, [teamRoleOne]),
     ]);
 
-    expect(result.imported).toMatchObject({ players: 0, teamManagers: 1 });
+    expect(result.imported).toMatchObject({ players: 1, teamManagers: 1 });
     expect(result.issues).toMatchObject([
       { discordUserId: firstPlayerId, code: 'SQUAD_LIMIT_REACHED' },
       { discordUserId: overflowPlayerId, code: 'SQUAD_LIMIT_REACHED' },
@@ -421,7 +464,7 @@ describe('DataImportService', () => {
       database.client.clubMembership.count({
         where: { clubId: clubOne.id, membershipType: 'PLAYER', status: 'ACTIVE' },
       }),
-    ).resolves.toBe(0);
+    ).resolves.toBe(1);
     await expect(
       database.client.clubMembership.count({
         where: { clubId: clubOne.id, membershipType: 'TEAM_MANAGER', status: 'ACTIVE' },
@@ -453,6 +496,149 @@ describe('DataImportService', () => {
       },
     });
     await expect(database.client.leagueTransaction.count()).resolves.toBe(0);
+  });
+
+  it('skips a team candidate that is deactivated after discovery and before its locked write', async () => {
+    const discordUserId = '958000000000000001';
+    const fetchMembers = vi.fn(async () => {
+      await database.client.club.update({ where: { id: clubOne.id }, data: { active: false } });
+      return [member(discordUserId, [teamRoleOne])];
+    });
+
+    const result = await service.importGuild({
+      authorization: authorization(botPermissionId),
+      fetchMembers,
+    });
+
+    expect(result.imported).toEqual({
+      players: 0,
+      teamManagers: 0,
+      assistantManagers: 0,
+      playerManagers: 0,
+    });
+    expect(result.issues).toMatchObject([{ discordUserId, code: 'STALE_IMPORT_PLAN' }]);
+    await expect(
+      database.client.clubMembership.count({ where: { user: { discordUserId } } }),
+    ).resolves.toBe(0);
+    await expect(
+      database.client.auditEvent.findFirstOrThrow({ where: { eventType: dataImportAuditEventType } }),
+    ).resolves.toMatchObject({
+      afterState: {
+        imported: { players: 0, teamManagers: 0, assistantManagers: 0, playerManagers: 0 },
+        unchanged: 0,
+        skipped: 1,
+      },
+    });
+  });
+
+  it('rejects the old team role mapping when the team role changes before its locked write', async () => {
+    const discordUserId = '958000000000000002';
+    const replacementRoleId = '920000000000000005';
+    const fetchMembers = vi.fn(async () => {
+      await database.client.club.update({
+        where: { id: clubOne.id },
+        data: { discordRoleId: replacementRoleId },
+      });
+      return [member(discordUserId, [teamRoleOne])];
+    });
+
+    const result = await service.importGuild({
+      authorization: authorization(botPermissionId),
+      fetchMembers,
+    });
+
+    expect(result.issues).toMatchObject([{ discordUserId, code: 'STALE_IMPORT_PLAN' }]);
+    await expect(
+      database.client.clubMembership.count({ where: { user: { discordUserId } } }),
+    ).resolves.toBe(0);
+  });
+
+  it('rejects a stale staff-role classification when management-role settings change before its locked write', async () => {
+    const discordUserId = '958000000000000003';
+    const replacementManagerRoleId = '930000000000000005';
+    const fetchMembers = vi.fn(async () => {
+      await database.client.guildSettings.update({
+        where: { guildId: guild.id },
+        data: { teamManagerRoleId: replacementManagerRoleId },
+      });
+      return [member(discordUserId, [teamRoleOne, teamManagerRole])];
+    });
+
+    const result = await service.importGuild({
+      authorization: authorization(botPermissionId),
+      fetchMembers,
+    });
+
+    expect(result.issues).toHaveLength(2);
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ discordUserId, code: 'STALE_IMPORT_PLAN' }),
+      ]),
+    );
+    await expect(
+      database.client.clubMembership.count({ where: { user: { discordUserId } } }),
+    ).resolves.toBe(0);
+  });
+
+  it('uses the locked membership read when membership state changes after discovery', async () => {
+    const discordUserId = '958000000000000004';
+    const user = await database.client.leagueUser.create({ data: { discordUserId } });
+    const fetchMembers = vi.fn(async () => {
+      await database.client.clubMembership.create({
+        data: {
+          guildId: guild.id,
+          clubId: clubTwo.id,
+          userId: user.id,
+          membershipType: 'PLAYER',
+        },
+      });
+      return [member(discordUserId, [teamRoleOne])];
+    });
+
+    const result = await service.importGuild({
+      authorization: authorization(botPermissionId),
+      fetchMembers,
+    });
+
+    expect(result.issues).toMatchObject([{ discordUserId, code: 'CONFLICTING_MEMBERSHIP' }]);
+    await expect(
+      database.client.clubMembership.findMany({
+        where: { userId: user.id },
+        select: { clubId: true, membershipType: true },
+      }),
+    ).resolves.toEqual([{ clubId: clubTwo.id, membershipType: 'PLAYER' }]);
+  });
+
+  it('uses the current squad limit read under the guild lock', async () => {
+    const existingUser = await database.client.leagueUser.create({
+      data: { discordUserId: '958000000000000005' },
+    });
+    await database.client.clubMembership.create({
+      data: {
+        guildId: guild.id,
+        clubId: clubOne.id,
+        userId: existingUser.id,
+        membershipType: 'PLAYER',
+      },
+    });
+    const discordUserId = '958000000000000006';
+    const fetchMembers = vi.fn(async () => {
+      await database.client.guildSettings.update({
+        where: { guildId: guild.id },
+        data: { defaultSquadLimit: 1 },
+      });
+      return [member(discordUserId, [teamRoleOne])];
+    });
+
+    const result = await service.importGuild({
+      authorization: authorization(botPermissionId),
+      fetchMembers,
+    });
+
+    expect(result.issues).toMatchObject([{ discordUserId, code: 'SQUAD_LIMIT_REACHED' }]);
+    await expect(
+      database.client.clubMembership.count({ where: { user: { discordUserId } } }),
+    ).resolves.toBe(0);
   });
 
   it('classifies a large member snapshot in memory after one fetch', async () => {

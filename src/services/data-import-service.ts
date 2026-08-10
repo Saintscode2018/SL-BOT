@@ -32,7 +32,8 @@ export type DataImportIssueCode =
   | 'MANAGEMENT_WITHOUT_TEAM'
   | 'CONFLICTING_MEMBERSHIP'
   | 'STAFF_SLOT_CONFLICT'
-  | 'SQUAD_LIMIT_REACHED';
+  | 'SQUAD_LIMIT_REACHED'
+  | 'STALE_IMPORT_PLAN';
 
 export interface DataImportIssue {
   code: DataImportIssueCode;
@@ -69,6 +70,7 @@ interface ImportCandidate {
   member: GuildMemberSnapshot;
   club: Club;
   membershipType: MembershipType;
+  expectedMembershipTypes: readonly MembershipType[];
 }
 
 type ExistingAssessment = 'MISSING' | 'UNCHANGED' | 'CONFLICT';
@@ -77,7 +79,8 @@ type PersistenceOutcome =
   | 'UNCHANGED'
   | 'CONFLICT'
   | 'STAFF_SLOT_CONFLICT'
-  | 'SQUAD_LIMIT_REACHED';
+  | 'SQUAD_LIMIT_REACHED'
+  | 'STALE_PLAN';
 
 const staffMembershipTypes = [
   'TEAM_MANAGER',
@@ -108,12 +111,35 @@ function assessExistingMemberships(
   candidate: ImportCandidate,
   activeMemberships: readonly ClubMembership[],
 ): ExistingAssessment {
-  const exact = activeMemberships.some(
-    ({ clubId, membershipType }) =>
-      clubId === candidate.club.id && membershipType === candidate.membershipType,
-  );
   if (activeMemberships.length === 0) return 'MISSING';
-  return exact && activeMemberships.length === 1 ? 'UNCHANGED' : 'CONFLICT';
+
+  const expectedTypes = new Set(candidate.expectedMembershipTypes);
+  const activeTypeCounts = new Map<MembershipType, number>();
+  for (const { clubId, membershipType } of activeMemberships) {
+    if (clubId !== candidate.club.id || !expectedTypes.has(membershipType as MembershipType)) {
+      return 'CONFLICT';
+    }
+    const typedMembershipType = membershipType as MembershipType;
+    activeTypeCounts.set(typedMembershipType, (activeTypeCounts.get(typedMembershipType) ?? 0) + 1);
+  }
+
+  if (
+    activeMemberships.length === candidate.expectedMembershipTypes.length &&
+    candidate.expectedMembershipTypes.every(
+      (membershipType) => activeTypeCounts.get(membershipType) === 1,
+    )
+  ) {
+    return 'UNCHANGED';
+  }
+
+  if ([...activeTypeCounts.values()].some((count) => count > 1)) return 'CONFLICT';
+  return 'MISSING';
+}
+
+function expectedMembershipTypesFor(
+  managementType: Exclude<MembershipType, 'PLAYER'> | undefined,
+): readonly MembershipType[] {
+  return managementType === undefined ? ['PLAYER'] : ['PLAYER', managementType];
 }
 
 function staffSlotKey(candidate: ImportCandidate): string {
@@ -190,6 +216,17 @@ function validatePrerequisites(settings: GuildSettings): void {
   }
 }
 
+function hasSameManagementRoleConfiguration(
+  expected: GuildSettings,
+  current: GuildSettings,
+): boolean {
+  return (
+    expected.teamManagerRoleId === current.teamManagerRoleId &&
+    expected.assistantManagerRoleId === current.assistantManagerRoleId &&
+    expected.playerManagerRoleId === current.playerManagerRoleId
+  );
+}
+
 function classifyMembers(
   members: readonly GuildMemberSnapshot[],
   clubs: readonly Club[],
@@ -256,6 +293,7 @@ function classifyMembers(
       member,
       club,
       membershipType: managementType ?? 'PLAYER',
+      expectedMembershipTypes: expectedMembershipTypesFor(managementType),
     });
   }
 
@@ -339,23 +377,34 @@ export class DataImportService {
         );
         continue;
       }
-      if (candidate.membershipType !== 'PLAYER') {
-        const occupied = activeStaffBySlot.get(staffSlotKey(candidate));
-        if (
-          occupied !== undefined &&
-          occupied.user.discordUserId !== candidate.member.discordUserId
-        ) {
-          importIssues.push(
-            issue(
-              candidate,
-              'STAFF_SLOT_CONFLICT',
-              `${managementLabel(candidate.membershipType)} position is already occupied for <@&${candidate.club.discordRoleId}>`,
-            ),
-          );
-          continue;
-        }
+      const missingMembershipTypes = candidate.expectedMembershipTypes.filter(
+        (membershipType) =>
+          !current.some(
+            ({ clubId, membershipType: activeType }) =>
+              clubId === candidate.club.id && activeType === membershipType,
+          ),
+      );
+      const occupiedStaffType = missingMembershipTypes.find((membershipType) => {
+        if (membershipType === 'PLAYER') return false;
+        const occupied = activeStaffBySlot.get(staffSlotKey({ ...candidate, membershipType }));
+        return (
+          occupied !== undefined && occupied.user.discordUserId !== candidate.member.discordUserId
+        );
+      });
+      if (occupiedStaffType !== undefined) {
+        importIssues.push(
+          issue(
+            candidate,
+            'STAFF_SLOT_CONFLICT',
+            `${managementLabel(occupiedStaffType)} position is already occupied for <@&${candidate.club.discordRoleId}>`,
+          ),
+        );
+        continue;
       }
-      missingCandidates.push(candidate);
+      for (const membershipType of missingMembershipTypes) {
+        const missingCandidate = { ...candidate, membershipType };
+        missingCandidates.push(missingCandidate);
+      }
     }
 
     const openStaffCandidatesBySlot = new Map<string, ImportCandidate[]>();
@@ -425,6 +474,15 @@ export class DataImportService {
             ),
           );
           break;
+        case 'STALE_PLAN':
+          importIssues.push(
+            issue(
+              candidate,
+              'STALE_IMPORT_PLAN',
+              'team or management-role configuration changed while the import was running',
+            ),
+          );
+          break;
       }
     }
 
@@ -478,27 +536,50 @@ export class DataImportService {
     occurredAt: Date,
   ): Promise<PersistenceOutcome> {
     return this.database.$transaction(async (transaction) => {
-      await new GuildRepository(transaction).acquireWriteLock(guild.discordGuildId);
+      const guilds = new GuildRepository(transaction);
+      await guilds.acquireWriteLock(guild.discordGuildId);
+      const [currentSettings, currentClub] = await Promise.all([
+        guilds.getSettings(guild.id),
+        new ClubRepository(transaction).getByIdInGuild(candidate.club.id, guild.id),
+      ]);
+      if (
+        currentSettings === null ||
+        !hasSameManagementRoleConfiguration(settings, currentSettings) ||
+        currentClub === null ||
+        !currentClub.active ||
+        currentClub.discordRoleId !== candidate.club.discordRoleId
+      ) {
+        return 'STALE_PLAN';
+      }
+
       const users = new UserRepository(transaction);
       const memberships = new MembershipRepository(transaction);
       const user = await users.getOrCreateByDiscordUserId(candidate.member.discordUserId);
       const active = await memberships.listActiveMembershipsForUserInGuild(guild.id, user.id);
       const assessment = assessExistingMemberships(candidate, active);
-      if (assessment === 'UNCHANGED') return 'UNCHANGED';
       if (assessment === 'CONFLICT') return 'CONFLICT';
+      if (
+        assessment === 'UNCHANGED' ||
+        active.some(
+          ({ clubId, membershipType }) =>
+            clubId === candidate.club.id && membershipType === candidate.membershipType,
+        )
+      ) {
+        return 'UNCHANGED';
+      }
 
       const alreadyOnClub = active.some((membership) => membership.clubId === candidate.club.id);
       if (
         !alreadyOnClub &&
-        (await memberships.countActiveUniqueMembers(candidate.club.id)) >=
-          getEffectiveSquadLimit(candidate.club, settings)
+        (await memberships.countActiveUniqueMembers(currentClub.id)) >=
+          getEffectiveSquadLimit(currentClub, currentSettings)
       ) {
         return 'SQUAD_LIMIT_REACHED';
       }
 
       if (candidate.membershipType !== 'PLAYER') {
         const occupied = await memberships.getActiveStaffAppointment(
-          candidate.club.id,
+          currentClub.id,
           candidate.membershipType,
         );
         if (occupied !== null && occupied.userId !== user.id) return 'STAFF_SLOT_CONFLICT';
@@ -506,7 +587,7 @@ export class DataImportService {
 
       await memberships.createActive({
         guildId: guild.id,
-        clubId: candidate.club.id,
+        clubId: currentClub.id,
         userId: user.id,
         membershipType: candidate.membershipType,
         joinedAt: occurredAt,
