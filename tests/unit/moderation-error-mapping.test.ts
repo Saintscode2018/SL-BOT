@@ -14,9 +14,14 @@ import {
 
 describe('moderation command error mapping and classification', () => {
   it('maps missing Case Files configuration without exposing infrastructure detail', () => {
-    const mapped = mapDiscordError(new ModerationChannelNotConfiguredError('CASE_FILES'));
+    const error = new ModerationChannelNotConfiguredError('CASE_FILES');
+    const mapped = mapDiscordError(error);
     expect(mapped.title).toContain('Moderation Channel Not Configured');
     expect(mapped.description).toContain('/setup channels');
+    expect(classifyInteractionError(error)).toMatchObject({
+      level: 'info',
+      isInfrastructure: false,
+    });
   });
 
   it.each([

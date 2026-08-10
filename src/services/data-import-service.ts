@@ -8,7 +8,11 @@ import type {
 } from '@prisma/client';
 
 import type { MembershipType } from '../domain/enums.js';
-import { ConfigurationError, DataImportAuditRecordingError } from '../domain/errors.js';
+import {
+  ConfigurationError,
+  DataImportAuditRecordingError,
+  ModerationChannelNotConfiguredError,
+} from '../domain/errors.js';
 import { getEffectiveSquadLimit } from '../domain/squad-limit.js';
 import { AuditEventRepository } from '../repositories/audit-event-repository.js';
 import { ClubRepository } from '../repositories/club-repository.js';
@@ -177,6 +181,10 @@ function managementLabel(membershipType: MembershipType): string {
 }
 
 function validatePrerequisites(settings: GuildSettings): void {
+  if (settings.caseFilesChannelId === null) {
+    throw new ModerationChannelNotConfiguredError('CASE_FILES');
+  }
+
   const missingChannels = [
     ['Bot Commands', settings.botCommandsChannelId],
     ['Staff Commands', settings.staffChannelId],

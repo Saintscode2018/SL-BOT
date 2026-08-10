@@ -4,6 +4,7 @@ import {
   AuthorizationError,
   ConfigurationError,
   DataImportAuditRecordingError,
+  ModerationChannelNotConfiguredError,
 } from '../../src/domain/errors.js';
 import type { AuthorizationInput } from '../../src/services/authorization-service.js';
 import {
@@ -32,6 +33,7 @@ const legacyBotPermissionRole = '930000000000000001';
 const teamManagerRole = '930000000000000002';
 const assistantManagerRole = '930000000000000003';
 const playerManagerRole = '930000000000000004';
+const caseFilesChannelId = '940000000000000005';
 
 function authorization(
   discordUserId: string,
@@ -82,6 +84,7 @@ describe('DataImportService', () => {
         staffChannelId: '940000000000000002',
         transferChannelId: '940000000000000003',
         auditChannelId: '940000000000000004',
+        caseFilesChannelId,
         botPermissionsRoleId: legacyBotPermissionRole,
         teamManagerRoleId: teamManagerRole,
         assistantManagerRoleId: assistantManagerRole,
@@ -151,6 +154,48 @@ describe('DataImportService', () => {
       service.importGuild({ authorization: deniedAuthorization, fetchMembers }),
     ).rejects.toBeInstanceOf(AuthorizationError);
     expect(fetchMembers).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing Case Files channel before discovery, mutations, or aggregate auditing', async () => {
+    await database.client.guildSettings.update({
+      where: { guildId: guild.id },
+      data: { caseFilesChannelId: null },
+    });
+    const fetchMembers = vi.fn(() => Promise.resolve([member(outsiderId, [teamRoleOne])]));
+
+    await expect(
+      service.importGuild({ authorization: authorization(botPermissionId), fetchMembers }),
+    ).rejects.toEqual(new ModerationChannelNotConfiguredError('CASE_FILES'));
+
+    expect(fetchMembers).not.toHaveBeenCalled();
+    await expect(
+      database.client.leagueUser.count({ where: { discordUserId: outsiderId } }),
+    ).resolves.toBe(0);
+    await expect(database.client.clubMembership.count()).resolves.toBe(0);
+    await expect(
+      database.client.auditEvent.count({ where: { eventType: dataImportAuditEventType } }),
+    ).resolves.toBe(0);
+  });
+
+  it('keeps authorization ahead of the Case Files prerequisite', async () => {
+    await database.client.guildSettings.update({
+      where: { guildId: guild.id },
+      data: { caseFilesChannelId: null },
+    });
+    const fetchMembers = vi.fn(() => Promise.resolve([member(outsiderId, [teamRoleOne])]));
+
+    await expect(
+      service.importGuild({ authorization: authorization(outsiderId), fetchMembers }),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+
+    expect(fetchMembers).not.toHaveBeenCalled();
+    await expect(
+      database.client.leagueUser.count({ where: { discordUserId: outsiderId } }),
+    ).resolves.toBe(0);
+    await expect(database.client.clubMembership.count()).resolves.toBe(0);
+    await expect(
+      database.client.auditEvent.count({ where: { eventType: dataImportAuditEventType } }),
+    ).resolves.toBe(0);
   });
 
   it('imports the canonical player and management membership sets', async () => {
