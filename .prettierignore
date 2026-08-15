@@ -1,9 +1,0 @@
-node_modules/
-dist/
-coverage/
-*.db
-*.sqlite
-*.sqlite3
-package-lock.json
-__pycache__/
-*.py
